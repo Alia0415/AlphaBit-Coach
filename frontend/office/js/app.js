@@ -20,7 +20,7 @@ import {
   WAR_SCRIPT,
   SKILL_FINAL_COUNTS,
   HISTORY_TASKS,
-} from "./mock.js";
+} from "./mock.js?v=20260725-p07";
 import {
   isLive,
   connectivity,

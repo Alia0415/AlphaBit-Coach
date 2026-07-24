@@ -48,3 +48,10 @@ def test_office_demo_skills_mirror_supported_skill_surface() -> None:
         "a_share_stock_dossier",
     ):
         assert skill_id in mock_response.text
+
+
+def test_office_versions_the_demo_data_module_import() -> None:
+    response = client.get("/static/office/js/app.js")
+
+    assert response.status_code == 200
+    assert 'from "./mock.js?v=' in response.text
