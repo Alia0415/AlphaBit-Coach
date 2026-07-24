@@ -485,11 +485,18 @@
   /* 按词条长度从长到短排序，避免短词抢在长词之前匹配 */
   const SORTED = GLOSSARY.slice().sort((a, b) => b.term.length - a.term.length);
 
-  /* 构建正则 —— 只匹配完整词（非汉字/字母中间被拆分） */
-  const ESCAPED_TERMS = SORTED.map((g) =>
-    g.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  );
-  const RE = new RegExp(`(^|[^\\p{L}])(${ESCAPED_TERMS.join("|")})([^\\p{L}]|$)`, "giu");
+  /*
+   * 中文术语需要在连续中文句子中命中；英文缩写则保留字母数字边界，
+   * 避免把 AlphaOS 中的 Alpha 当作独立术语。
+   */
+  const TERM_PATTERNS = SORTED.map((g) => {
+    const escaped = g.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const startsWithAscii = /^[A-Za-z0-9_]/.test(g.term);
+    const endsWithAscii = /[A-Za-z0-9_]$/.test(g.term);
+    return `${startsWithAscii ? "(?<![A-Za-z0-9_])" : ""}${escaped}` +
+      `${endsWithAscii ? "(?![A-Za-z0-9_])" : ""}`;
+  });
+  const RE = new RegExp(`(${TERM_PATTERNS.join("|")})`, "giu");
 
   /**
    * 查词条对象（用原始未转译的词条名查找）
@@ -511,15 +518,15 @@
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
 
-    return safe.replace(RE, (match, before, term, after) => {
+    return safe.replace(RE, (match, term) => {
       const entry = lookup(term);
       if (!entry) return match;
-      return (before || "") +
-        `<span class="glossary-term" style="color:${entry.color}"` +
+      return `<span class="glossary-term" role="button" tabindex="0"` +
+        ` data-term="${term}" style="color:${entry.color}"` +
         ` data-explanation="${entry.explanation
           .replaceAll("&", "&amp;")
           .replaceAll('"', "&quot;")}">${term}</span>` +
-        (after || "");
+        "";
     });
   }
 

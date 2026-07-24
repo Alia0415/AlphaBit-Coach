@@ -1,9 +1,15 @@
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
 
 
 client = TestClient(app)
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_office_keeps_only_backend_supported_navigation() -> None:
@@ -55,3 +61,57 @@ def test_office_versions_the_demo_data_module_import() -> None:
 
     assert response.status_code == 200
     assert 'from "./mock.js?v=' in response.text
+
+
+def test_office_loads_shared_glossary_and_office_controller() -> None:
+    entrypoint = client.get("/")
+    controller = client.get("/static/office/js/glossary-ui.js")
+    glossary = client.get("/static/glossary.js")
+
+    assert entrypoint.status_code == 200
+    assert '<script src="/static/glossary.js?v=' in entrypoint.text
+    assert 'from "./glossary-ui.js?v=' in client.get("/static/office/js/app.js").text
+    assert controller.status_code == 200
+    assert "initOfficeGlossary" in controller.text
+    assert "highlightGlossaryScope" in controller.text
+    assert "alphaos.glossary.knowledge" in glossary.text
+
+
+def test_office_glossary_is_functional_and_scoped_to_research_content() -> None:
+    script = client.get("/static/office/js/app.js").text
+    controller = client.get("/static/office/js/glossary-ui.js").text
+
+    assert 'id = "glossaryToggle"' in script
+    assert '"glossary-scope"' in script
+    assert "highlightGlossaryScope" in script
+    assert 'closest(".glossary-scope")' in controller
+    assert "AlphaGlossary.addKnowledge" in controller
+    assert "AlphaGlossary.removeKnowledge" in controller
+
+
+def test_glossary_matches_terms_inside_chinese_sentences() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the glossary unit tests")
+
+    completed = subprocess.run(
+        [node, "tests/test_glossary.cjs"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "glossary tests passed" in completed.stdout
+
+
+def test_office_uses_accessible_compact_navigation_on_narrow_screens() -> None:
+    script = client.get("/static/office/js/app.js").text
+    styles = client.get("/static/office/css/office.css").text
+
+    assert 'btn.setAttribute("aria-label", item.label)' in script
+    assert "@media (max-width: 760px)" in styles
+    assert ".sidebar { width: 64px;" in styles
+    assert ".nav-item > span:last-child" in styles
+    assert ".statusbar .sb-item:first-child { display: none; }" in styles
