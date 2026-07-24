@@ -284,14 +284,22 @@ def _quant_task(inputs: dict[str, Any] | None = None) -> ExpertTask:
     )
 
 
-def test_skill_registry_exposes_only_quant_owned_skills() -> None:
+def test_skill_registry_exposes_only_each_agents_owned_skills() -> None:
     registry = SkillRegistry(register_default_adapters=False)
 
     assert {spec.id for spec in registry.allowed_for_agent("quant")} == {
         "factor_idea_generation",
         "r020_volume_expansion",
     }
-    assert registry.allowed_for_agent("risk") == ()
+    assert {spec.id for spec in registry.allowed_for_agent("risk")} == {
+        "event_risk_alert"
+    }
+    assert {spec.id for spec in registry.allowed_for_agent("macro")} == {
+        "macro_monitor"
+    }
+    assert {spec.id for spec in registry.allowed_for_agent("portfolio")} == {
+        "portfolio_liquidity_stress"
+    }
     assert {item["id"] for item in registry.prompt_payload("quant")} == {
         "factor_idea_generation",
         "r020_volume_expansion",

@@ -64,6 +64,65 @@ APPROVED_REPOSITORIES: dict[str, dict[str, Any]] = {
             "skill-pandadata-api": "backend.services.pandadata_client.PandaDataClient"
         },
     },
+    "macro_monitor": {
+        "repository": "quantskills/skill-macro-monitor",
+        "commit_sha": "cf1f76aaf7be751988343c73363199a0b422bf15",
+        "directory": "skill-macro-monitor",
+        "skill_path": ".",
+        "license": "GPL-3.0",
+        "owner": "macro",
+        "mode": "instruction",
+        "expected_entrypoint": "SKILL.md",
+        "critical_files": [
+            "SKILL.md",
+            "references/macro-monitor-guide.md",
+            "LICENSE",
+        ],
+        "dependency_mapping": {
+            "skill-pandadata-api": "backend.services.pandadata_client.PandaDataClient"
+        },
+    },
+    "event_risk_alert": {
+        "repository": "quantskills/skill-event-risk-alert",
+        "commit_sha": "7a7cbf1d4f94c0b02486a3102c3fab65d35b64a2",
+        "directory": "skill-event-risk-alert",
+        "skill_path": ".",
+        "license": "GPL-3.0-only",
+        "owner": "risk",
+        "mode": "instruction",
+        "expected_entrypoint": "SKILL.md",
+        "critical_files": [
+            "SKILL.md",
+            "references/event-risk-alert-guide.md",
+            "LICENSE",
+        ],
+        "dependency_mapping": {
+            "skill-pandadata-api": "backend.services.pandadata_client.PandaDataClient"
+        },
+    },
+    "portfolio_liquidity_stress": {
+        "repository": (
+            "quantskills/skill-portfolio-liquidity-stress-test"
+        ),
+        "commit_sha": "fe7a958611aa7ed8f05a49d7f63fa8afd036acf8",
+        "directory": "skill-portfolio-liquidity-stress-test",
+        "skill_path": ".",
+        "license": "GPL-3.0-only",
+        "owner": "portfolio",
+        "mode": "executable",
+        "expected_entrypoint": "scripts/stress_liquidity.py",
+        "critical_files": [
+            "SKILL.md",
+            "scripts/stress_liquidity.py",
+            "references/methodology.md",
+            "references/output-contract.md",
+            "references/pandadata-integration.md",
+            "LICENSE",
+        ],
+        "dependency_mapping": {
+            "skill-pandadata-api": "backend.services.pandadata_client.PandaDataClient"
+        },
+    },
 }
 
 

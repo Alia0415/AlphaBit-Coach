@@ -52,7 +52,7 @@ def test_overview_reports_real_counts() -> None:
     body = _client().get("/api/overview").json()
 
     assert body["enabled_experts"] == 5
-    assert body["enabled_skills"] == 3
+    assert body["enabled_skills"] == 6
     assert body["total_tasks"] == 0
     assert body["completed_tasks"] == 0
     assert body["report_count"] == 0

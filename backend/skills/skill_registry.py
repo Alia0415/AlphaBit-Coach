@@ -33,6 +33,8 @@ FACTOR_IDEA_REFERENCES = [
 ]
 
 DOSSIER_REFERENCES = ["references/dossier-guide.md"]
+MACRO_MONITOR_REFERENCES = ["references/macro-monitor-guide.md"]
+EVENT_RISK_REFERENCES = ["references/event-risk-alert-guide.md"]
 
 
 DEFAULT_SKILLS = (
@@ -171,6 +173,115 @@ DEFAULT_SKILLS = (
             "research_goal",
         ],
     ),
+    SkillSpec(
+        id="macro_monitor",
+        name="Macro Monitor",
+        description="以可追溯的 PandaData 指标监测宏观、政策、周期和流动性",
+        mode=SkillMode.INSTRUCTION,
+        enabled=True,
+        owner_agents=["macro"],
+        input_schema={
+            "type": "object",
+            "properties": {
+                "industry": {"type": "string"},
+                "time_range": {"type": "string"},
+                "research_goal": {"type": "string"},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"},
+            },
+            "required": ["industry", "time_range", "research_goal"],
+        },
+        output_schema={
+            "type": "object",
+            "required": ["methodology_loaded", "validation_status"],
+        },
+        source_repository="quantskills/skill-macro-monitor",
+        source_ref="cf1f76aaf7be751988343c73363199a0b422bf15",
+        license="GPL-3.0",
+        runtime_path="skill-macro-monitor",
+        expected_entrypoint="SKILL.md",
+        allowed_references=MACRO_MONITOR_REFERENCES,
+        required_references=MACRO_MONITOR_REFERENCES,
+        capabilities=["macro_analysis", "policy_analysis", "cycle_analysis"],
+        required_task_inputs=["industry", "time_range", "research_goal"],
+        optional_task_inputs=["start_date", "end_date"],
+    ),
+    SkillSpec(
+        id="event_risk_alert",
+        name="A-Share Event Risk Alert",
+        description="对 A 股观察名单执行可追溯的公告与事件风险扫描",
+        mode=SkillMode.INSTRUCTION,
+        enabled=True,
+        owner_agents=["risk"],
+        input_schema={
+            "type": "object",
+            "x-data-source": "pandadata_event_data",
+            "properties": {
+                "symbol": {"type": "string"},
+                "symbols": {"type": "array", "items": {"type": "string"}},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"},
+            },
+        },
+        output_schema={
+            "type": "object",
+            "required": [
+                "symbols",
+                "data_scope",
+                "events",
+                "validation_status",
+            ],
+        },
+        source_repository="quantskills/skill-event-risk-alert",
+        source_ref="7a7cbf1d4f94c0b02486a3102c3fab65d35b64a2",
+        license="GPL-3.0-only",
+        runtime_path="skill-event-risk-alert",
+        expected_entrypoint="SKILL.md",
+        allowed_references=EVENT_RISK_REFERENCES,
+        required_references=EVENT_RISK_REFERENCES,
+        capabilities=["event_risk_monitoring", "watchlist_risk_screening"],
+        optional_task_inputs=["symbol", "symbols", "start_date", "end_date"],
+    ),
+    SkillSpec(
+        id="portfolio_liquidity_stress",
+        name="Portfolio Liquidity Stress Test",
+        description="基于持仓、ADV、价差和波动率执行确定性的流动性压力情景",
+        mode=SkillMode.EXECUTABLE,
+        enabled=True,
+        owner_agents=["portfolio"],
+        input_schema={
+            "type": "object",
+            "properties": {
+                "holdings": {"type": "array"},
+                "participation": {"type": "number"},
+                "volume_shock": {"type": "number"},
+                "horizon_days": {"type": "integer"},
+                "eta": {"type": "number"},
+                "redemption_value": {"type": ["number", "null"]},
+            },
+            "required": ["holdings"],
+        },
+        output_schema={
+            "type": "object",
+            "required": ["report", "validation_status"],
+        },
+        source_repository=(
+            "quantskills/skill-portfolio-liquidity-stress-test"
+        ),
+        source_ref="fe7a958611aa7ed8f05a49d7f63fa8afd036acf8",
+        license="GPL-3.0-only",
+        runtime_path="skill-portfolio-liquidity-stress-test",
+        expected_entrypoint="scripts/stress_liquidity.py",
+        capabilities=["liquidity_stress_testing", "redemption_scenario_analysis"],
+        required_task_inputs=["holdings"],
+        optional_task_inputs=[
+            "participation",
+            "volume_shock",
+            "horizon_days",
+            "eta",
+            "redemption_value",
+        ],
+    ),
 )
 
 
@@ -186,6 +297,7 @@ class SkillRegistry:
         runtime_home: Path | None = None,
         lock_path: Path | None = None,
         ark_client: Any | None = None,
+        pandadata_client: Any | None = None,
         register_default_adapters: bool = True,
     ) -> None:
         specs = tuple(skills)
@@ -199,7 +311,7 @@ class SkillRegistry:
         )
         self._adapters: dict[str, SkillAdapter] = dict(adapters or {})
         if register_default_adapters:
-            self._register_defaults(ark_client)
+            self._register_defaults(ark_client, pandadata_client)
 
     def get(self, skill_id: str) -> SkillSpec:
         try:
@@ -276,7 +388,11 @@ class SkillRegistry:
                 error="Skill adapter raised an internal error.",
             )
 
-    def _register_defaults(self, ark_client: Any | None) -> None:
+    def _register_defaults(
+        self,
+        ark_client: Any | None,
+        pandadata_client: Any | None,
+    ) -> None:
         from backend.skills.adapters.factor_idea_generation import (
             FactorIdeaGenerationAdapter,
         )
@@ -286,20 +402,37 @@ class SkillRegistry:
         from backend.skills.adapters.a_share_stock_dossier import (
             AShareStockDossierAdapter,
         )
+        from backend.skills.adapters.event_risk_alert import EventRiskAlertAdapter
+        from backend.skills.adapters.macro_monitor import MacroMonitorAdapter
+        from backend.skills.adapters.portfolio_liquidity_stress import (
+            PortfolioLiquidityStressAdapter,
+        )
         from backend.skills.loaders.instruction_skill_loader import (
             InstructionSkillLoader,
         )
+        from backend.services.pandadata_client import PandaDataClient
+
+        loader = InstructionSkillLoader(locator=self.locator)
+        data_client = pandadata_client or PandaDataClient()
 
         defaults: dict[str, SkillAdapter] = {
             "factor_idea_generation": FactorIdeaGenerationAdapter(
-                loader=InstructionSkillLoader(locator=self.locator),
+                loader=loader,
                 ark_client=ark_client,
             ),
             "r020_volume_expansion": R020VolumeExpansionAdapter(
                 locator=self.locator
             ),
             "a_share_stock_dossier": AShareStockDossierAdapter(
-                loader=InstructionSkillLoader(locator=self.locator),
+                loader=loader,
+            ),
+            "macro_monitor": MacroMonitorAdapter(loader=loader),
+            "event_risk_alert": EventRiskAlertAdapter(
+                loader=loader,
+                data_client=data_client,
+            ),
+            "portfolio_liquidity_stress": PortfolioLiquidityStressAdapter(
+                locator=self.locator
             ),
         }
         for skill_id, adapter in defaults.items():

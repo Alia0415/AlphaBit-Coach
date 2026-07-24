@@ -267,7 +267,8 @@ class Store:
             if report_row is None:
                 return None
             followup_rows = self._conn.execute(
-                "SELECT * FROM followups WHERE report_id = ? ORDER BY created_at ASC, id ASC",
+                "SELECT * FROM followups WHERE report_id = ? "
+                "ORDER BY created_at ASC, rowid ASC",
                 (report_id,),
             ).fetchall()
         report = _report_to_dict(report_row)
@@ -331,7 +332,8 @@ class Store:
     def list_followups(self, report_id: str) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM followups WHERE report_id = ? ORDER BY created_at ASC, id ASC",
+                "SELECT * FROM followups WHERE report_id = ? "
+                "ORDER BY created_at ASC, rowid ASC",
                 (report_id,),
             ).fetchall()
         return [_followup_to_dict(row) for row in rows]

@@ -14,6 +14,7 @@ from backend.core.agent_registry import AgentRegistry
 from backend.core.contracts import AgentId, ExpertTask
 from backend.core.workflow_executor import _default_handlers
 from backend.services.pandadata_client import PandaDataClient
+from backend.skills.contracts import SkillResult, SkillStatus
 
 
 class FakePandaSDK:
@@ -119,6 +120,21 @@ class MockArk:
         return self.responses.pop(0)
 
 
+class CompletedSkillRegistry:
+    def execute(self, invocation: Any) -> SkillResult:
+        return SkillResult(
+            invocation_id=invocation.invocation_id,
+            skill_id=invocation.skill_id,
+            status=SkillStatus.COMPLETED,
+            summary="methodology verified",
+            provenance={
+                "source_repository": "quantskills/skill-macro-monitor",
+                "source_commit": "c" * 40,
+                "license": "GPL-3.0",
+            },
+        )
+
+
 class MockMacroData:
     def __init__(self) -> None:
         self.catalog_calls: list[dict[str, Any]] = []
@@ -204,6 +220,7 @@ def test_macro_agent_uses_dynamic_pandadata_evidence_and_returns_contract() -> N
     agent = MacroAgent(
         data_client=data,
         ark_client=ark,
+        skill_registry=CompletedSkillRegistry(),
         today_provider=lambda: date(2026, 7, 23),
     )
 
@@ -270,6 +287,7 @@ def test_macro_rejects_catalog_external_symbol_without_data_call() -> None:
     result = MacroAgent(
         data_client=data,
         ark_client=ark,
+        skill_registry=CompletedSkillRegistry(),
         today_provider=lambda: date(2026, 7, 23),
     ).execute(macro_task())
 
@@ -293,6 +311,7 @@ def test_macro_structured_stages_share_one_repair_attempt() -> None:
     result = MacroAgent(
         data_client=data,
         ark_client=ark,
+        skill_registry=CompletedSkillRegistry(),
         today_provider=lambda: date(2026, 7, 23),
     ).execute(macro_task())
 
@@ -314,6 +333,7 @@ def test_macro_fails_instead_of_using_model_only_when_catalog_is_empty() -> None
     result = MacroAgent(
         data_client=data,
         ark_client=ark,
+        skill_registry=CompletedSkillRegistry(),
         today_provider=lambda: date(2026, 7, 23),
     ).execute(macro_task())
 
@@ -362,6 +382,7 @@ def test_macro_continues_with_partial_api_failure() -> None:
     result = MacroAgent(
         data_client=data,
         ark_client=ark,
+        skill_registry=CompletedSkillRegistry(),
         today_provider=lambda: date(2026, 7, 23),
     ).execute(macro_task())
 
@@ -460,6 +481,7 @@ def test_semiconductor_macro_result_has_complete_json_structure() -> None:
     result = MacroAgent(
         data_client=data,
         ark_client=ark,
+        skill_registry=CompletedSkillRegistry(),
         today_provider=lambda: date(2026, 7, 23),
     ).execute(macro_task("半导体"))
 

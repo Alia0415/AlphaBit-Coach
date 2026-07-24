@@ -61,6 +61,10 @@ def test_task_interpreter_recognizes_company_factor_and_risk_tasks() -> None:
         "对高换手成交量策略做风险分析。",
         gate.evaluate("对高换手成交量策略做风险分析。"),
     )
+    event_risk = interpreter.interpret(
+        "扫描 600519.SH 从20260401到20260725的事件风险。",
+        gate.evaluate("扫描 600519.SH 从20260401到20260725的事件风险。"),
+    )
 
     assert company.task_type == "company_research"
     assert company.subjects == ["贵州茅台"]
@@ -70,6 +74,13 @@ def test_task_interpreter_recognizes_company_factor_and_risk_tasks() -> None:
     assert factor.start_date == "20240101"
     assert factor.end_date == "20241231"
     assert risk.task_type == "risk_review"
+    assert event_risk.task_type == "risk_review"
+    assert event_risk.subjects == ["600519.SH"]
+    assert event_risk.evidence_requirements == [
+        "主要风险源",
+        "被挑战的假设",
+        "缺失证据",
+    ]
     assert "agent" not in type(company).model_fields
     assert "skill" not in type(company).model_fields
 
