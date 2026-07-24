@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, TypeVar
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -20,6 +21,8 @@ from backend.services.pandadata_client import (
     PandaDataClient,
     PandaDataConfigurationError,
 )
+from backend.skills.contracts import SkillInvocation, SkillStatus
+from backend.skills.skill_registry import SkillRegistry
 
 HISTORICAL_MONTHS = 24
 MAX_CATALOG_ROWS = 500
@@ -91,10 +94,15 @@ class MacroAgent:
         self,
         data_client: PandaDataClient | None = None,
         ark_client: ArkClient | None = None,
+        skill_registry: SkillRegistry | None = None,
         today_provider: Callable[[], date] = date.today,
     ) -> None:
         self._data_client = data_client or PandaDataClient()
         self._ark_client = ark_client
+        self.skills = skill_registry or SkillRegistry(
+            ark_client=ark_client,
+            pandadata_client=self._data_client,
+        )
         self._today_provider = today_provider
 
     def __call__(self, task: ExpertTask) -> ExpertResult:
@@ -112,6 +120,54 @@ class MacroAgent:
             return _failed(
                 task,
                 "Macro Agent 需要 industry、time_range 和 research_goal。",
+            )
+
+        skill_result = self.skills.execute(
+            SkillInvocation(
+                invocation_id=str(uuid4()),
+                skill_id="macro_monitor",
+                agent=AgentId.MACRO.value,
+                objective=task.objective,
+                inputs=dict(task.inputs),
+            )
+        )
+        skill_call = {
+            "tool": "macro_monitor",
+            "status": skill_result.status.value,
+            "arguments": {
+                key: task.inputs.get(key)
+                for key in (
+                    "industry",
+                    "time_range",
+                    "research_goal",
+                    "start_date",
+                    "end_date",
+                )
+                if key in task.inputs
+            },
+        }
+        skill_events = [
+            {
+                "type": (
+                    "skill_completed"
+                    if skill_result.status == SkillStatus.COMPLETED
+                    else "skill_failed"
+                ),
+                "metadata": {
+                    "skill_id": "macro_monitor",
+                    "status": skill_result.status.value,
+                },
+            }
+        ]
+        if skill_result.status != SkillStatus.COMPLETED:
+            return _failed(
+                task,
+                skill_result.error or "Macro Monitor Skill 不可用。",
+                tool_calls=[skill_call],
+                metadata={
+                    "actual_skills": ["macro_monitor"],
+                    "agent_events": skill_events,
+                },
             )
 
         window = _resolve_window(inputs, self._today_provider)
@@ -178,7 +234,7 @@ class MacroAgent:
                 any_failed,
                 any_success,
             ) = self._fetch_series(selection, catalog_by_symbol, start_date, end_date)
-            tool_calls = [catalog_call, *series_tool_calls]
+            tool_calls = [catalog_call, *series_tool_calls, skill_call]
             if not any_success or not evidence:
                 return _failed(
                     task,
@@ -229,6 +285,9 @@ class MacroAgent:
             tool_calls=tool_calls,
             data_sources=data_sources,
             metadata={
+                "actual_skills": ["macro_monitor"],
+                "skill_provenance": [skill_result.provenance],
+                "agent_events": skill_events,
                 "analysis_basis": "pandadata_macro_data",
                 "historical_window": {
                     "start_date": start_date,

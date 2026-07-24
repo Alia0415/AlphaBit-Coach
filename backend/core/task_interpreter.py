@@ -134,6 +134,15 @@ def _task_type(text: str) -> TaskType:
         return "comparison"
     if any(marker in text for marker in ("因子", "r020", "ic检验", "ic ", "factor")):
         return "factor_research"
+    event_risk_markers = (
+        "事件风险",
+        "风险扫描",
+        "风险预警",
+        "公告风险",
+        "观察名单风险",
+    )
+    if any(marker in text for marker in event_risk_markers):
+        return "risk_review"
     company_markers = ("财务", "财报", "现金流", "盈利质量", "审计意见", "公司", "个股")
     if any(marker in text for marker in company_markers):
         return "company_research"

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-07-23T14:26:36.769456+00:00",
+  "generated_at": "2026-07-24T18:02:25.358547+00:00",
   "runtime_home": ".runtime_skills",
   "policy": "Only the fixed, pinned AlphaOS runtime allowlist may be installed.",
   "skills": {
@@ -9,7 +9,7 @@
       "commit_sha": "4fda44d27bc80efe60284da6b03bc56a2bf4e82f",
       "skill_path": ".",
       "license": "GPL-3.0-only",
-      "installed_at": "2026-07-23T14:26:36.769456+00:00",
+      "installed_at": "2026-07-24T18:02:25.358547+00:00",
       "owner": "quant",
       "mode": "instruction",
       "expected_entrypoint": "SKILL.md",
@@ -28,7 +28,7 @@
       "commit_sha": "b169f31106f748b8746c4c1028c162e95f7277f4",
       "skill_path": "factors/R020-5d-z-scored-volume-expansion",
       "license": "GPL-3.0-only",
-      "installed_at": "2026-07-23T14:26:36.769456+00:00",
+      "installed_at": "2026-07-24T18:02:25.358547+00:00",
       "owner": "quant",
       "mode": "executable",
       "expected_entrypoint": "scripts/factor.py",
@@ -44,7 +44,7 @@
       "commit_sha": "213a9cb6b36ccc3ae4c72606ff72211de7b67199",
       "skill_path": ".",
       "license": "GPL-3.0-only",
-      "installed_at": "2026-07-23T14:26:36.769456+00:00",
+      "installed_at": "2026-07-24T18:02:25.358547+00:00",
       "owner": "research",
       "mode": "instruction",
       "expected_entrypoint": "SKILL.md",
@@ -53,6 +53,66 @@
         "SKILL.md": "0cb86603769251e24a58d6c28c9481f8fca3526a28bbd6f8ef8cf1b1ea7761ab",
         "references/dossier-guide.md": "7434131ebe04dc986d3393c87e533ded97dc293d89b7ec9f680770a0bc8047ad",
         "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+      },
+      "dependency_mapping": {
+        "skill-pandadata-api": "backend.services.pandadata_client.PandaDataClient"
+      }
+    },
+    "macro_monitor": {
+      "repository": "quantskills/skill-macro-monitor",
+      "commit_sha": "cf1f76aaf7be751988343c73363199a0b422bf15",
+      "skill_path": ".",
+      "license": "GPL-3.0",
+      "installed_at": "2026-07-24T18:02:25.358547+00:00",
+      "owner": "macro",
+      "mode": "instruction",
+      "expected_entrypoint": "SKILL.md",
+      "entrypoint_sha256": "3c0b15a517f0c547012d4bb380c98159aaf30967ab250cc98c9804b748420ef4",
+      "file_sha256": {
+        "SKILL.md": "3c0b15a517f0c547012d4bb380c98159aaf30967ab250cc98c9804b748420ef4",
+        "references/macro-monitor-guide.md": "3036b61140f8090de29798f57fe292934b130ee2445226a94c684db57b4c0a1d",
+        "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+      },
+      "dependency_mapping": {
+        "skill-pandadata-api": "backend.services.pandadata_client.PandaDataClient"
+      }
+    },
+    "event_risk_alert": {
+      "repository": "quantskills/skill-event-risk-alert",
+      "commit_sha": "7a7cbf1d4f94c0b02486a3102c3fab65d35b64a2",
+      "skill_path": ".",
+      "license": "GPL-3.0-only",
+      "installed_at": "2026-07-24T18:02:25.358547+00:00",
+      "owner": "risk",
+      "mode": "instruction",
+      "expected_entrypoint": "SKILL.md",
+      "entrypoint_sha256": "21dac6df9ec38581815ad94e9e021b1d624090f4237e78fed269be2a63a398ee",
+      "file_sha256": {
+        "SKILL.md": "21dac6df9ec38581815ad94e9e021b1d624090f4237e78fed269be2a63a398ee",
+        "references/event-risk-alert-guide.md": "cce2d34699f7211f3bfe1c50592ab352ae27e2a7b13000194dc19610a0af94f0",
+        "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+      },
+      "dependency_mapping": {
+        "skill-pandadata-api": "backend.services.pandadata_client.PandaDataClient"
+      }
+    },
+    "portfolio_liquidity_stress": {
+      "repository": "quantskills/skill-portfolio-liquidity-stress-test",
+      "commit_sha": "fe7a958611aa7ed8f05a49d7f63fa8afd036acf8",
+      "skill_path": ".",
+      "license": "GPL-3.0-only",
+      "installed_at": "2026-07-24T18:02:25.358547+00:00",
+      "owner": "portfolio",
+      "mode": "executable",
+      "expected_entrypoint": "scripts/stress_liquidity.py",
+      "entrypoint_sha256": "e6c478b90bdb75a923aa1810f062331a7aa1085177a939aad457dcc42643a01b",
+      "file_sha256": {
+        "SKILL.md": "f1268489a0adb1708ef26babfbbb4a261f039770f8d84670578f9f818be7c969",
+        "scripts/stress_liquidity.py": "e6c478b90bdb75a923aa1810f062331a7aa1085177a939aad457dcc42643a01b",
+        "references/methodology.md": "bd24289e2b8cb640c4c58b403db2f7ea9f8e277cebc5e939dbf2e649eaf74565",
+        "references/output-contract.md": "3e29656b0a7e619da955e1705d59b09277def408d5b24f62bbf7e736067d1e34",
+        "references/pandadata-integration.md": "60463efc89406a26b89daf233ec0a5eed77e625c15a6fd3efec0732dad2de1e8",
+        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809"
       },
       "dependency_mapping": {
         "skill-pandadata-api": "backend.services.pandadata_client.PandaDataClient"
