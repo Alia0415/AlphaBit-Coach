@@ -543,8 +543,15 @@ async def stream_task(task_id: str) -> StreamingResponse:
         )
         completed = ExecutionEvent(
             type="task_completed",
-            message="AlphaOS 任务处理完成。",
+            message={
+                "completed": "AlphaOS 任务成功完成。",
+                "partially_completed": "AlphaOS 任务部分完成。",
+                "failed": "AlphaOS 任务执行失败。",
+                "needs_clarification": "AlphaOS 任务需要补充信息。",
+                "rejected": "AlphaOS 任务已拒绝执行。",
+            }.get(aggregation.completion_status, "AlphaOS 任务处理结束。"),
             metadata={
+                "status": aggregation.completion_status,
                 "completed_steps": sum(
                     r.status == "completed" for r in results.values()
                 ),

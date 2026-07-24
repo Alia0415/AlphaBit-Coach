@@ -2294,6 +2294,14 @@ function renderBlockData(data) {
 
 function buildFollowPanelLive(report) {
   const panel = el("div", "panel follow-panel");
+  const completionStatus = String((report.aggregation || {}).completion_status || "failed");
+  const reportMessage = {
+    completed: `报告《${report.title}》已成功生成`,
+    partially_completed: `报告《${report.title}》已部分生成，部分步骤未完成`,
+    failed: `报告《${report.title}》执行失败，已保存失败说明`,
+    needs_clarification: `报告《${report.title}》尚未生成，需要补充信息`,
+    rejected: `报告《${report.title}》未生成，任务已被拒绝`,
+  }[completionStatus] || `报告《${report.title}》处理结束`;
   const head = el("div", "follow-head");
   head.appendChild(avatar("manager", 46, "fh-ava"));
   const who = el("div", "fh-who");
@@ -2308,7 +2316,7 @@ function buildFollowPanelLive(report) {
   scroll.id = "liveFollowScroll";
   panel.appendChild(scroll);
 
-  const seed = [{ role: "sys", text: `报告《${report.title}》已生成`, time: "" }];
+  const seed = [{ role: "sys", text: reportMessage, time: "" }];
   (report.followups || []).forEach((f) => {
     seed.push({ role: f.role === "user" ? "me" : "bot", text: f.text, time: (f.created_at || "").slice(11, 19), evidence: f.evidence });
   });
@@ -2805,6 +2813,7 @@ function pageWarRoomLive() {
   const stepStatus = {};
   let logCount = 0;
   let reportId = null;
+  let completionStatus = null;
 
   const elapsedTimer = setInterval(() => {
     pstats.elapsed.querySelector("strong").textContent = `${Math.floor((Date.now() - startedAt) / 1000)}s`;
@@ -2906,7 +2915,11 @@ function pageWarRoomLive() {
         pushLog(agent || "report", evt.message || "正在整合结论…", "run");
         break;
       case "task_completed":
-        pushLog(agent || "system", evt.message || "任务执行完成", "done");
+        pushLog(
+          agent || "system",
+          evt.message || "任务处理结束",
+          ["failed", "rejected"].includes(meta.status) ? "fail" : "done",
+        );
         break;
       default:
         if (evt.message) pushLog(agent, evt.message);
@@ -2918,15 +2931,37 @@ function pageWarRoomLive() {
     onEvent: handleEvent,
     onAggregation: (data) => {
       if (data && data.report_id) reportId = data.report_id;
-      pushLog("report", "聚合报告已生成", "done");
+      completionStatus = data && data.aggregation
+        ? data.aggregation.completion_status
+        : completionStatus;
+      const succeeded = completionStatus === "completed";
+      const partial = completionStatus === "partially_completed";
+      pushLog(
+        "report",
+        succeeded
+          ? "聚合报告已成功生成"
+          : partial
+            ? "聚合报告已部分生成"
+            : "聚合未能形成有效报告，已保存失败说明",
+        succeeded || partial ? "done" : "fail",
+      );
     },
     onDone: (data) => {
       clearInterval(elapsedTimer);
-      badge.className = "badge online";
-      badge.innerHTML = '<span class="dot"></span>已完成';
+      completionStatus = (data && data.status) || completionStatus || "failed";
+      const succeeded = completionStatus === "completed";
+      const partial = completionStatus === "partially_completed";
+      badge.className = succeeded ? "badge online" : "badge busy";
+      badge.innerHTML = `<span class="dot"></span>${succeeded ? "已完成" : partial ? "部分完成" : "执行失败"}`;
       updateProgress();
       const finalReport = reportId || (data && data.report_id) || null;
-      pushLog("system", "任务结束，正在跳转报告…", "done");
+      pushLog(
+        "system",
+        succeeded || partial
+          ? "任务结束，正在跳转报告…"
+          : "任务失败，正在跳转失败说明…",
+        succeeded || partial ? "done" : "fail",
+      );
       setTimeout(() => { navigate("reports", finalReport); }, 900);
     },
     onError: (info) => {

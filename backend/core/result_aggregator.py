@@ -42,6 +42,21 @@ _METRIC_FIELDS = {
     "lowest_close",
     "average_volume",
 }
+_DOSSIER_METRIC_FIELDS = {
+    "revenue_yoy",
+    "operating_profit_yoy",
+    "net_profit_yoy",
+    "net_profit_excluding_nonrecurring_yoy",
+    "gross_margin",
+    "operating_margin",
+    "net_margin",
+    "operating_cash_flow_to_net_profit",
+    "asset_liability_ratio",
+    "current_ratio",
+    "accounts_receivable_to_revenue",
+    "inventory_to_revenue",
+    "total_asset_turnover",
+}
 _UNVALIDATED_STATUSES = {
     "unverified",
     "computed_not_validated",
@@ -1001,6 +1016,46 @@ class ResultAggregator:
                         )
                     )
         subject = _subject(evidence, data)
+        if isinstance(data, dict):
+            for section_name, section in data.items():
+                if not isinstance(section, dict):
+                    continue
+                derived_metrics = section.get("derived_metrics")
+                if not isinstance(derived_metrics, list):
+                    continue
+                for item in derived_metrics:
+                    if not isinstance(item, dict):
+                        continue
+                    name = item.get("metric")
+                    value = item.get("value")
+                    if (
+                        name not in _DOSSIER_METRIC_FIELDS
+                        or isinstance(value, bool)
+                        or not isinstance(value, (int, float))
+                    ):
+                        continue
+                    period = str(item.get("period") or "").strip()
+                    metric_subject = " · ".join(
+                        part for part in (subject, period) if part
+                    ) or None
+                    key = (metric_subject or "", str(name), repr(value))
+                    if key in metric_keys:
+                        continue
+                    metric_keys.add(key)
+                    profile.metrics.append(
+                        {
+                            "source_step": step_id,
+                            **metric_card(
+                                str(name),
+                                value,
+                                subject=metric_subject,
+                            ),
+                            "section": section_name,
+                            "period": period or None,
+                            "formula": item.get("formula"),
+                            "method": item.get("method"),
+                        }
+                    )
         for container in containers:
             for name, value in container.items():
                 if (

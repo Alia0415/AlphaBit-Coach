@@ -25,6 +25,19 @@ METRIC_LABELS = {
     "highest_close": "区间最高收盘价",
     "lowest_close": "区间最低收盘价",
     "average_volume": "平均成交量",
+    "revenue_yoy": "营业收入同比增速",
+    "operating_profit_yoy": "营业利润同比增速",
+    "net_profit_yoy": "归母净利润同比增速",
+    "net_profit_excluding_nonrecurring_yoy": "扣非归母净利润同比增速",
+    "gross_margin": "毛利率",
+    "operating_margin": "营业利润率",
+    "net_margin": "归母净利率",
+    "operating_cash_flow_to_net_profit": "经营现金流／归母净利润",
+    "asset_liability_ratio": "资产负债率",
+    "current_ratio": "流动比率",
+    "accounts_receivable_to_revenue": "应收账款／营业收入",
+    "inventory_to_revenue": "存货／营业收入",
+    "total_asset_turnover": "总资产周转率",
 }
 
 PERCENT_METRICS = {
@@ -33,6 +46,22 @@ PERCENT_METRICS = {
     "daily_volatility",
     "period_return",
     "coverage_ratio",
+    "revenue_yoy",
+    "operating_profit_yoy",
+    "net_profit_yoy",
+    "net_profit_excluding_nonrecurring_yoy",
+    "gross_margin",
+    "operating_margin",
+    "net_margin",
+    "asset_liability_ratio",
+    "accounts_receivable_to_revenue",
+    "inventory_to_revenue",
+}
+
+RATIO_METRICS = {
+    "operating_cash_flow_to_net_profit",
+    "current_ratio",
+    "total_asset_turnover",
 }
 
 
@@ -84,6 +113,8 @@ def _format_metric(name: str, value: Any) -> str:
     if isinstance(value, (int, float)):
         if name in PERCENT_METRICS:
             return f"{value:.2%}"
+        if name in RATIO_METRICS:
+            return f"{value:.2f}x"
         if isinstance(value, int):
             return f"{value:,}"
         return f"{value:,.4g}"

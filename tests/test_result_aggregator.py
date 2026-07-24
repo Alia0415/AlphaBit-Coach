@@ -190,6 +190,50 @@ def test_research_only_generates_metrics_scope_and_plain_metric_explanation() ->
     assert "最大可能经历约 22.30% 的账面下跌" in drawdown["explanation"]
 
 
+def test_dossier_derived_metrics_are_promoted_to_user_facing_cards() -> None:
+    plan = _plan(["research"], intent="company_financials")
+    result = _result(
+        "research_1",
+        "research",
+        evidence=[
+            {
+                "type": "skill_result",
+                "data": {
+                    "symbol": "600519.SH",
+                    "profitability": {
+                        "derived_metrics": [
+                            {
+                                "metric": "gross_margin",
+                                "value": 0.9193,
+                                "period": "2024q4",
+                                "formula": "毛利润 / 营业收入",
+                                "method": "get_fina_reports",
+                            }
+                        ]
+                    },
+                },
+            }
+        ],
+    )
+
+    aggregation = ResultAggregator().aggregate(
+        "分析公司财务质量",
+        plan,
+        {"research_1": result},
+    )
+    metric_block = next(
+        block for block in aggregation.content_blocks if block.type == "metric_cards"
+    )
+    gross_margin = metric_block.data["metrics"][0]
+
+    assert aggregation.output_mode == "data_analysis"
+    assert gross_margin["label"] == "毛利率"
+    assert gross_margin["display_value"] == "91.93%"
+    assert gross_margin["subject"] == "600519.SH · 2024q4"
+    assert gross_margin["formula"] == "毛利润 / 营业收入"
+    assert gross_margin["method"] == "get_fina_reports"
+
+
 def test_parallel_results_are_aggregated_but_missing_agent_is_not_invented() -> None:
     plan = _plan(["macro", "research"], intent="industry_opportunity")
     results = {
