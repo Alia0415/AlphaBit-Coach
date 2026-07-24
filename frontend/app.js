@@ -291,6 +291,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   checkServices();
   renderResponse(SCENARIOS[state.scenario].response, "demo");
+  if (typeof AlphaGlossary !== "undefined") initGlossary();
 });
 
 function cacheElements() {
@@ -476,9 +477,12 @@ function renderResponse(response, mode) {
   renderExpertResults(results);
   renderPlainResult(plainResult);
   renderTechnicalSummary(response, plainResult);
-  elements.finalAnswer.innerHTML = renderSafeMarkdown(
+  const answerHtml = renderSafeMarkdown(
     `${plainResult.directAnswer.headline}\n\n${plainResult.directAnswer.explanation}`
   );
+  elements.finalAnswer.innerHTML = typeof AlphaGlossary !== "undefined"
+    ? AlphaGlossary.highlightTerms(answerHtml)
+    : answerHtml;
   elements.disclaimer.textContent = response.disclaimer || DISCLAIMER;
   elements.rawJson.textContent = JSON.stringify(safeForDisplay(response), null, 2);
   setView(state.view);
@@ -673,8 +677,12 @@ function resultFacts(result) {
 }
 
 function renderPlainResult(result) {
-  elements.plainHeadline.textContent = result.directAnswer.headline;
-  elements.plainExplanation.textContent = result.directAnswer.explanation;
+  elements.plainHeadline.innerHTML = typeof AlphaGlossary !== "undefined"
+    ? AlphaGlossary.highlightTerms(result.directAnswer.headline)
+    : escapeHtml(result.directAnswer.headline);
+  elements.plainExplanation.innerHTML = typeof AlphaGlossary !== "undefined"
+    ? AlphaGlossary.highlightTerms(result.directAnswer.explanation)
+    : escapeHtml(result.directAnswer.explanation);
   elements.completionStatus.textContent = completionLabel(result.completionStatus);
   elements.confidenceBadge.textContent = confidenceLabel(
     result.directAnswer.confidence
@@ -724,6 +732,9 @@ function renderContentBlocks(blocks) {
     BLOCK_RENDERERS[block.type](card, block.data || {});
     elements.contentBlocks.append(card);
   });
+  if (typeof AlphaGlossary !== "undefined") {
+    AlphaGlossary.highlightInDOM(elements.contentBlocks);
+  }
 }
 
 function renderFindingCards(card, data) {
@@ -844,7 +855,10 @@ function renderFailureNotice(card, data) {
 function renderReportBlock(card, data) {
   const report = document.createElement("div");
   report.className = "report-content";
-  report.innerHTML = renderSafeMarkdown(data.content || "");
+  const mdHtml = renderSafeMarkdown(data.content || "");
+  report.innerHTML = typeof AlphaGlossary !== "undefined"
+    ? AlphaGlossary.highlightTerms(mdHtml)
+    : mdHtml;
   card.append(report);
 }
 
@@ -937,9 +951,12 @@ function renderError(message) {
   banner.className = "error-banner";
   banner.textContent = `${userMessage} 系统没有切换或回退到演示数据。`;
   elements.expertResults.append(banner);
-  elements.plainHeadline.textContent = userMessage;
-  elements.plainExplanation.textContent =
-    "当前请求没有生成可以支持结论的结构化证据。";
+  elements.plainHeadline.innerHTML = typeof AlphaGlossary !== "undefined"
+    ? AlphaGlossary.highlightTerms(userMessage)
+    : escapeHtml(userMessage);
+  elements.plainExplanation.innerHTML = typeof AlphaGlossary !== "undefined"
+    ? AlphaGlossary.highlightTerms("当前请求没有生成可以支持结论的结构化证据。")
+    : escapeHtml("当前请求没有生成可以支持结论的结构化证据。");
   elements.completionStatus.textContent = "未完成";
   elements.confidenceBadge.textContent = "暂不适用";
   elements.plainSummary.classList.add("has-failures");
@@ -1054,6 +1071,137 @@ function emptyState(message) {
   element.className = "empty-state";
   element.textContent = message;
   return element;
+}
+
+// ── Glossary tooltip & knowledge panel ──
+
+function initGlossary() {
+  document.getElementById("glossaryToggle")?.addEventListener("click", toggleGlossaryPanel);
+  document.getElementById("glossaryPanelClose")?.addEventListener("click", toggleGlossaryPanel);
+  document.getElementById("glossaryOverlay")?.addEventListener("click", toggleGlossaryPanel);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.getElementById("glossaryOverlay")?.classList.contains("open")) {
+      toggleGlossaryPanel();
+    }
+  });
+
+  document.addEventListener("mouseover", (e) => {
+    const term = e.target.closest(".glossary-term");
+    if (!term) return;
+    showGlossaryTooltip(term, e);
+  });
+
+  document.addEventListener("mouseout", (e) => {
+    if (e.target.closest(".glossary-term")) {
+      const related = e.relatedTarget;
+      if (related && (related.closest?.(".glossary-tooltip") || related.closest?.(".glossary-term"))) return;
+      hideGlossaryTooltip();
+    }
+  });
+}
+
+function getOrCreateTooltip() {
+  let tooltip = document.getElementById("glossaryTooltip");
+  if (tooltip) return tooltip;
+  tooltip = document.createElement("div");
+  tooltip.id = "glossaryTooltip";
+  tooltip.className = "glossary-tooltip";
+  tooltip.innerHTML =
+    '<span class="glossary-tooltip-term"></span>' +
+    '<span class="glossary-tooltip-exp"></span>' +
+    '<button class="glossary-save-btn">☆ 收藏到知识库</button>';
+  document.body.appendChild(tooltip);
+
+  tooltip.addEventListener("mouseleave", () => {
+    hideGlossaryTooltip();
+  });
+
+  return tooltip;
+}
+
+function showGlossaryTooltip(el, event) {
+  const tooltip = getOrCreateTooltip();
+  const term = el.dataset.term || el.textContent;
+  const explanation = el.dataset.explanation || "";
+  const color = el.style.color || "var(--accent)";
+
+  tooltip.querySelector(".glossary-tooltip-term").textContent = term;
+  tooltip.querySelector(".glossary-tooltip-term").style.color = color;
+  tooltip.querySelector(".glossary-tooltip-exp").textContent = explanation;
+
+  const saveBtn = tooltip.querySelector(".glossary-save-btn");
+  const saved = AlphaGlossary.isKnowledgeSaved(term);
+  saveBtn.textContent = saved ? "★ 已收藏" : "☆ 收藏到知识库";
+  saveBtn.className = "glossary-save-btn" + (saved ? " saved" : "");
+  saveBtn.onclick = (e) => {
+    e.stopPropagation();
+    if (AlphaGlossary.isKnowledgeSaved(term)) {
+      AlphaGlossary.removeKnowledge(term);
+      saveBtn.textContent = "☆ 收藏到知识库";
+      saveBtn.className = "glossary-save-btn";
+    } else {
+      AlphaGlossary.addKnowledge(term, color, explanation);
+      saveBtn.textContent = "★ 已收藏";
+      saveBtn.className = "glossary-save-btn saved";
+    }
+  };
+
+  const x = Math.min(event.clientX, window.innerWidth - 360);
+  const y = Math.min(event.clientY - 10, window.innerHeight - 200);
+  tooltip.style.left = Math.max(8, x) + "px";
+  tooltip.style.top = Math.max(8, y) + "px";
+
+  tooltip.classList.add("visible");
+}
+
+function hideGlossaryTooltip() {
+  const tooltip = document.getElementById("glossaryTooltip");
+  if (tooltip) tooltip.classList.remove("visible");
+}
+
+function toggleGlossaryPanel() {
+  const overlay = document.getElementById("glossaryOverlay");
+  const panel = document.getElementById("glossaryPanel");
+  if (!overlay || !panel) return;
+  const isOpen = overlay.classList.contains("open");
+
+  overlay.classList.toggle("open", !isOpen);
+  panel.classList.toggle("open", !isOpen);
+
+  if (!isOpen) renderKnowledgePanel();
+  document.body.style.overflow = isOpen ? "" : "hidden";
+}
+
+function renderKnowledgePanel() {
+  const list = document.getElementById("glossaryKnowledgeList");
+  if (!list) return;
+  const knowledge = AlphaGlossary.getKnowledge();
+
+  if (!knowledge.length) {
+    list.innerHTML =
+      '<div class="glossary-empty-state">还没有收藏的术语。<br>在结果中点击高亮术语卡片上的「收藏到知识库」即可添加。</div>';
+    return;
+  }
+
+  list.innerHTML = knowledge
+    .map((item) => {
+      const style = "color:" + (item.color || "var(--accent)");
+      return (
+        '<div class="glossary-knowledge-card">' +
+        '<span class="g-term" style="' + style + '">' + escapeHtml(item.term) + "</span>" +
+        '<span class="g-exp">' + escapeHtml(item.explanation) + "</span>" +
+        '<button class="g-delete" data-term="' + escapeHtml(item.term) + '">删除</button>' +
+        "</div>"
+      );
+    })
+    .join("");
+
+  list.querySelectorAll(".g-delete").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      AlphaGlossary.removeKnowledge(btn.dataset.term);
+      renderKnowledgePanel();
+    });
+  });
 }
 
 function wait(milliseconds) {

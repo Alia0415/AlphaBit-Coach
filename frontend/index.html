@@ -29,6 +29,7 @@
           <span class="status-dot"></span>
           <span>正在连接</span>
         </div>
+        <button class="glossary-toggle-btn" id="glossaryToggle" type="button" title="词库">📚 <span>词库</span></button>
         <a class="ghost-link" href="/docs" target="_blank" rel="noreferrer">
           API Docs
           <span aria-hidden="true">↗</span>
@@ -276,6 +277,18 @@
     <script src="/static/presentation/status-labels.js" defer></script>
     <script src="/static/presentation/event-labels.js" defer></script>
     <script src="/static/presentation/build-plain-language-result.js" defer></script>
+    <script src="/static/glossary.js" defer></script>
     <script src="/static/app.js?v=20260723-p01" defer></script>
-  </body>
+
+  <div class="glossary-overlay" id="glossaryOverlay"></div>
+  <div class="glossary-panel" id="glossaryPanel">
+    <div class="glossary-panel-header">
+      <h2>📚 我的知识库</h2>
+      <button class="glossary-panel-close" id="glossaryPanelClose" type="button">✕</button>
+    </div>
+    <div class="glossary-panel-body">
+      <div class="glossary-knowledge-list" id="glossaryKnowledgeList"></div>
+    </div>
+  </div>
+</body>
 </html>
