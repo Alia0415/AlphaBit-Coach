@@ -43,11 +43,26 @@ import {
   openOfficeGlossary,
 } from "./glossary-ui.js?v=20260725-p09";
 
-// Live planning session shared across hall → clarify → war room. Holds the
-// real Manager plan and task id for the current run (live mode only).
-let liveSession = { taskId: null, prompt: "", plan: null };
+// Live planning session shared across hall → clarify → war room. The planning
+// phase is explicit so the war room can open immediately without inventing a
+// selected Agent or DAG before the real Manager response arrives.
+let liveSession = {
+  taskId: null,
+  prompt: "",
+  plan: null,
+  phase: "idle",
+  error: null,
+};
 function setLiveSession(next) { liveSession = { ...liveSession, ...next }; }
-function resetLiveSession() { liveSession = { taskId: null, prompt: "", plan: null }; }
+function resetLiveSession() {
+  liveSession = {
+    taskId: null,
+    prompt: "",
+    plan: null,
+    phase: "idle",
+    error: null,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // mode (demo | live) — both modes expose the same backend-supported product
@@ -2482,15 +2497,24 @@ function pageHallLive() {
     startBtn.disabled = true;
     startBtn.textContent = "Manager 规划中…";
     resetLiveSession();
+    setLiveSession({ prompt, phase: "planning" });
+    navigate("war");
     liveCreateSession(prompt)
       .then(({ taskId, plan }) => {
-        setLiveSession({ taskId, prompt, plan });
+        setLiveSession({
+          taskId,
+          prompt,
+          plan,
+          phase: plan && plan.needsClarification ? "clarification" : "planned",
+          error: null,
+        });
         navigate(plan && plan.needsClarification ? "clarify" : "war");
       })
       .catch((err) => {
-        startBtn.disabled = false;
-        startBtn.textContent = "🚀 开始研究";
-        toast(`规划失败：${err && err.message ? err.message : "后端不可用"}`);
+        const message = err && err.message ? err.message : "后端不可用";
+        setLiveSession({ phase: "failed", error: message });
+        navigate("war");
+        toast(`规划失败：${message}`);
       });
   };
   startBtn.addEventListener("click", submit);
@@ -2723,12 +2747,73 @@ function pageClarifyLive() {
 // ---------------------------------------------------------------------------
 // live: war room — consume real SSE execution stream (界面 03 · 实时)
 // ---------------------------------------------------------------------------
+function pageManagerPlanningLive(session) {
+  const wrap = el("div");
+  const head = el("div", "war-head");
+  head.appendChild(el("h1", "", "🛰 多 Agent 作战室 · 实时"));
+  head.appendChild(el("span", "sub", "Manager 正在生成真实执行计划"));
+  const task = el("div", "war-task");
+  task.appendChild(el("span", "wt-name", esc(session.prompt)));
+  task.appendChild(el("span", "badge running", '<span class="dot"></span>规划中'));
+  head.appendChild(task);
+  wrap.appendChild(head);
+
+  const panel = el("div", "panel manager-planning-shell");
+  panel.appendChild(el("div", "panel-title", "Manager 编排过程 <span class='title-extra'>等待真实 /api/tasks/sessions 响应</span>"));
+
+  const flow = el("div", "manager-planning-flow");
+  const manager = el("div", "manager-core is-planning");
+  manager.innerHTML = `
+    <span class="manager-core-icon">🧠</span>
+    <strong>Manager Agent</strong>
+    <small>正在解析目标并验证任务图</small>
+    <span class="badge running"><span class="dot"></span>真实规划请求进行中</span>
+  `;
+  flow.appendChild(manager);
+
+  const arrow = el("div", "manager-arrow", "→");
+  arrow.setAttribute("aria-hidden", "true");
+  flow.appendChild(arrow);
+
+  const pending = el("div", "manager-pending");
+  pending.appendChild(el("strong", "", "动态专家池"));
+  pending.appendChild(el("span", "", "尚未返回选择结果"));
+  pending.appendChild(el("small", "", "Manager 返回前不会预设 Agent 或伪造 DAG"));
+  flow.appendChild(pending);
+  panel.appendChild(flow);
+
+  const stages = el("div", "manager-planning-stages");
+  [
+    ["01", "理解用户目标"],
+    ["02", "选择最小充分专家集合"],
+    ["03", "生成并验证依赖 DAG"],
+  ].forEach(([num, label]) => {
+    const stage = el("div", "manager-planning-stage");
+    stage.innerHTML = `<span>${num}</span><strong>${esc(label)}</strong><i></i>`;
+    stages.appendChild(stage);
+  });
+  panel.appendChild(stages);
+  panel.appendChild(el("p", "manager-truth-note", "当前仅展示 Manager 请求的真实等待状态；实际 Agent、依赖关系和执行状态将在后端计划返回后出现。"));
+  wrap.appendChild(panel);
+  return wrap;
+}
+
 function pageWarRoomLive() {
   const session = liveSession;
   if (!session.taskId) {
+    if (session.phase === "planning" && session.prompt) {
+      return pageManagerPlanningLive(session);
+    }
     const wrap = el("div", "panel");
     wrap.appendChild(el("div", "panel-title", "多 Agent 作战室 · 实时"));
-    const box = stateBox("empty", "尚无进行中的任务", "请先在投研大厅提交研究请求。");
+    const failed = session.phase === "failed";
+    const box = stateBox(
+      failed ? "error" : "empty",
+      failed ? "Manager 规划失败" : "尚无进行中的任务",
+      failed
+        ? `未启动任何 Agent：${session.error || "后端不可用"}`
+        : "请先在投研大厅提交研究请求。",
+    );
     const back = el("button", "btn btn-primary", "‹ 返回大厅");
     back.style.marginTop = "10px";
     back.addEventListener("click", () => navigate("hall"));
@@ -2749,8 +2834,38 @@ function pageWarRoomLive() {
   task.appendChild(el("span", "wt-name", esc(plan && plan.goal ? plan.goal : session.prompt)));
   const badge = el("span", "badge running", '<span class="dot"></span>执行中');
   task.appendChild(badge);
+  const reportBtn = el("button", "btn btn-primary war-report-btn", "查看报告 →");
+  reportBtn.style.display = "none";
+  task.appendChild(reportBtn);
   head.appendChild(task);
   wrap.appendChild(head);
+
+  // Manager is a coordinator, not a DAG step. This strip visualizes the
+  // Manager's real selections separately from the expert execution graph.
+  const managerFlow = el("div", "panel manager-dispatch");
+  const managerCard = el("div", "manager-dispatch-card");
+  managerCard.innerHTML = `
+    <span class="manager-core-icon">🧠</span>
+    <span><strong>Manager Agent</strong><small>动态选人与任务图编排</small></span>
+    <span class="badge done manager-dispatch-status"><span class="dot"></span>计划已验证</span>
+  `;
+  managerFlow.appendChild(managerCard);
+  managerFlow.appendChild(el("div", "manager-dispatch-arrow", "分派 →"));
+  const managerAgents = el("div", "manager-agent-list");
+  const agentFlowEls = {};
+  ((plan && plan.agents) || []).forEach((agent) => {
+    const chip = el("div", "manager-agent-chip idle");
+    chip.title = agent.reason || "";
+    chip.innerHTML = `
+      <span class="manager-agent-avatar">${esc((agent.id || "?").slice(0, 1).toUpperCase())}</span>
+      <span><strong>${esc(agent.name || agent.id)}</strong><small>${esc(agent.role || "")}</small></span>
+      <em>已入列</em>
+    `;
+    agentFlowEls[agent.id] = chip;
+    managerAgents.appendChild(chip);
+  });
+  managerFlow.appendChild(managerAgents);
+  wrap.appendChild(managerFlow);
 
   const grid = el("div", "war-grid");
 
@@ -2881,6 +2996,35 @@ function pageWarRoomLive() {
   }, 1000);
 
   const DAG_LABEL = { running: "执行中", done: "已完成", failed: "失败" };
+  const setAgentFlow = (agentId) => {
+    const chip = agentFlowEls[agentId];
+    if (!chip) return;
+    const statuses = steps
+      .filter((step) => step.agent === agentId)
+      .map((step) => stepStatus[step.id])
+      .filter(Boolean);
+    let state = "idle";
+    let label = "已入列";
+    if (statuses.some((status) => status === "running")) {
+      state = "running";
+      label = "执行中";
+    } else if (statuses.some((status) => status === "failed")) {
+      state = "failed";
+      label = "执行失败";
+    } else if (
+      statuses.length > 0
+      && steps.filter((step) => step.agent === agentId).every((step) => stepStatus[step.id] === "done")
+    ) {
+      state = "done";
+      label = "已完成";
+    } else if (statuses.some((status) => status === "done")) {
+      state = "waiting";
+      label = "等待后续";
+    }
+    chip.className = `manager-agent-chip ${state}`;
+    const statusEl = chip.querySelector("em");
+    if (statusEl) statusEl.textContent = label;
+  };
   const setNode = (stepId, status) => {
     const node = nodeEls[stepId];
     if (!node) return;
@@ -2942,18 +3086,22 @@ function pageWarRoomLive() {
     const stepId = evt.step_id;
     switch (evt.type) {
       case "plan_created":
+        managerCard.querySelector(".manager-dispatch-status").innerHTML = '<span class="dot"></span>分派完成';
         pushLog("manager", evt.message || "任务图已生成");
         break;
       case "step_started":
         if (stepId) { stepStatus[stepId] = "running"; setNode(stepId, "running"); }
+        if (agent) setAgentFlow(agent);
         pushLog(agent, evt.message || "开始执行", "run");
         break;
       case "step_completed":
         if (stepId) { stepStatus[stepId] = "done"; setNode(stepId, "done"); }
+        if (agent) setAgentFlow(agent);
         pushLog(agent, evt.message || "步骤完成", "done");
         break;
       case "step_failed":
         if (stepId) { stepStatus[stepId] = "failed"; setNode(stepId, "failed"); }
+        if (agent) setAgentFlow(agent);
         pushLog(agent, evt.message || "步骤失败", "fail");
         break;
       case "skill_plan_created":
@@ -3019,11 +3167,15 @@ function pageWarRoomLive() {
       pushLog(
         "system",
         succeeded || partial
-          ? "任务结束，正在跳转报告…"
-          : "任务失败，正在跳转失败说明…",
+          ? "任务结束，可查看完整报告"
+          : "任务失败，可查看失败说明",
         succeeded || partial ? "done" : "fail",
       );
-      setTimeout(() => { navigate("reports", finalReport); }, 900);
+      reportBtn.style.display = "";
+      reportBtn.textContent = finalReport ? "查看报告 →" : "查看任务记录 →";
+      reportBtn.addEventListener("click", () => {
+        navigate(finalReport ? "reports" : "tasks", finalReport);
+      }, { once: true });
     },
     onError: (info) => {
       clearInterval(elapsedTimer);
