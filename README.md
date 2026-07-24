@@ -17,14 +17,16 @@ User
       │   └─ Research Skill Planner → a_share_stock_dossier
       ├─ Quant Agent
       │   └─ Quant Skill Planner → Allowlisted QuantSkills Runtime
-      └─ optional Risk / Report nodes
+      ├─ Macro Agent → macro_monitor + controlled PandaData macro APIs
+      ├─ Risk Agent → optional event_risk_alert + evidence review
+      └─ optional Report node
   → Result Aggregator
   → Dynamic User-facing Result
 ```
 
 Manager chooses experts and expert dependencies only. It cannot select or
-invoke a bottom-level Skill. Research and Quant each see only their own enabled
-Skills and select the minimal sufficient capability inside the selected expert.
+invoke a bottom-level Skill. Each expert sees only its own enabled Skills and
+selects the minimal sufficient capability inside the selected expert.
 
 `WorkflowExecutor` runs exactly the validated Manager DAG. The independent
 `ResultAggregator` inspects only actual `ExpertResult` contracts, determines
@@ -39,10 +41,10 @@ The enabled expert pool is:
 | --- | --- | --- |
 | `research` | yes | PandaData market research plus single-company financial and fundamental analysis |
 | `quant` | yes | Factor hypotheses and pinned R020 computation |
-| `risk` | yes | Independent or dependency-based risk review |
-| `macro` | yes | PandaData-backed macro environment, policy, cycle, rate, and liquidity analysis |
+| `risk` | yes | Independent/dependency review plus PandaData event-risk scans |
+| `macro` | yes | Pinned macro methodology plus PandaData-backed macro analysis |
 | `report` | yes | Optional integration of declared upstream results |
-| `portfolio` | no | Reserved; no implementation |
+| `portfolio` | no | Pinned liquidity stress capability deployed; Manager execution remains disabled |
 
 Quant is never automatically added to a request. Risk and Report are never
 automatically appended to Quant. Macro is never automatically appended either;
@@ -81,6 +83,9 @@ Test commands:
 | `factor_idea_generation` | instruction | `quant` | `quantskills/skill-factor-idea-generation` | GPL-3.0-only | hypotheses remain `unverified` |
 | `r020_volume_expansion` | executable | `quant` | `quantskills/skill-quant-factor-volume-stat-alpha` R020 | GPL-3.0-only | `computed_not_validated` |
 | `a_share_stock_dossier` | instruction | `research` | `quantskills/skill-a-share-stock-dossier` | GPL-3.0-only | disclosed financial data calculated; future performance not validated |
+| `macro_monitor` | instruction | `macro` | `quantskills/skill-macro-monitor` | GPL-3.0 | methodology verified; facts must come from PandaData |
+| `event_risk_alert` | instruction | `risk` | `quantskills/skill-event-risk-alert` | GPL-3.0-only | observed disclosure records are leads, not causal conclusions |
+| `portfolio_liquidity_stress` | executable | `portfolio` | `quantskills/skill-portfolio-liquidity-stress-test` | GPL-3.0-only | deterministic scenario estimate, not execution evidence |
 
 An installed Codex Skill is not automatically installed for the AlphaOS
 service. AlphaOS reads runtime Skills only from `QUANTSKILLS_HOME`, verifies
@@ -102,6 +107,15 @@ Research Agent
 Quant Agent
 ├─ factor_idea_generation
 └─ r020_volume_expansion
+
+Macro Agent
+└─ macro_monitor
+
+Risk Agent
+└─ event_risk_alert
+
+Portfolio Agent (registered, disabled)
+└─ portfolio_liquidity_stress
 ```
 
 `a_share_stock_dossier` answers questions about one company's financial
@@ -121,6 +135,12 @@ R020 loads the pinned and hashed
 It does not call the upstream `generate_signals`, use bundled validation data,
 or modify external Skill source.
 
+Macro Monitor and Event Risk Alert load only pinned instruction files and
+route real data calls through AlphaOS's controlled PandaData client. The
+portfolio adapter loads only the pinned `scripts/stress_liquidity.py` entrypoint
+and calls `analyze` with caller-supplied holdings; it never invokes the
+upstream CLI or demo dataset.
+
 ## Install
 
 ```powershell
@@ -128,7 +148,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Installs only the three fixed, pinned repositories and refreshes skills.lock.json.
+# Installs only the six fixed, pinned repositories and refreshes skills.lock.json.
 python scripts\install_selected_skills.py
 
 $env:ARK_API_KEY = "your-volcano-ark-key"

@@ -183,6 +183,9 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
 - 不得因为某个专家已实现就选择它；
 - 价格/市场表现分析通常只需要 research，不得自动追加 risk 或 report；
 - 独立策略风险审查可以只使用 risk，不得强制先调用 research；
+- 个股或观察名单的事件风险扫描只使用 risk，并提取 symbol 或 symbols、
+  start_date、end_date；不得因为出现股票代码就自动追加 research 或财务分析。
+  Risk 自行选择其事件风险 Skill，Manager 不得写入 Skill ID；
 - 只有用户明确要求报告、摘要、备忘录、正式输出，或复杂任务确需整合多个专家时，
   才选择 report；
 - report 不是默认必经节点，risk 也不是默认必经节点；
@@ -288,6 +291,8 @@ Agent 输入契约：
 - Macro 必须使用非空 industry、time_range、research_goal；若提供历史区间必须同时
   给出合法 YYYYMMDD 的 start_date 与 end_date 且不倒置，不得只给其一；纯个股价格、
   财务或因子任务不需要 macro，不要为修复契约而保留缺输入的 macro，可直接移除；
+- 个股/观察名单事件风险扫描的 Risk 使用 symbol 或 symbols，并可使用
+  start_date、end_date；不得为此自动增加 Research 或财务 scope；
 - Report 必须声明至少一个上游 depends_on；
 - 不要为了修复契约而增加不需要的专家或改成固定流程。
 """.strip()

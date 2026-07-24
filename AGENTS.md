@@ -93,8 +93,11 @@ validation succeed.
 - Treat `backend/skills/skill_registry.py` as the only runtime Skill source of
   truth. Do not auto-discover local folders or user-provided repositories.
 - The current allowlist is `factor_idea_generation` and
-  `r020_volume_expansion`, owned exclusively by `quant`, plus
-  `a_share_stock_dossier`, owned exclusively by `research`.
+  `r020_volume_expansion`, owned exclusively by `quant`;
+  `a_share_stock_dossier`, owned exclusively by `research`;
+  `macro_monitor`, owned exclusively by `macro`; `event_risk_alert`, owned
+  exclusively by `risk`; and `portfolio_liquidity_stress`, owned exclusively
+  by the currently disabled `portfolio` expert.
 - A Codex-installed Skill is not an AlphaOS Runtime Skill. Runtime code may
   load only entries installed under `QUANTSKILLS_HOME` and recorded in
   `skills.lock.json`.
@@ -111,11 +114,20 @@ validation succeed.
   dependency to the existing controlled `PandaDataClient`, verifies both
   `SKILL.md` and `references/dossier-guide.md`, and executes no documentation
   commands.
+- Macro Monitor and Event Risk Alert are instruction Skills. AlphaOS verifies
+  their pinned methodology, maps PandaData through the existing controlled
+  client, and executes no documentation commands or arbitrary model-selected
+  methods.
+- Portfolio Liquidity Stress may load only its pinned and hashed
+  `scripts/stress_liquidity.py` entrypoint. The adapter calls `analyze`
+  directly with caller-supplied holdings and never invokes the upstream CLI or
+  demo dataset. Portfolio remains disabled until account/holdings governance
+  is explicitly approved.
 - Factor ideas must remain `unverified`; R020 output is
   `computed_not_validated`. Neither status may be presented as IC, backtest,
   performance, or trading evidence.
-- Keep complete backtesting, IC diagnostics, portfolio construction, and
-  automated trading outside the current capability boundary.
+- Keep complete backtesting, IC diagnostics, portfolio construction, account
+  access, and automated trading outside the current capability boundary.
 
 ## Security requirements
 
