@@ -14,6 +14,11 @@ from backend.core.user_profile import (
     UserProfilePut,
 )
 
+# pydantic 2.11 lacks model_dump(exclude_computed_fields=...); exclude by name.
+_COMPUTED_FIELDS: frozenset[str] = frozenset(
+    UserInvestmentProfile.model_computed_fields
+)
+
 
 class UserProfileService:
     """Canonical profile operations for the hackathon's local single user.
@@ -42,18 +47,18 @@ class UserProfileService:
         existing = self.get()
         facts = incoming.model_dump(
             mode="python",
-            exclude_computed_fields=True,
-            exclude={"profile_version", "created_at", "updated_at"},
+            exclude=_COMPUTED_FIELDS
+            | {"profile_version", "created_at", "updated_at"},
         )
         return self._save(facts, existing)
 
     def patch(self, incoming: UserProfilePatch) -> UserInvestmentProfile:
         existing = self.get()
         base = (
-            existing.model_dump(mode="python", exclude_computed_fields=True)
+            existing.model_dump(mode="python", exclude=_COMPUTED_FIELDS)
             if existing is not None
             else UserInvestmentProfile().model_dump(
-                mode="python", exclude_computed_fields=True
+                mode="python", exclude=_COMPUTED_FIELDS
             )
         )
         changes = {
@@ -111,7 +116,7 @@ class UserProfileService:
         profile = UserInvestmentProfile.model_validate(values)
         payload = profile.model_dump(
             mode="json",
-            exclude_computed_fields=True,
+            exclude=_COMPUTED_FIELDS,
         )
         self.store.save_user_profile(
             profile_id=self.profile_id,
