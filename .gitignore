@@ -19,6 +19,7 @@ smoke-artifacts/
 .tmp-*.png
 .calib/
 .qoder/
+.playwright-cli/
 alphaos.db
 alphaos.db-wal
 alphaos.db-shm

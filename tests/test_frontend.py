@@ -16,13 +16,18 @@ def test_frontend_entrypoint_is_served() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "AlphaOS · Research Console" in response.text
-    assert 'src="/static/app.js?v=' in response.text
-    assert "看得懂版" in response.text
-    assert "专业证据" in response.text
-    assert "真实研究" in response.text
-    assert "API Key" not in response.text
-    assert 'id="disclaimer"' in response.text
+    assert "<title>AlphaOS · AI 投资研究操作系统</title>" in response.text
+    assert '<link rel="icon" href="data:," />' in response.text
+    assert 'href="/static/office/css/office.css?v=' in response.text
+    assert 'src="/static/office/js/app.js?v=' in response.text
+    assert "Research Console" not in response.text
+
+
+def test_office_path_redirects_to_primary_root_entrypoint() -> None:
+    response = client.get("/office", follow_redirects=False)
+
+    assert response.status_code in (307, 308)
+    assert response.headers["location"] == "/"
 
 
 def test_frontend_assets_are_served() -> None:

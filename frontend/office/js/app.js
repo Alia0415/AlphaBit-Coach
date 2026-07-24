@@ -37,6 +37,11 @@ import {
   openTaskStream,
   roleFor as liveRoleFor,
 } from "./live.js";
+import {
+  highlightGlossaryScope,
+  initOfficeGlossary,
+  openOfficeGlossary,
+} from "./glossary-ui.js?v=20260725-p09";
 
 // Live planning session shared across hall → clarify → war room. Holds the
 // real Manager plan and task id for the current run (live mode only).
@@ -90,6 +95,7 @@ function renderLive(host, loader, builder) {
     .then((data) => {
       host.innerHTML = "";
       host.appendChild(builder(data));
+      highlightGlossaryScope(host);
     })
     .catch((err) => {
       host.innerHTML = "";
@@ -379,6 +385,8 @@ function renderSidebar() {
     }
     const active = item.route === currentRoute;
     const btn = el("button", `nav-item${active ? " active" : ""}`);
+    btn.title = item.label;
+    btn.setAttribute("aria-label", item.label);
     btn.appendChild(el("span", "nav-ico", item.ico));
     btn.appendChild(el("span", "", esc(item.label)));
     btn.addEventListener("click", () => navigate(item.route));
@@ -427,6 +435,14 @@ function renderTopbar() {
   const history = el("button", "pill", "🕘 历史任务");
   history.addEventListener("click", () => navigate("tasks"));
   bar.append(history);
+
+  const glossary = el("button", "pill glossary-toggle", "📚 术语库");
+  glossary.id = "glossaryToggle";
+  glossary.title = "打开金融术语收藏";
+  glossary.setAttribute("aria-controls", "glossaryPanel");
+  glossary.setAttribute("aria-expanded", "false");
+  glossary.addEventListener("click", openOfficeGlossary);
+  bar.append(glossary);
 
   const avaBtn = el("button", "avatar-btn");
   avaBtn.appendChild(avatar("user", 34, "pix-ava"));
@@ -647,6 +663,7 @@ function renderPage() {
     default:
       navigate("hall");
   }
+  requestAnimationFrame(() => highlightGlossaryScope(page));
 }
 
 // ---------------------------------------------------------------------------
@@ -685,7 +702,7 @@ function pageReportDetail(reportId) {
 }
 
 function buildReportMain(report) {
-  const col = el("div");
+  const col = el("div", "glossary-scope");
 
   // toolbar
   const toolbar = el("div", "rpt-toolbar");
@@ -823,7 +840,7 @@ function buildReportMain(report) {
 // follow-up conversation panel (right column)
 // ---------------------------------------------------------------------------
 function buildFollowPanel(report) {
-  const panel = el("div", "panel follow-panel");
+  const panel = el("div", "panel follow-panel glossary-scope");
 
   // header
   const head = el("div", "follow-head");
@@ -921,7 +938,9 @@ function submitFollowup(report, question) {
     typing.remove();
     const reply = matchReply(report, question);
     const botMsg = { role: "bot", text: reply, time: nowClock() };
-    scroll.appendChild(renderMessage(botMsg));
+    const replyNode = renderMessage(botMsg);
+    scroll.appendChild(replyNode);
+    highlightGlossaryScope(replyNode);
     store.addFollowup(report.id, botMsg);
     scroll.scrollTop = scroll.scrollHeight;
   }, 900);
@@ -2185,7 +2204,7 @@ function pageReportDetailLive(reportId) {
 }
 
 function buildReportMainLive(report) {
-  const col = el("div");
+  const col = el("div", "glossary-scope");
   const toolbar = el("div", "rpt-toolbar");
   const back = el("button", "btn-ghost", "‹ 返回报告列表");
   back.addEventListener("click", () => navigate("reports"));
@@ -2333,7 +2352,7 @@ function renderBlockData(data) {
 }
 
 function buildFollowPanelLive(report) {
-  const panel = el("div", "panel follow-panel");
+  const panel = el("div", "panel follow-panel glossary-scope");
   const completionStatus = String((report.aggregation || {}).completion_status || "failed");
   const reportMessage = {
     completed: `报告《${report.title}》已成功生成`,
@@ -2418,7 +2437,9 @@ function submitLiveFollowup(report, question, scroll) {
   submitReportFollowup(report.id, question)
     .then((ans) => {
       typing.remove();
-      scroll.appendChild(renderLiveMessage({ role: "bot", text: ans.text, time: (ans.created_at || "").slice(11, 19), evidence: ans.evidence }));
+      const replyNode = renderLiveMessage({ role: "bot", text: ans.text, time: (ans.created_at || "").slice(11, 19), evidence: ans.evidence });
+      scroll.appendChild(replyNode);
+      highlightGlossaryScope(replyNode);
       scroll.scrollTop = scroll.scrollHeight;
     })
     .catch((err) => {
@@ -3021,6 +3042,7 @@ function pageWarRoomLive() {
 // boot
 // ---------------------------------------------------------------------------
 function boot() {
+  initOfficeGlossary();
   renderTopbar();
   renderStatusbar();
   renderSidebar();

@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
@@ -187,12 +187,12 @@ class MarketDataResponse(BaseModel):
 
 @app.get("/", include_in_schema=False)
 async def frontend() -> FileResponse:
-    return FileResponse(FRONTEND_DIR / "index.html")
+    return FileResponse(FRONTEND_DIR / "office" / "index.html")
 
 
 @app.get("/office", include_in_schema=False)
-async def office_frontend() -> FileResponse:
-    return FileResponse(FRONTEND_DIR / "office" / "index.html")
+async def office_frontend() -> RedirectResponse:
+    return RedirectResponse(url="/", status_code=307)
 
 
 @app.get("/api/health")
