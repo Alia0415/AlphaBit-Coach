@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from backend.core.agent_registry import AgentRegistry
 from backend.core.contracts import ExecutionPlan
 from backend.core.plan_validator import PlanValidationError, validate_execution_plan
+from backend.core.user_profile import UserInvestmentProfile
 from backend.services.ark_client import ArkClient, ArkClientError
 
 
@@ -28,12 +29,17 @@ class ManagerAgent:
         self._client = client
         self.registry = registry or AgentRegistry()
 
-    def create_plan(self, user_request: str) -> ExecutionPlan:
+    def create_plan(
+        self,
+        user_request: str,
+        user_profile: UserInvestmentProfile | None = None,
+    ) -> ExecutionPlan:
         request = user_request.strip()
         if not request:
             raise ManagerAgentError("规划请求不能为空。")
 
-        prompt = self._planning_prompt(request)
+        profile_context = self._profile_context(user_profile)
+        prompt = self._planning_prompt(request, profile_context)
         try:
             raw_response = self._get_client().chat(prompt)
         except ArkClientError as exc:
@@ -46,6 +52,7 @@ class ManagerAgent:
                 request=request,
                 invalid_response=raw_response,
                 error=str(exc),
+                profile_context=profile_context,
             )
             try:
                 repaired_response = self._get_client().chat(repair_prompt)
@@ -67,7 +74,12 @@ class ManagerAgent:
         plan = ExecutionPlan.model_validate(payload)
         return validate_execution_plan(plan, self.registry)
 
-    def _planning_prompt(self, request: str) -> str:
+    def _planning_prompt(
+        self,
+        request: str,
+        profile_context: str | None = None,
+    ) -> str:
+        profile_context = profile_context or self._profile_context(None)
         registry_json = json.dumps(
             self.registry.prompt_payload(),
             ensure_ascii=False,
@@ -126,6 +138,24 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
   截至执行日的最近 24 个月数据；
 - 不得自动追加 macro。Macro 与其他专家的依赖只能来自当前任务的真实业务需要。
 
+用户画像使用边界：
+- 用户画像只是经 Pydantic 验证的用户事实，不是 Expert Agent。不得创建 profile
+  Agent，不得把画像加入 selected_agents、steps 或固定工作流；
+- 只能使用画像中明确提供的事实和确定性派生指标，任何 null 都表示未知，不得猜测或
+  按零处理；
+- 最大可接受亏损只反映风险意愿。风险承受能力相关事实包括每月结余、应急资金月数、
+  债务负担、未来大额支出、期限、流动性和已知持仓集中度，两者不得混为一谈；
+- 不得根据画像生成“激进型、稳健型、保守型”等综合标签，也不得仅凭投资经验推高
+  风险承受判断；
+- 如果当前任务与缺失画像字段无关，照常规划。如果个人决策确实依赖缺失信息，只询问
+  当前决策所需的一项或一组紧密相关信息，不得重新启动整套画像问答；此时将
+  needs_clarification 设为 true，并让 clarification_question 以“画像信息不足：”开头；
+- 本阶段不得规划或生成个性化买入、卖出或资产配置建议。画像只用于理解研究目标、
+  约束、证据边界和是否缺少关键信息。
+
+当前用户画像（服务端验证后的 JSON；derived_metrics 为确定性计算结果）：
+{profile_context}
+
 可用专家注册表：
 {registry_json}
 
@@ -141,6 +171,7 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
         request: str,
         invalid_response: str,
         error: str,
+        profile_context: str,
     ) -> str:
         schema_json = json.dumps(
             ExecutionPlan.model_json_schema(),
@@ -170,6 +201,9 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
 当前唯一可用的专家注册表（不得使用列表外或 enabled=false 的专家）：
 {registry_json}
 
+当前用户画像（仍须遵守未知值不猜测、不生成风险标签、不生成买卖或配置建议）：
+{profile_context}
+
 Agent 输入契约：
 - 市场 Research 必须使用 symbols 列表、YYYYMMDD 的 start_date/end_date；fields
   为空列表或至少包含 trade_date、symbol、close、volume；
@@ -180,6 +214,27 @@ Agent 输入契约：
 - Report 必须声明至少一个上游 depends_on；
 - 不要为了修复契约而增加不需要的专家或改成固定流程。
 """.strip()
+
+    @staticmethod
+    def _profile_context(user_profile: UserInvestmentProfile | None) -> str:
+        if user_profile is None:
+            return json.dumps(
+                {
+                    "available": False,
+                    "message": "本次请求未提供用户画像快照。",
+                },
+                ensure_ascii=False,
+            )
+        payload = user_profile.model_dump(mode="json", exclude_computed_fields=True)
+        payload["derived_metrics"] = {
+            "monthly_surplus_cny": user_profile.monthly_surplus_cny,
+            "emergency_fund_months": user_profile.emergency_fund_months,
+            "debt_payment_ratio": user_profile.debt_payment_ratio,
+            "known_asset_concentration": user_profile.known_asset_concentration,
+            "profile_completeness": user_profile.profile_completeness,
+        }
+        payload["missing_fields"] = user_profile.missing_fields()
+        return json.dumps(payload, ensure_ascii=False, indent=2)
 
     def _get_client(self) -> ArkClient:
         if self._client is None:

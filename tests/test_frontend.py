@@ -28,6 +28,8 @@ def test_frontend_entrypoint_is_served() -> None:
 def test_frontend_assets_are_served() -> None:
     script = client.get("/static/app.js")
     styles = client.get("/static/styles.css")
+    profile_model = client.get("/static/user-profile.js")
+    profile_ui = client.get("/static/profile-ui.js")
 
     assert script.status_code == 200
     assert "javascript" in script.headers["content-type"]
@@ -39,6 +41,10 @@ def test_frontend_assets_are_served() -> None:
     assert "buildPlainLanguageResult" in script.text
     assert "BLOCK_RENDERERS" in script.text
     assert "renderContentBlocks" in script.text
+    assert "alphaos_user_profile" in profile_model.text
+    assert "shouldStartOnboarding" in profile_model.text
+    assert "openOnboarding" in profile_ui.text
+    assert "user_profile" in script.text
 
 
 def test_presentation_modules_are_served() -> None:
@@ -70,3 +76,20 @@ def test_frontend_presentation_adapter() -> None:
 
     assert completed.returncode == 0, completed.stderr
     assert "frontend presentation tests passed" in completed.stdout
+
+
+def test_frontend_user_profile_model() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the zero-dependency frontend unit tests")
+
+    completed = subprocess.run(
+        [node, "tests/test_user_profile.cjs"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "user profile frontend tests passed" in completed.stdout

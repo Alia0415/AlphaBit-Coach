@@ -289,6 +289,7 @@ const elements = {};
 document.addEventListener("DOMContentLoaded", () => {
   cacheElements();
   bindEvents();
+  window.AlphaOSProfileUI?.init();
   checkServices();
   renderResponse(SCENARIOS[state.scenario].response, "demo");
 });
@@ -424,7 +425,10 @@ async function runTask() {
       const response = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+          prompt,
+          user_profile: window.AlphaOSProfileUI?.getProfile() || null,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {

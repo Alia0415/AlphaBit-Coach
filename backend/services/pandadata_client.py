@@ -13,6 +13,7 @@ ALPHAOS_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 SYMBOL_PATTERN = re.compile(r"^\d{6}\.(?:SH|SZ)$")
 QUARTER_PATTERN = re.compile(r"^(\d{4})q([1-4])$", re.IGNORECASE)
 DATE_PATTERN = re.compile(r"^\d{8}$")
+PANDADATA_SERVICE_HOST = "pandadata.pandaaiquant.com"
 
 MACRO_DATASETS: dict[str, tuple[str, str]] = {
     "NA": ("get_macro_na", "国民经济核算"),
@@ -563,6 +564,7 @@ class PandaDataClient:
                     "缺少 panda_data SDK，请运行 pip install -r requirements.txt。"
                 ) from exc
 
+            _configure_pandadata_proxy_bypass()
             panda_data.init_token(username=username, password=password)
             self._sdk = panda_data
             self._authenticated_as = username
@@ -641,3 +643,22 @@ def _validate_date_range(start_date: str, end_date: str) -> tuple[str, str]:
     if start > end:
         raise ValueError("start_date 不能晚于 end_date。")
     return start, end
+
+
+def _configure_pandadata_proxy_bypass() -> None:
+    enabled = os.getenv("PANDADATA_BYPASS_SYSTEM_PROXY", "true").strip().lower()
+    if enabled in {"0", "false", "no", "off"}:
+        return
+
+    entries: list[str] = []
+    for variable in ("NO_PROXY", "no_proxy"):
+        entries.extend(
+            item.strip()
+            for item in os.getenv(variable, "").split(",")
+            if item.strip()
+        )
+    if PANDADATA_SERVICE_HOST not in entries:
+        entries.append(PANDADATA_SERVICE_HOST)
+    merged = ",".join(dict.fromkeys(entries))
+    os.environ["NO_PROXY"] = merged
+    os.environ["no_proxy"] = merged

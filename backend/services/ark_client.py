@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, DefaultHttpxClient, OpenAI
 
 ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 DEFAULT_ARK_MODEL = "ep-20260708162855-pcf9x"
@@ -29,7 +29,11 @@ class ArkClient:
             )
 
         self._model = os.getenv("ARK_MODEL", "").strip() or DEFAULT_ARK_MODEL
-        self._client = OpenAI(base_url=ARK_BASE_URL, api_key=api_key)
+        self._client = OpenAI(
+            base_url=ARK_BASE_URL,
+            api_key=api_key,
+            http_client=DefaultHttpxClient(trust_env=False),
+        )
 
     def chat(self, prompt: str, model: str | None = None) -> str:
         """Send a text prompt and return the model's text response."""
@@ -39,6 +43,20 @@ class ArkClient:
                 model=selected_model,
                 input=prompt,
             )
+        except APIConnectionError as exc:
+            cause = exc.__cause__ or exc.__context__
+            cause_name = (
+                type(cause).__name__
+                if cause is not None
+                else type(exc).__name__
+            )
+            raise ArkClientError(
+                f"Volcano Ark API 连接失败（{cause_name}）。"
+            ) from None
+        except APIStatusError as exc:
+            raise ArkClientError(
+                f"Volcano Ark API 返回 HTTP {exc.status_code}。"
+            ) from None
         except Exception:
             raise ArkClientError("Volcano Ark API 请求失败。") from None
 

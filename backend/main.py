@@ -26,6 +26,7 @@ from backend.core.contracts import (
     TaskExecutionResponse,
 )
 from backend.core.result_aggregator import ResultAggregator
+from backend.core.user_profile import UserInvestmentProfile
 from backend.core.workflow_executor import WorkflowExecutor
 from backend.services.pandadata_client import (
     PandaDataClient,
@@ -57,6 +58,12 @@ class RouteRequest(BaseModel):
         if not prompt:
             raise ValueError("prompt 不能为空")
         return prompt
+
+
+class TaskRequest(RouteRequest):
+    """Task input with an optional browser-held, server-validated profile snapshot."""
+
+    user_profile: UserInvestmentProfile | None = None
 
 
 class MarketDataRequest(BaseModel):
@@ -129,10 +136,14 @@ async def plan_request(request: RouteRequest) -> ExecutionPlan:
 
 
 @app.post("/api/tasks", response_model=TaskExecutionResponse)
-async def execute_task(request: RouteRequest) -> TaskExecutionResponse:
+async def execute_task(request: TaskRequest) -> TaskExecutionResponse:
     started_at = perf_counter()
     try:
-        plan = await run_in_threadpool(manager.create_plan, request.prompt)
+        plan = await run_in_threadpool(
+            manager.create_plan,
+            request.prompt,
+            request.user_profile,
+        )
         events = [
             ExecutionEvent(
                 type="plan_created",

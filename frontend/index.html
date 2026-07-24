@@ -8,7 +8,7 @@
       content="AlphaOS 动态多智能体量化研究组织演示台"
     />
     <title>AlphaOS · Research Console</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260724-p03" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -25,6 +25,15 @@
         </span>
       </a>
       <div class="topbar-actions">
+        <nav class="primary-nav" aria-label="主要页面">
+          <button class="nav-button active" id="researchNavButton" type="button">
+            研究任务
+          </button>
+          <button class="nav-button" id="profileNavButton" type="button">
+            用户画像
+            <span id="profileCompletenessBadge">画像未建立</span>
+          </button>
+        </nav>
         <div class="service-status" id="serviceStatus">
           <span class="status-dot"></span>
           <span>正在连接</span>
@@ -266,16 +275,34 @@
 
         <div class="disclaimer persistent-disclaimer" id="disclaimer"></div>
       </section>
+
+      <section class="profile-page" id="profilePage" hidden>
+        <div id="profilePageContent"></div>
+      </section>
     </main>
+
+    <div
+      class="onboarding-overlay"
+      id="onboardingOverlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="首次用户画像建档"
+      hidden
+    >
+      <div class="onboarding-dialog" id="onboardingContent"></div>
+    </div>
+    <div class="profile-toast" id="profileToast" role="status" hidden></div>
 
     <footer>
       <span>AlphaOS v0.3</span>
       <span>Dynamic experts. Explicit evidence. Research only.</span>
     </footer>
 
+    <script src="/static/user-profile.js?v=20260724-p03" defer></script>
+    <script src="/static/profile-ui.js?v=20260724-p03" defer></script>
     <script src="/static/presentation/status-labels.js" defer></script>
     <script src="/static/presentation/event-labels.js" defer></script>
     <script src="/static/presentation/build-plain-language-result.js" defer></script>
-    <script src="/static/app.js?v=20260723-p01" defer></script>
+    <script src="/static/app.js?v=20260724-p03" defer></script>
   </body>
 </html>
