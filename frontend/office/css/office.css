@@ -508,6 +508,75 @@ button.expert-mini:hover { border-color: var(--cyan); transform: translateY(-3px
 .war-head .sub { color: var(--text-2); font-size: 12.5px; }
 .war-task { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .war-task .wt-name { border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; background: #0e1e34; font-size: 12.5px; }
+.war-report-btn { padding: 6px 11px; font-size: 11.5px; white-space: nowrap; }
+.manager-planning-shell { min-height: 460px; display: flex; flex-direction: column; justify-content: center; }
+.manager-planning-flow {
+  display: grid; grid-template-columns: minmax(220px, 300px) 56px minmax(220px, 300px);
+  gap: 18px; align-items: center; justify-content: center; margin: 34px auto 28px; width: min(760px, 100%);
+}
+.manager-core, .manager-pending {
+  min-height: 150px; border: 1px solid var(--line); border-radius: 14px; background: #0e1e34;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 20px;
+}
+.manager-core.is-planning {
+  border-color: rgba(34, 211, 238, 0.65);
+  box-shadow: 0 0 28px rgba(34, 211, 238, 0.16);
+  animation: manager-pulse 1.8s ease-in-out infinite;
+}
+.manager-core-icon { font-size: 28px; line-height: 1; }
+.manager-core small, .manager-pending small { color: var(--text-3); line-height: 1.5; }
+.manager-pending span { color: var(--cyan); font-size: 13px; }
+.manager-arrow, .manager-dispatch-arrow { color: var(--cyan); text-align: center; font-weight: 800; }
+.manager-arrow { font-size: 34px; animation: manager-arrow 1.2s ease-in-out infinite; }
+.manager-planning-stages {
+  width: min(760px, 100%); margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+}
+.manager-planning-stage {
+  position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 10px;
+  background: rgba(14, 30, 52, 0.72); padding: 13px 14px; display: flex; align-items: center; gap: 9px;
+}
+.manager-planning-stage span { color: var(--cyan); font-family: var(--mono); font-size: 11px; }
+.manager-planning-stage strong { font-size: 12px; }
+.manager-planning-stage i {
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 42%;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  animation: manager-scan 1.4s linear infinite;
+}
+.manager-planning-stage:nth-child(2) i { animation-delay: 0.25s; }
+.manager-planning-stage:nth-child(3) i { animation-delay: 0.5s; }
+.manager-truth-note { color: var(--text-3); font-size: 11.5px; text-align: center; margin: 20px 0 0; }
+.manager-dispatch {
+  display: grid; grid-template-columns: auto 70px 1fr; align-items: center; gap: 12px; margin-bottom: 14px; padding: 12px 14px;
+}
+.manager-dispatch-card { display: flex; align-items: center; gap: 10px; }
+.manager-dispatch-card > span:nth-child(2) { display: grid; gap: 2px; }
+.manager-dispatch-card small, .manager-agent-chip small { color: var(--text-3); font-size: 10.5px; display: block; }
+.manager-dispatch-status { margin-left: 6px; }
+.manager-agent-list { display: flex; gap: 8px; overflow-x: auto; padding: 2px; }
+.manager-agent-chip {
+  min-width: 145px; border: 1px solid var(--line); border-radius: 9px; background: #0e1e34;
+  display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 7px; padding: 8px;
+  transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
+}
+.manager-agent-avatar {
+  width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+  color: var(--cyan); background: rgba(34, 211, 238, 0.12); font-weight: 800;
+}
+.manager-agent-chip strong { font-size: 11.5px; display: block; text-transform: capitalize; }
+.manager-agent-chip em { color: var(--text-3); font-size: 10px; font-style: normal; white-space: nowrap; }
+.manager-agent-chip.running { border-color: #60a5fa88; box-shadow: 0 0 12px rgba(96, 165, 250, 0.18); }
+.manager-agent-chip.running em { color: #60a5fa; }
+.manager-agent-chip.done { border-color: #34d39966; }
+.manager-agent-chip.done em { color: var(--green); }
+.manager-agent-chip.failed { border-color: #fb718566; }
+.manager-agent-chip.failed em { color: #fb7185; }
+.manager-agent-chip.waiting { opacity: 0.82; }
+@keyframes manager-pulse {
+  0%, 100% { transform: translateY(0); box-shadow: 0 0 20px rgba(34, 211, 238, 0.12); }
+  50% { transform: translateY(-3px); box-shadow: 0 0 34px rgba(34, 211, 238, 0.24); }
+}
+@keyframes manager-arrow { 0%, 100% { opacity: 0.35; transform: translateX(-4px); } 50% { opacity: 1; transform: translateX(4px); } }
+@keyframes manager-scan { from { transform: translateX(-120%); } to { transform: translateX(340%); } }
 .war-grid { display: grid; grid-template-columns: 300px 1fr 300px; gap: 14px; align-items: start; }
 .dag-wrap { position: relative; height: 470px; }
 .dag-wrap svg { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -755,6 +824,16 @@ button.task-item:hover { border-color: var(--cyan-dim); }
 @media (max-width: 1180px) {
   .report-layout, .rpt-hero, .report-charts { grid-template-columns: 1fr; }
   .follow-panel { height: auto; min-height: 420px; }
+  .manager-dispatch { grid-template-columns: 1fr; }
+  .manager-dispatch-arrow { text-align: left; }
+  .war-grid { grid-template-columns: 1fr; }
+  .progress-row { grid-template-columns: 1fr repeat(2, minmax(70px, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .manager-planning-flow { grid-template-columns: 1fr; }
+  .manager-arrow { transform: rotate(90deg); }
+  .manager-planning-stages { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {
