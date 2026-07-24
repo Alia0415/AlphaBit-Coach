@@ -17,6 +17,8 @@ logs/
 htmlcov/
 smoke-artifacts/
 .tmp-*.png
+.calib/
+.qoder/
 alphaos.db
 alphaos.db-wal
 alphaos.db-shm

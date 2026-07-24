@@ -156,14 +156,55 @@ const SPRITE_MAP = {
   report: "bald-glasses",
   user: "black-hair-businessman",
 };
-const FRAME = 256; // native frame is 256x256, atlas is a horizontal strip
+const FRAME = 256; // avatar canvas resolution (a single grid cell is scaled into this)
+// Every character atlas is a 6-column x 3-row grid. Rows are view directions,
+// columns 0-3 are the walk cycle and 4-5 are the idle (breathing) pair.
+const SHEET_COLS = 6;
+const SHEET_ROWS = 3;
+const ROW_FRONT = 0; // facing the viewer (moving down / toward camera)
+const ROW_BACK = 1; // facing away (moving up / toward monitors — used when seated)
+const ROW_SIDE = 2; // facing LEFT (moving left; horizontally flipped for right)
+const WALK_COLS = [0, 1, 2, 3]; // contact, passing, contact, passing
+const IDLE_COLS = [4, 5]; // stand, slight breathing dip
 const SPRITE_SHEETS = new Set(Object.values(SPRITE_MAP)); // only these atlases exist
-const spriteCache = new Map(); // sheet -> { img, ready }
+const spriteCache = new Map(); // sheet -> entry (aliases into imageCache)
 
-function loadSprite(sheet) {
-  if (spriteCache.has(sheet)) return spriteCache.get(sheet);
+// scene layers (top-down office + separate chair layer for the sitting effect)
+const BG_URL = `${SPRITE_BASE}/backgroud.png`;
+const CHAIR_URL = `${SPRITE_BASE}/chairs1.png`;
+const CHAIR_COLS = 8; // chairs1.png is a horizontal strip of 8 back-view chairs
+const BG_RATIO = 1586 / 992; // backgroud.png native aspect (scenes match it to avoid distortion)
+// Non-transparent content box of each chair, measured within its cell (cell = 271.5px wide,
+// 724px tall). Chairs are drawn from this crop so their base lands exactly on the seat point.
+const CHAIR_BOX = [
+  [72, 248, 252, 440], [65, 248, 246, 440], [59, 248, 240, 440], [53, 249, 234, 440],
+  [51, 249, 222, 440], [44, 249, 222, 440], [39, 249, 218, 440], [33, 249, 214, 440],
+];
+// A character cell is mostly padding: the sprite's feet sit at ~0.89 of the cell height.
+const CELL_FEET = 0.89;
+// Six desk seats as fractions of the background image, so they scale with any canvas size.
+// A seat's (fx,fy) marks where the chair base rests on the floor; `chair` picks a colour.
+const SEATS = {
+  manager:  { fx: 0.243, fy: 0.390, chair: 5 }, // top-left desk (brown)
+  macro:    { fx: 0.196, fy: 0.620, chair: 2 }, // mid-left desk (navy)
+  research: { fx: 0.240, fy: 0.850, chair: 4 }, // bottom-left desk (blue)
+  quant:    { fx: 0.744, fy: 0.380, chair: 6 }, // top-right desk (grey)
+  risk:     { fx: 0.798, fy: 0.620, chair: 1 }, // mid-right desk (charcoal)
+  report:   { fx: 0.738, fy: 0.850, chair: 3 }, // bottom-right desk (purple)
+};
+const TABLE_CENTER = { fx: 0.5, fy: 0.565 }; // round meeting table (roundtable/visit gather point)
+// Seated-sprite tuning (fractions of the scene width) — calibrated against the screenshot.
+const CHAIR_W_FRAC = 0.062; // chair display width
+const SEAT_PERSON_SCALE = 1.7; // person cell size relative to chair width
+const SEAT_PERSON_LIFT = 0.62; // how far the seated person's feet-line rides above the chair base
+const CHAIR_DROP_FRAC = 0.018; // chair base sits this far (of scene width) below the seat anchor
+
+// Generic image cache shared by sprite atlases and scene layers.
+const imageCache = new Map(); // url -> { img, ready, error, waiters }
+function loadImage(url) {
+  if (imageCache.has(url)) return imageCache.get(url);
   const img = new Image();
-  const entry = { img, ready: false, waiters: [] };
+  const entry = { img, ready: false, error: false, waiters: [] };
   img.onload = () => {
     entry.ready = true;
     entry.waiters.splice(0).forEach((cb) => cb());
@@ -172,9 +213,94 @@ function loadSprite(sheet) {
     entry.error = true;
     entry.waiters.splice(0).forEach((cb) => cb());
   };
-  img.src = `${SPRITE_BASE}/${sheet}/atlas.png`;
+  img.src = url;
+  imageCache.set(url, entry);
+  return entry;
+}
+
+function loadSprite(sheet) {
+  const entry = loadImage(`${SPRITE_BASE}/${sheet}/atlas.png`);
   spriteCache.set(sheet, entry);
   return entry;
+}
+
+// Draw one grid cell (col,row) of a character atlas into the given dest rect.
+function drawCell(ctx, entry, col, row, dx, dy, dw, dh) {
+  const cw = entry.img.width / SHEET_COLS;
+  const ch = entry.img.height / SHEET_ROWS;
+  ctx.drawImage(entry.img, col * cw, row * ch, cw, ch, dx, dy, dw, dh);
+}
+
+// Pick the view row + horizontal flip from a movement vector.
+function facingFrom(dx, dy) {
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return { row: ROW_SIDE, flip: dx > 0 }; // side art faces left; flip for right
+  }
+  return { row: dy < 0 ? ROW_BACK : ROW_FRONT, flip: false };
+}
+
+// Draw a character cell so it is centred on (cx) with the sprite's feet at (feetY),
+// honouring the CELL_FEET padding and an optional horizontal flip (mirrored about cx).
+function drawSpriteCell(ctx, entry, col, row, flip, cx, feetY, size) {
+  const dx = cx - size / 2;
+  const dy = feetY - CELL_FEET * size;
+  if (flip) {
+    ctx.save();
+    ctx.translate(cx * 2, 0);
+    ctx.scale(-1, 1);
+    drawCell(ctx, entry, col, row, dx, dy, size, size);
+    ctx.restore();
+  } else {
+    drawCell(ctx, entry, col, row, dx, dy, size, size);
+  }
+}
+
+// Draw the office background scaled to fill (W,H). Scene sizes match BG_RATIO so no stretch.
+function drawBackground(ctx, W, H) {
+  const e = imageCache.get(BG_URL);
+  if (e && e.ready) {
+    ctx.drawImage(e.img, 0, 0, e.img.width, e.img.height, 0, 0, W, H);
+  } else {
+    ctx.fillStyle = "#0a1322";
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// Draw one back-view chair from its content crop, base resting at (sx,sy).
+function drawChair(ctx, idx, sx, sy, cw) {
+  const e = imageCache.get(CHAIR_URL);
+  if (!e || !e.ready) return;
+  const cellW = e.img.width / CHAIR_COLS;
+  const [x0, y0, x1, y1] = CHAIR_BOX[idx % CHAIR_COLS];
+  const sw = x1 - x0, sh = y1 - y0;
+  const dw = cw, dh = cw * (sh / sw);
+  ctx.drawImage(e.img, idx * cellW + x0, y0, sw, sh, sx - dw / 2, sy - dh, dw, dh);
+}
+
+// Draw a seat's chair as persistent furniture. `sy` is the seat anchor on the
+// floor; the chair base drops slightly below it so it reads as standing in front
+// of the desk. Safe to call whether or not anyone is sitting there.
+function drawSeatChair(ctx, chairIdx, sx, sy, W) {
+  drawChair(ctx, chairIdx || 0, sx, sy + W * CHAIR_DROP_FRAC, W * CHAIR_W_FRAC);
+}
+
+// Draw only the seated back-view person (no chair) anchored at seat point (sx,sy).
+function drawSeatedPerson(ctx, sheet, sx, sy, W) {
+  const chairW = W * CHAIR_W_FRAC;
+  const personSize = chairW * SEAT_PERSON_SCALE;
+  const feetY = sy - chairW * SEAT_PERSON_LIFT;
+  const entry = spriteCache.get(sheet);
+  if (entry && entry.ready) {
+    drawSpriteCell(ctx, entry, IDLE_COLS[0], ROW_BACK, false, sx, feetY, personSize);
+  }
+}
+
+// Draw a seated agent at a seat point (sx,sy = seat anchor on the floor): the
+// back-view sprite is painted first, then the chair on top so the backrest hides
+// the lower body. The chair is always present via drawSeatChair even when empty.
+function drawSeated(ctx, sheet, sx, sy, W, chairIdx) {
+  drawSeatedPerson(ctx, sheet, sx, sy, W);
+  drawSeatChair(ctx, chairIdx, sx, sy, W);
 }
 
 // Returns a wrapper element containing a crisp pixel-art avatar canvas.
@@ -200,7 +326,8 @@ function avatar(agentOrSheet, sizePx = 40, wrapCls = "pix-ava") {
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, FRAME, FRAME);
     if (entry && entry.ready) {
-      ctx.drawImage(entry.img, 0, 0, FRAME, FRAME, 0, 0, FRAME, FRAME);
+      // front-facing idle (standing) frame, scaled to fill the avatar canvas
+      drawCell(ctx, entry, IDLE_COLS[0], ROW_FRONT, 0, 0, FRAME, FRAME);
     } else {
       // graceful fallback: solid pixel block while the atlas loads / on error
       ctx.fillStyle = "#13263f";
@@ -850,77 +977,47 @@ function matchReply(report, question) {
 // ---------------------------------------------------------------------------
 function drawOfficeScene(canvas, agents) {
   const dpr = window.devicePixelRatio || 1;
-  const W = 720, H = 300;
+  const W = 720, H = Math.round(W / BG_RATIO);
   canvas.width = W * dpr;
   canvas.height = H * dpr;
   canvas.style.width = "100%";
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const seats = agents.slice(0, 6);
+  // agents that own a desk seat, in seat order
+  const seated = Object.keys(SEATS)
+    .map((id) => ({ id, seat: SEATS[id], a: agents.find((x) => x.id === id) }))
+    .filter((s) => s.a);
 
   const paint = () => {
     ctx.imageSmoothingEnabled = false;
-    // floor
-    const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, "#0c1830");
-    g.addColorStop(1, "#0a1322");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
-    // floor grid
-    ctx.strokeStyle = "#12233c";
-    ctx.lineWidth = 1;
-    for (let x = 0; x <= W; x += 48) { ctx.beginPath(); ctx.moveTo(x, 58); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 58; y <= H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-    // back wall
-    ctx.fillStyle = "#0e1e34";
-    ctx.fillRect(0, 0, W, 58);
-    ctx.strokeStyle = "#16304f";
-    ctx.beginPath(); ctx.moveTo(0, 58); ctx.lineTo(W, 58); ctx.stroke();
-    ctx.fillStyle = "#22d3ee";
-    ctx.font = "bold 12px system-ui, sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillText("◆ AlphaOS 投研办公室", 14, 36);
-
-    const cols = 3;
-    const gapX = W / cols;
-    seats.forEach((a, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const cx = gapX * col + gapX / 2;
-      const cy = 116 + row * 104;
-      // desk
-      ctx.fillStyle = "#14304f";
-      ctx.beginPath(); ctx.roundRect(cx - 54, cy + 26, 108, 24, 6); ctx.fill();
-      ctx.fillStyle = "#0b1526";
-      ctx.beginPath(); ctx.roundRect(cx - 20, cy + 20, 40, 13, 3); ctx.fill();
-      ctx.fillStyle = a.status === "off" ? "#3a4a5f" : "#1e6b52";
-      ctx.fillRect(cx - 17, cy + 23, 34, 7);
-      // sprite (frame 0)
-      const sheet = SPRITE_MAP[a.id] || a.id;
-      const entry = spriteCache.get(sheet);
-      const size = 60;
-      if (entry && entry.ready) {
-        ctx.drawImage(entry.img, 0, 0, FRAME, FRAME, cx - size / 2, cy - size + 22, size, size);
-      } else {
-        ctx.fillStyle = "#13263f";
-        ctx.fillRect(cx - size / 2, cy - size + 22, size, size);
-      }
-      // status dot
+    drawBackground(ctx, W, H);
+    // every desk keeps its chair; a present agent sits in it, an absent one leaves it empty
+    Object.keys(SEATS).forEach((id) => {
+      const seat = SEATS[id];
+      const a = agents.find((x) => x.id === id);
+      const sx = seat.fx * W, sy = seat.fy * H;
+      if (!a) { drawSeatChair(ctx, seat.chair, sx, sy, W); return; }
+      const sheet = SPRITE_MAP[id] || id;
+      drawSeated(ctx, sheet, sx, sy, W, seat.chair);
+      // status dot above the seat
       const dot = { online: "#34d399", working: "#60a5fa", busy: "#f59e0b", running: "#60a5fa", off: "#5a6b80" }[a.status] || "#5a6b80";
+      const headY = sy - W * CHAIR_W_FRAC * 1.95;
       ctx.fillStyle = dot;
-      ctx.beginPath(); ctx.arc(cx + 22, cy - 34, 4, 0, Math.PI * 2); ctx.fill();
-      // name tag
-      ctx.fillStyle = "rgba(10,22,40,0.82)";
-      ctx.beginPath(); ctx.roundRect(cx - 32, cy + 54, 64, 15, 4); ctx.fill();
-      ctx.fillStyle = "#9fc0e0";
+      ctx.beginPath(); ctx.arc(sx + W * 0.028, headY, 3.5, 0, Math.PI * 2); ctx.fill();
+      // name tag under the chair
+      ctx.fillStyle = "rgba(10,22,40,0.8)";
+      ctx.beginPath(); ctx.roundRect(sx - 30, sy + 4, 60, 15, 4); ctx.fill();
+      ctx.fillStyle = "#cfe0f2";
       ctx.font = "10px system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(a.name, cx, cy + 65);
+      ctx.fillText(a.name, sx, sy + 15);
     });
   };
 
-  seats.forEach((a) => {
-    const sheet = SPRITE_MAP[a.id] || a.id;
+  // preload scene layers + atlases, repaint as each arrives
+  [loadImage(BG_URL), loadImage(CHAIR_URL)].forEach((e) => { if (!e.ready) e.waiters.push(paint); });
+  seated.forEach(({ id }) => {
+    const sheet = SPRITE_MAP[id] || id;
     if (!SPRITE_SHEETS.has(sheet)) return;
     const e = loadSprite(sheet);
     if (!e.ready) e.waiters.push(paint);
@@ -1230,16 +1327,11 @@ function renderClarifySummary(panel) {
 // ---------------------------------------------------------------------------
 // page: war room (界面 03) — autonomous sprite office + script-driven execution
 // ---------------------------------------------------------------------------
-const WAR_W = 760, WAR_H = 340;
-const WALK_CYCLE = [4, 5, 6, 5]; // side-view walk frames present in every sheet
-const WAR_HOMES = {
-  manager: { x: 380, y: 130 },
-  macro: { x: 150, y: 190 },
-  research: { x: 390, y: 205 },
-  quant: { x: 610, y: 190 },
-  risk: { x: 240, y: 300 },
-  report: { x: 560, y: 300 },
-};
+const WAR_W = 760, WAR_H = Math.round(WAR_W / BG_RATIO);
+// Each agent's "home" is its desk seat, derived from the shared SEATS fractions.
+const WAR_HOMES = Object.fromEntries(
+  Object.entries(SEATS).map(([id, s]) => [id, { x: s.fx * WAR_W, y: s.fy * WAR_H, chair: s.chair }]),
+);
 const DAG_POS = {
   manager: [50, 12], macro: [20, 40], research: [50, 40],
   quant: [80, 40], risk: [34, 73], report: [67, 73],
@@ -1412,7 +1504,7 @@ function pageWarRoom() {
     return {
       id, name: a ? a.name : id, sheet: SPRITE_MAP[id] || id,
       x: home.x, y: home.y, tx: home.x, ty: home.y, home,
-      facing: 1, walking: false, pauseT: Math.random() * 1.5,
+      mvx: 0, mvy: 1, walking: false, seated: true, pauseT: Math.random() * 1.5,
       frameT: 0, frameIdx: 0, status: "idle", say: null, bubbleEl: null,
     };
   });
@@ -1420,19 +1512,20 @@ function pageWarRoom() {
 
   const state = { clock: 0, speed: 1, playing: true, ptr: 0, logs: 0, lastPct: -1 };
 
+  // Return an agent to its desk seat (the resting/seated state).
   function pickWander(ag) {
-    ag.tx = clamp(ag.home.x + (Math.random() * 2 - 1) * 95, 55, WAR_W - 55);
-    ag.ty = clamp(ag.home.y + (Math.random() * 2 - 1) * 42, 115, WAR_H - 22);
+    ag.tx = ag.home.x;
+    ag.ty = ag.home.y;
     ag.pauseT = 0.6 + Math.random() * 1.9;
   }
   function gather(ids) {
-    const cx = 380, cy = 225, n = ids.length;
+    const cx = TABLE_CENTER.fx * WAR_W, cy = TABLE_CENTER.fy * WAR_H, n = ids.length;
     ids.forEach((id, i) => {
       const ag = agentById2(id);
       if (!ag) return;
       const ang = -Math.PI / 2 + (i * 2 * Math.PI) / Math.max(n, 1);
-      ag.tx = clamp(cx + Math.cos(ang) * 78, 55, WAR_W - 55);
-      ag.ty = clamp(cy + Math.sin(ang) * 46, 115, WAR_H - 22);
+      ag.tx = clamp(cx + Math.cos(ang) * WAR_W * 0.11, 40, WAR_W - 40);
+      ag.ty = clamp(cy + Math.sin(ang) * WAR_H * 0.13, 90, WAR_H - 24);
       ag.pauseT = 3;
     });
   }
@@ -1517,14 +1610,16 @@ function pageWarRoom() {
     const dist = Math.hypot(dx, dy);
     if (dist < 3) {
       ag.walking = false;
+      ag.seated = ag.tx === ag.home.x && ag.ty === ag.home.y;
       ag.pauseT -= dt;
       if (ag.pauseT <= 0) pickWander(ag);
     } else {
       ag.walking = true;
+      ag.seated = false;
       const sp = 52 * dt;
       ag.x += (dx / dist) * sp;
       ag.y += (dy / dist) * sp;
-      ag.facing = dx < 0 ? -1 : 1;
+      ag.mvx = dx / dist; ag.mvy = dy / dist;
       ag.frameT += dt;
       if (ag.frameT > 0.13) { ag.frameT = 0; ag.frameIdx++; }
     }
@@ -1534,52 +1629,51 @@ function pageWarRoom() {
   canvas.width = WAR_W * dpr;
   canvas.height = WAR_H * dpr;
   const ctx = canvas.getContext("2d");
+  loadImage(BG_URL);
+  loadImage(CHAIR_URL);
 
   function drawRoom() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    const g = ctx.createLinearGradient(0, 0, 0, WAR_H);
-    g.addColorStop(0, "#0c1830"); g.addColorStop(1, "#0a1322");
-    ctx.fillStyle = g; ctx.fillRect(0, 0, WAR_W, WAR_H);
-    ctx.strokeStyle = "#12233c"; ctx.lineWidth = 1;
-    for (let x = 0; x <= WAR_W; x += 48) { ctx.beginPath(); ctx.moveTo(x, 60); ctx.lineTo(x, WAR_H); ctx.stroke(); }
-    for (let y = 60; y <= WAR_H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WAR_W, y); ctx.stroke(); }
-    ctx.fillStyle = "#0e1e34"; ctx.fillRect(0, 0, WAR_W, 60);
-    ctx.strokeStyle = "#16304f"; ctx.beginPath(); ctx.moveTo(0, 60); ctx.lineTo(WAR_W, 60); ctx.stroke();
-    // desks at each home
-    Object.values(WAR_HOMES).forEach((h) => {
-      ctx.fillStyle = "#14304f";
-      ctx.beginPath(); ctx.roundRect(h.x - 30, h.y + 14, 60, 16, 5); ctx.fill();
-    });
+    drawBackground(ctx, WAR_W, WAR_H);
   }
 
+  const SPRITE_SIZE = WAR_W * 0.088; // walking sprite cell size (~66 at 760px wide)
   function drawAgent(ag) {
     const entry = spriteCache.get(ag.sheet);
-    const size = 66;
-    const fx = (ag.walking ? WALK_CYCLE[ag.frameIdx % WALK_CYCLE.length] : 0) * FRAME;
-    ctx.fillStyle = "rgba(0,0,0,0.28)";
-    ctx.beginPath(); ctx.ellipse(ag.x, ag.y + 4, 18, 5, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.save();
-    ctx.translate(ag.x, ag.y);
-    if (ag.facing < 0) ctx.scale(-1, 1);
-    if (entry && entry.ready) ctx.drawImage(entry.img, fx, 0, FRAME, FRAME, -size / 2, -size + 8, size, size);
-    else { ctx.fillStyle = "#13263f"; ctx.fillRect(-size / 2, -size + 8, size, size); }
-    ctx.restore();
-    // status dot
+    let headTop;
+    if (ag.seated) {
+      drawSeated(ctx, ag.sheet, ag.x, ag.y, WAR_W, ag.home.chair);
+      headTop = ag.y - WAR_W * CHAIR_W_FRAC * 1.95;
+    } else {
+      // ground shadow under the feet
+      ctx.fillStyle = "rgba(0,0,0,0.26)";
+      ctx.beginPath(); ctx.ellipse(ag.x, ag.y, SPRITE_SIZE * 0.26, SPRITE_SIZE * 0.075, 0, 0, Math.PI * 2); ctx.fill();
+      const f = facingFrom(ag.mvx, ag.mvy);
+      const col = ag.walking ? WALK_COLS[ag.frameIdx % WALK_COLS.length] : IDLE_COLS[0];
+      if (entry && entry.ready) drawSpriteCell(ctx, entry, col, f.row, f.flip, ag.x, ag.y, SPRITE_SIZE);
+      else { ctx.fillStyle = "#13263f"; ctx.fillRect(ag.x - SPRITE_SIZE / 2, ag.y - SPRITE_SIZE * CELL_FEET, SPRITE_SIZE, SPRITE_SIZE * CELL_FEET); }
+      headTop = ag.y - SPRITE_SIZE * CELL_FEET;
+    }
+    // status dot near the head
     const dot = { working: "#60a5fa", running: "#60a5fa", done: "#34d399", idle: "#5a6b80" }[ag.status] || "#5a6b80";
     ctx.fillStyle = dot;
-    ctx.beginPath(); ctx.arc(ag.x + 18, ag.y - size + 20, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ag.x + 15, headTop + 4, 3.5, 0, Math.PI * 2); ctx.fill();
     // name tag
     ctx.fillStyle = "rgba(10,22,40,0.82)";
-    ctx.beginPath(); ctx.roundRect(ag.x - 28, ag.y + 8, 56, 14, 4); ctx.fill();
-    ctx.fillStyle = "#9fc0e0";
+    ctx.beginPath(); ctx.roundRect(ag.x - 28, ag.y + 5, 56, 14, 4); ctx.fill();
+    ctx.fillStyle = "#cfe0f2";
     ctx.font = "10px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(ag.name, ag.x, ag.y + 18);
+    ctx.fillText(ag.name, ag.x, ag.y + 15);
   }
 
   function render() {
     drawRoom();
+    // persistent chairs: any seat whose owner has stepped away still shows its chair
+    agents.forEach((ag) => {
+      if (!ag.seated) drawSeatChair(ctx, ag.home.chair, ag.home.x, ag.home.y, WAR_W);
+    });
     [...agents].sort((a, b) => a.y - b.y).forEach(drawAgent);
   }
 
