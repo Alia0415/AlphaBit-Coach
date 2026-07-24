@@ -242,6 +242,12 @@ export const SKILL_META = {
   舆情监控: { desc: "跟踪新闻与公告舆情，标记情绪拐点。", by: ["research"] },
 };
 
+export const DEMO_SKILLS = [
+  { id: "factor_idea_generation", name: "因子构想生成", mode: "instruction", owner: "quant" },
+  { id: "r020_volume_expansion", name: "R020 成交量放大", mode: "executable", owner: "quant" },
+  { id: "a_share_stock_dossier", name: "A 股个股档案", mode: "instruction", owner: "research" },
+];
+
 // ---------- war-room demo script ----------
 // t 单位为秒（1x 速度）。type: log / dag / work / say / visit / roundtable /
 // done / skill / timeline / finish
@@ -467,11 +473,3 @@ export const REPORTS = [
     ],
   },
 ];
-
-export const SOON_PAGES = {
-  skills: { ico: "🧩", name: "Skills", desc: "集中管理投研团队的技能市场：浏览、安装、审查每个 Skill 的来源、许可与状态。当前技能由后端 skill_registry 统一托管，前端管理台规划中。" },
-  "data-market": { ico: "🗄️", name: "数据市场", desc: "一站式接入行情、财报、宏观与另类数据源，统一鉴权与配额管理。规划接入 PandaData 目录浏览。" },
-  strategies: { ico: "📦", name: "策略库", desc: "沉淀可复用的研究与回测策略模板，支持版本管理与一键复跑。规划中。" },
-  monitor: { ico: "📊", name: "监控看板", desc: "实时监控系统吞吐、任务成功率、模型调用配额与数据延迟，规划中。" },
-  knowledge: { ico: "📚", name: "知识库", desc: "沉淀研究方法论、术语词典与历史结论，供团队检索复用，规划中。" },
-};

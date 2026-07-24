@@ -9,8 +9,8 @@ import {
 } from "./profile.js?v=20260724-p03";
 import {
   AGENTS,
+  DEMO_SKILLS,
   REPORTS,
-  SOON_PAGES,
   OFFICE_FEED,
   TEAM_RADAR,
   RECOMMENDED_GROUPS,
@@ -45,9 +45,8 @@ function setLiveSession(next) { liveSession = { ...liveSession, ...next }; }
 function resetLiveSession() { liveSession = { taskId: null, prompt: "", plan: null }; }
 
 // ---------------------------------------------------------------------------
-// mode (demo | live) — demo is the default showcase; live binds read-only
-// pages to the real backend. Task execution / planning stay demo until ARK
-// credentials are configured (later phase).
+// mode (demo | live) — both modes expose the same backend-supported product
+// surface. Demo mode supplies labelled local examples; live mode calls the API.
 // ---------------------------------------------------------------------------
 let liveStatus = { online: false, healthy: false, pandadata: null };
 
@@ -350,14 +349,7 @@ const NAV = [
   { route: "experts", ico: "👥", label: "专家中心" },
   { route: "reports", ico: "📑", label: "研究报告" },
   { route: "profile", ico: "🪪", label: "用户画像" },
-  { sep: true },
   { route: "skills", ico: "🧩", label: "Skills" },
-  { route: "data-market", ico: "🗄", label: "数据市场" },
-  { route: "strategies", ico: "📦", label: "策略库" },
-  { route: "monitor", ico: "📊", label: "监控看板" },
-  { route: "knowledge", ico: "📚", label: "知识库" },
-  { sep: true },
-  { route: "help", ico: "❓", label: "帮助中心" },
 ];
 
 let currentRoute = "reports";
@@ -428,15 +420,13 @@ function renderTopbar() {
   // demo / live mode toggle
   const live = isLive();
   const modeBtn = el("button", "pill", `${live ? "🟢 实时数据" : "🧪 演示模式"} · 点击切换`);
-  modeBtn.title = live ? "当前使用后端真实只读数据" : "当前使用本地演示数据";
+  modeBtn.title = live ? "当前使用后端真实数据与工作流" : "当前使用本地演示数据";
   modeBtn.addEventListener("click", () => setMode(live ? "demo" : "live"));
   bar.append(modeBtn);
 
   const history = el("button", "pill", "🕘 历史任务");
   history.addEventListener("click", () => navigate("tasks"));
-  const settings = el("button", "pill", "⚙ 设置");
-  settings.addEventListener("click", () => toast("设置面板规划中（DEMO）"));
-  bar.append(history, settings);
+  bar.append(history);
 
   const avaBtn = el("button", "avatar-btn");
   avaBtn.appendChild(avatar("user", 34, "pix-ava"));
@@ -449,7 +439,6 @@ function renderStatusbar() {
   sb.innerHTML = "";
   sb.appendChild(el("span", "sb-item", "🙂 用最强的 AI 团队，做最专业的投资研究。"));
   sb.appendChild(el("span", "spacer"));
-  sb.appendChild(el("span", "sb-item sb-slogan", `${AGENTS.filter((a) => a.status !== "off").length} 位专家在线`));
   sb.appendChild(el("span", "sb-item sb-slogan", nowClock()));
 }
 
@@ -650,14 +639,13 @@ function renderPage() {
       page.appendChild(live ? pageTasksLive() : pageTasks());
       break;
     case "skills":
-      if (live) page.appendChild(pageSkillsLive());
-      else page.appendChild(pageSoon(currentRoute));
+      page.appendChild(live ? pageSkillsLive() : pageSkills());
       break;
     case "profile":
       mountProfilePage(page, toast);
       break;
     default:
-      page.appendChild(pageSoon(currentRoute));
+      navigate("hall");
   }
 }
 
@@ -699,18 +687,11 @@ function pageReportDetail(reportId) {
 function buildReportMain(report) {
   const col = el("div");
 
-  // toolbar: back + export/share
+  // toolbar
   const toolbar = el("div", "rpt-toolbar");
   const back = el("button", "btn-ghost", "‹ 返回报告列表");
   back.addEventListener("click", () => navigate("reports"));
   toolbar.appendChild(back);
-  const actions = el("div", "rt-actions");
-  ["📄 导出 PDF", "📊 导出 PPT", "🔗 分享报告"].forEach((label) => {
-    const b = el("button", "btn", esc(label));
-    b.addEventListener("click", () => toast(`${label.replace(/^[^ ]+ /, "")}（DEMO）`));
-    actions.appendChild(b);
-  });
-  toolbar.appendChild(actions);
   col.appendChild(toolbar);
 
   // hero: title + meta + team | score
@@ -832,21 +813,8 @@ function buildReportMain(report) {
   contribPanel.appendChild(grid);
   col.appendChild(contribPanel);
 
-  // footer note + action bar
+  // footer note
   col.appendChild(el("div", "rpt-note", "报告已完成，您可以继续追问或发起新的研究探索。"));
-  const bar = el("div", "rpt-actions-bar");
-  const acts = [
-    { label: "📈 补充宏观分析", primary: true },
-    { label: "🔄 切换研究周期", primary: false },
-    { label: "🆚 对比分析", primary: false },
-    { label: "⋯ 更多操作", primary: false },
-  ];
-  acts.forEach((a) => {
-    const chip = el("button", `chip${a.primary ? " primary" : ""}`, esc(a.label));
-    chip.addEventListener("click", () => toast(`${a.label.replace(/^[^ ]+ /, "")}（DEMO）`));
-    bar.appendChild(chip);
-  });
-  col.appendChild(bar);
 
   return col;
 }
@@ -887,8 +855,6 @@ function buildFollowPanel(report) {
   const saved = store.state.followups[report.id] || [];
   const seed = [{ role: "sys", text: `报告《${report.title}》已生成`, time: nowClock() }, ...saved];
   seed.forEach((m) => scroll.appendChild(renderMessage(m)));
-
-  panel.appendChild(el("div", "follow-viewall", '<button class="btn-ghost">查看完整对话记录 ›</button>'));
 
   // input bar
   const inputBar = el("div", "chat-inputbar");
@@ -1852,9 +1818,6 @@ function renderExpertDetail(panel) {
   hinfo.innerHTML = `<div style="font-size:20px;font-weight:700">${esc(a.name)}</div>
     <div style="color:var(--text-2);font-size:12.5px">${esc(a.role)} <span class="badge ${a.status}"><span class="dot"></span>${statusText(a.status)}</span></div>`;
   head.appendChild(hinfo);
-  const mgBtn = el("button", "btn", "👥 团队管理");
-  mgBtn.addEventListener("click", () => toast("团队管理面板规划中（DEMO）"));
-  head.appendChild(mgBtn);
   panel.appendChild(head);
 
   panel.appendChild(el("p", "", `<span style="color:var(--text-2);line-height:1.7">${esc(a.desc)}</span>`));
@@ -1897,12 +1860,11 @@ function renderExpertDetail(panel) {
     requestAnimationFrame(() => drawRadar(canvas, a.radar, 240));
   } else if (expertTab === "tasks") {
     (a.recentTasks || []).forEach((t) => {
-      const row = el("button", "task-row");
+      const row = el("div", "task-row");
       row.innerHTML = `<span style="flex:1">${esc(t.title)}</span>
         <span class="tr-tag">${esc(t.tag)}</span>
         <span class="badge ${t.status === "running" ? "running" : "done"}"><span class="dot"></span>${t.status === "running" ? "进行中" : "完成"}</span>
         <span class="tr-time">${esc(t.time)}</span>`;
-      row.addEventListener("click", () => toast(`${t.title}（DEMO）`));
       body.appendChild(row);
     });
   } else if (expertTab === "contrib") {
@@ -1941,7 +1903,6 @@ function renderExpertDetail(panel) {
     });
     enable.appendChild(sw);
     body.appendChild(enable);
-    body.appendChild(el("div", "op-note", "更多配置（模型、温度、Skill 授权）规划中。"));
   }
 }
 
@@ -1965,19 +1926,23 @@ function pageTasks() {
 }
 
 // ---------------------------------------------------------------------------
-// page: soon (placeholder pages backed by SOON_PAGES)
+// page: demo skills (mirrors the backend-supported Registry view)
 // ---------------------------------------------------------------------------
-function pageSoon(route) {
-  const meta = SOON_PAGES[route] || { ico: "🚧", name: "规划中", desc: "该模块正在规划中。" };
+function pageSkills() {
   const wrap = el("div", "panel");
-  const box = el("div", "soon-wrap");
-  box.appendChild(el("div", "sw-ico", meta.ico));
-  box.appendChild(el("h2", "", esc(meta.name)));
-  box.appendChild(el("p", "", esc(meta.desc)));
-  const back = el("button", "btn btn-primary", "返回研究报告");
-  back.addEventListener("click", () => navigate("reports"));
-  box.appendChild(back);
-  wrap.appendChild(box);
+  wrap.appendChild(screenTitle("07", "Skills · 演示", "演示数据只展示 AlphaOS 已支持的专家 Skill 授权关系。"));
+  const list = el("div", "report-list");
+  DEMO_SKILLS.forEach((skill) => {
+    const item = el("div", "report-item");
+    item.style.cursor = "default";
+    item.appendChild(el("span", "ri-ico", "🧩"));
+    item.appendChild(el("div", "", `
+      <div style="font-weight:600">${esc(skill.name)} <span class="badge online"><span class="dot ok"></span>DEMO</span></div>
+      <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(skill.id)} · ${esc(skill.mode)} · 归属 ${esc(skill.owner)}</div>
+    `));
+    list.appendChild(item);
+  });
+  wrap.appendChild(list);
   return wrap;
 }
 
@@ -2161,17 +2126,15 @@ function pageTasksLive() {
     const wrap = el("div", "panel");
     wrap.appendChild(el("div", "panel-title", "任务中心 <span class='title-extra'>实时任务记录</span>"));
     if (!tasks.length) {
-      wrap.appendChild(stateBox("empty", "暂无任务记录", "任务执行需要配置 ARK 凭证并从大厅提交研究请求（下一阶段）。当前后端任务库为空。"));
+      wrap.appendChild(stateBox("empty", "暂无任务记录", "配置 ARK 凭证后，可从投研大厅提交研究请求。"));
       return wrap;
     }
     const list = el("div", "task-list");
     tasks.forEach((t) => {
-      const item = el("button", "task-item");
+      const item = el("div", "task-item");
       item.appendChild(el("span", "ri-ico", "📄"));
       const dur = t.duration_ms != null ? ` · ${(t.duration_ms / 1000).toFixed(1)}s` : "";
       item.appendChild(el("div", "", `<div class="ti-title">${esc(t.prompt.slice(0, 60) || t.id)}</div><div class="ti-sub">${esc(t.status)} · ${esc(t.created_at)}${esc(dur)}</div>`));
-      item.appendChild(el("span", "ti-go", "›"));
-      item.addEventListener("click", () => toast(`任务 ${t.id}（状态：${t.status}）`));
       list.appendChild(item);
     });
     wrap.appendChild(list);
@@ -2187,7 +2150,7 @@ function pageReportListLive() {
     const panel = el("div", "panel");
     panel.appendChild(el("div", "panel-title", "研究报告 <span class='title-extra'>实时报告库</span>"));
     if (!reports.length) {
-      panel.appendChild(stateBox("empty", "暂无已生成的研究报告", "报告在任务执行完成后由 Result Aggregator 落库（需 ARK 凭证，下一阶段）。当前后端报告库为空。"));
+      panel.appendChild(stateBox("empty", "暂无已生成的研究报告", "报告会在任务执行完成后由 Result Aggregator 落库。"));
       wrap.appendChild(panel);
       return wrap;
     }

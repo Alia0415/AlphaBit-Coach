@@ -469,7 +469,7 @@ button.contrib-card:hover { border-color: var(--cyan-dim); }
 .chart-legend { display: flex; gap: 14px; font-size: 11px; color: var(--text-2); margin-top: 6px; }
 .chart-legend i { display: inline-block; width: 10px; height: 3px; margin-right: 5px; vertical-align: middle; }
 
-/* ---------- tasks / soon / help ---------- */
+/* ---------- tasks / async states ---------- */
 .task-filter { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .task-filter .chip.sel { border-color: var(--cyan); color: var(--cyan); background: rgba(34, 211, 238, 0.1); }
 .task-list { display: flex; flex-direction: column; gap: 10px; }
@@ -482,11 +482,6 @@ button.task-item:hover { border-color: var(--cyan-dim); }
 .soon-wrap .sw-ico { font-size: 52px; margin-bottom: 14px; }
 .soon-wrap h2 { margin: 0 0 8px; }
 .soon-wrap p { color: var(--text-2); max-width: 460px; margin: 0 auto 20px; }
-.help-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.help-grid h3 { margin-top: 0; }
-.help-grid kbd { background: #13263f; border: 1px solid var(--line); border-radius: 5px; padding: 1px 7px; font-family: var(--mono); font-size: 11.5px; }
-.help-grid ul { padding-left: 18px; color: var(--text-2); }
-.help-grid li { margin-bottom: 6px; }
 
 /* ---------- agent op card ---------- */
 .op-card { display: flex; flex-direction: column; gap: 12px; }
@@ -498,7 +493,6 @@ button.task-item:hover { border-color: var(--cyan-dim); }
 
 /* ---------- report detail + follow-up (界面 06) ---------- */
 .rpt-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
-.rpt-toolbar .rt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .rpt-hero { display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: start; }
 .rpt-hero .rh-main { display: flex; gap: 14px; align-items: flex-start; }
 .rpt-hero .rh-ico { font-size: 30px; line-height: 1; margin-top: 2px; }
@@ -522,8 +516,6 @@ button.task-item:hover { border-color: var(--cyan-dim); }
 .track-bar .tb-track i { display: block; height: 100%; border-radius: 99px; transition: width 0.6s ease; }
 .track-bar .tb-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--green); font-weight: 600; }
 .rpt-note { text-align: center; color: var(--text-2); border: 1px dashed var(--line); border-radius: 12px; padding: 18px; margin-top: 18px; }
-.rpt-actions-bar { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-.rpt-actions-bar .chip.primary { border-color: var(--cyan); color: var(--cyan); background: rgba(34, 211, 238, 0.1); }
 
 .follow-head { display: flex; gap: 11px; align-items: flex-start; padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); margin-bottom: 12px; }
 .follow-head .fh-ava { width: 46px; height: 46px; }
@@ -565,7 +557,6 @@ button.task-item:hover { border-color: var(--cyan-dim); }
 .ds-kv b.mono { font-family: var(--mono); font-weight: 500; font-size: 11.5px; }
 .quick-chips .qchip { border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; background: #0e1e34; color: var(--text-2); font-size: 12px; text-align: left; line-height: 1.45; transition: all 0.15s; }
 .quick-chips .qchip:hover { border-color: var(--cyan-dim); color: var(--text); transform: translateY(-1px); }
-.follow-viewall { text-align: center; margin-top: 8px; }
 
 /* ---------- neon screen title ---------- */
 .screen-title { margin-bottom: 14px; }
