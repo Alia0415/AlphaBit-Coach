@@ -2257,14 +2257,91 @@ function buildReportMainLive(report) {
   const blocks = Array.isArray(agg.content_blocks) ? agg.content_blocks : [];
   blocks.forEach((b) => {
     const bp = el("div", "panel");
-    bp.appendChild(el("div", "follow-sec-title", esc(b.title || b.type || "内容块")));
+    bp.appendChild(el("div", "follow-sec-title blk-title", `${blockIcon(b.type)}<span>${esc(b.title || b.type || "内容块")}</span>`));
     if (b.description) bp.appendChild(el("p", "", `<span style="color:var(--text-2);line-height:1.7">${esc(b.description)}</span>`));
-    bp.appendChild(renderBlockData(b.data));
+    bp.appendChild(renderBlock(b));
     col.appendChild(bp);
   });
 
   if (agg.disclaimer) col.appendChild(el("div", "op-note", esc(agg.disclaimer)));
   return col;
+}
+
+// Type-aware renderer for aggregator content blocks. Presentation only: it
+// renders exactly the backend evidence, never inventing facts. Unknown shapes
+// fall back to the bounded generic walker below.
+const BLOCK_ICONS = {
+  narrative: "📌", risk_list: "⚠️", action_list: "🎯",
+  data_scope: "🗂", limitations: "⛔", key_findings: "✅",
+};
+function blockIcon(type) {
+  return `<span class="blk-ico">${BLOCK_ICONS[type] || "✦"}</span>`;
+}
+
+function renderBlock(b) {
+  const type = b && b.type;
+  const data = (b && b.data) || {};
+  if (Array.isArray(data.sources)) return renderDataScope(data.sources);
+  if (Array.isArray(data.items) && data.items.length) return renderEvidenceList(data.items, type);
+  return renderBlockData(data);
+}
+
+const LIST_MARK = {
+  narrative: "•", risk_list: "!", action_list: "→", limitations: "∅",
+};
+function renderEvidenceList(items, type) {
+  const list = el("div", `rpt-list rpt-list--${esc(type || "generic")}`);
+  items.slice(0, 40).forEach((it) => {
+    const text = typeof it === "string" ? it : (it && it.text) || "";
+    if (!text) return;
+    const li = el("div", "rpt-li");
+    li.appendChild(el("span", "rpt-li-mark", esc(LIST_MARK[type] || "•")));
+    const body = el("div", "rpt-li-body");
+    body.appendChild(el("div", "rpt-li-text", esc(text)));
+    const src = it && typeof it === "object" ? it.source_step : null;
+    if (src) body.appendChild(el("span", "src-chip", `⛭ ${esc(src)}`));
+    li.appendChild(body);
+    list.appendChild(li);
+  });
+  return list;
+}
+
+function dataScopeStatus(status) {
+  const s = String(status || "");
+  if (s === "available") return { cls: "done", label: "数据可用" };
+  if (s === "no_data") return { cls: "off", label: "无数据" };
+  if (s === "partial") return { cls: "running", label: "部分可用" };
+  return { cls: "waiting", label: s || "未知" };
+}
+function dsKv(k, v, mono) {
+  return el("div", "ds-kv", `<span>${esc(k)}</span><b class="${mono ? "mono" : ""}">${esc(String(v))}</b>`);
+}
+function renderDataScope(sources) {
+  const grid = el("div", "ds-cards");
+  sources.slice(0, 30).forEach((s) => {
+    if (!s || typeof s !== "object") return;
+    const card = el("div", "ds-card");
+    const head = el("div", "ds-card-head");
+    head.appendChild(el("span", "ds-src", esc(s.name || "数据源")));
+    if (s.missing_status != null && s.missing_status !== "") {
+      const st = dataScopeStatus(s.missing_status);
+      head.appendChild(el("span", `badge ${st.cls}`, `<span class="dot"></span>${esc(st.label)}`));
+    } else if (s.commit || s.license) {
+      head.appendChild(el("span", "badge waiting", `<span class="dot"></span>Skill 来源`));
+    }
+    card.appendChild(head);
+    if (s.method) card.appendChild(dsKv("方法", s.method, true));
+    if (s.symbol) card.appendChild(dsKv("标的", s.symbol));
+    const qr = s.query_range || {};
+    const range = [qr.start_period, qr.end_period].filter(Boolean).join(" ~ ");
+    if (range) card.appendChild(dsKv("区间", range));
+    if (s.latest_report_period != null && s.latest_report_period !== "null") card.appendChild(dsKv("最新期", s.latest_report_period));
+    if (s.row_count != null) card.appendChild(dsKv("记录数", s.row_count));
+    if (s.commit) card.appendChild(dsKv("commit", String(s.commit).slice(0, 10), true));
+    if (s.license) card.appendChild(dsKv("license", s.license));
+    grid.appendChild(card);
+  });
+  return grid;
 }
 
 // Generic, bounded renderer for a content block's `data` — no fixed schema.
