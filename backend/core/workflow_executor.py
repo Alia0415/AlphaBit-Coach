@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any, cast
+from threading import Lock
+from typing import Annotated, Any, TypedDict, cast
+
+from langgraph.graph import END, START, StateGraph
 
 from backend.agents.macro_agent import MacroAgent
 from backend.agents.quant_agent import QuantAgent
@@ -18,13 +20,27 @@ from backend.core.contracts import (
     ExecutionPlan,
     ExpertResult,
     ExpertTask,
+    PlanStep,
 )
 
 ExpertHandler = Callable[[ExpertTask], ExpertResult]
 
 
+def _merge_results(
+    current: dict[str, ExpertResult],
+    update: dict[str, ExpertResult],
+) -> dict[str, ExpertResult]:
+    return {**current, **update}
+
+
+class _WorkflowState(TypedDict):
+    results: Annotated[dict[str, ExpertResult], _merge_results]
+
+
 class WorkflowExecutor:
     """Execute exactly the nodes and edges supplied by an arbitrary valid DAG."""
+
+    runtime_name = "langgraph"
 
     def __init__(
         self,
@@ -42,82 +58,75 @@ class WorkflowExecutor:
         original_user_request: str | None = None,
         event_sink: Callable[[ExecutionEvent], None] | None = None,
     ) -> tuple[list[ExecutionEvent], dict[str, ExpertResult]]:
-        """Run plan nodes in dependency-ready parallel batches.
+        """Compile and run the validated plan with LangGraph.
 
         The executor never adds, removes, reorders, or selects business steps.
         When ``event_sink`` is provided, each emitted event is forwarded to it
-        as it is produced (for streaming), without changing the batch semantics
+        as it is produced (for streaming), without changing the graph semantics
         or the returned event list.
         """
 
         if plan.needs_clarification:
             return [], {}
 
-        step_by_id = {step.id: step for step in plan.steps}
-        pending = set(step_by_id)
-        results: dict[str, ExpertResult] = {}
         events: list[ExecutionEvent] = []
+        event_lock = Lock()
         user_request = (original_user_request or plan.goal).strip()
 
         def emit(event: ExecutionEvent) -> None:
-            events.append(event)
-            if event_sink is not None:
-                event_sink(event)
+            with event_lock:
+                events.append(event)
+                if event_sink is not None:
+                    event_sink(event)
 
-        while pending:
-            # Phase A: Block steps whose REQUIRED dependencies failed/blocked.
-            blocked = [
-                step_by_id[step_id]
-                for step_id in pending
-                if any(
-                    dependency in results
-                    and results[dependency].status != "completed"
-                    for dependency in step_by_id[step_id].required_dependency_ids()
-                )
-            ]
-            if blocked:
-                for step in sorted(blocked, key=lambda item: item.id):
-                    result = ExpertResult(
-                        task_id=step.id,
-                        agent=step.agent,
-                        status="blocked",
-                        summary="步骤因必需依赖失败而被阻断。",
-                        error="A required dependency did not complete successfully.",
-                    )
-                    results[step.id] = result
-                    pending.remove(step.id)
-                    emit(
-                        _event(
-                            "step_failed",
-                            step.id,
-                            step.agent,
-                            "步骤因必需依赖失败而被阻断。",
-                            {"status": "blocked"},
+        def make_wave_start(
+            steps: list[PlanStep],
+        ) -> Callable[[_WorkflowState], _WorkflowState]:
+            def start_wave(state: _WorkflowState) -> _WorkflowState:
+                results = state.get("results", {})
+                blocked_results: dict[str, ExpertResult] = {}
+                for step in sorted(steps, key=lambda item: item.id):
+                    if any(
+                        results[dependency].status != "completed"
+                        for dependency in step.required_dependency_ids()
+                    ):
+                        blocked_results[step.id] = ExpertResult(
+                            task_id=step.id,
+                            agent=step.agent,
+                            status="blocked",
+                            summary="步骤因必需依赖失败而被阻断。",
+                            error=(
+                                "A required dependency did not complete successfully."
+                            ),
                         )
-                    )
-                # Re-evaluate descendants so a newly blocked result cannot run.
-                continue
+                        emit(
+                            _event(
+                                "step_failed",
+                                step.id,
+                                step.agent,
+                                "步骤因必需依赖失败而被阻断。",
+                                {"status": "blocked"},
+                            )
+                        )
+                    else:
+                        emit(
+                            _event(
+                                "step_started",
+                                step.id,
+                                step.agent,
+                                f"{self._registry.get(step.agent).name} 开始执行任务。",
+                            )
+                        )
+                return {"results": blocked_results}
 
-            # Phase B: A step is ready when ALL its dependencies (required +
-            # optional) have reached a terminal state (present in results).
-            ready = [
-                step_by_id[step_id]
-                for step_id in pending
-                if all(
-                    dependency in results
-                    for dependency in step_by_id[step_id].all_dependency_step_ids()
-                )
-            ]
-            if not ready:
-                if pending:
-                    raise RuntimeError("No executable steps remain in the task graph")
-                break
+            return start_wave
 
-            ready.sort(key=lambda item: item.id)
-            tasks: list[ExpertTask] = []
-            for step in ready:
-                # Pass ALL dependency results (required + optional, including
-                # failed optionals) so the expert can note missing evidence.
+        def make_node(step: PlanStep) -> Callable[[_WorkflowState], _WorkflowState]:
+            def execute_node(state: _WorkflowState) -> _WorkflowState:
+                results = state.get("results", {})
+                if step.id in results:
+                    return {"results": {}}
+
                 all_dep_ids = step.all_dependency_step_ids()
                 task = ExpertTask(
                     task_id=step.id,
@@ -128,26 +137,9 @@ class WorkflowExecutor:
                     dependency_results={
                         dep_id: results[dep_id]
                         for dep_id in all_dep_ids
-                        if dep_id in results
                     },
                 )
-                tasks.append(task)
-                emit(
-                    _event(
-                        "step_started",
-                        step.id,
-                        step.agent,
-                        f"{self._registry.get(step.agent).name} 开始执行任务。",
-                    )
-                )
-
-            with ThreadPoolExecutor(max_workers=max(1, len(tasks))) as pool:
-                futures = [pool.submit(self._execute_task, task) for task in tasks]
-                batch_results = [future.result() for future in futures]
-
-            for result in batch_results:
-                results[result.task_id] = result
-                pending.remove(result.task_id)
+                result = self._execute_task(task)
                 for internal_event in _safe_agent_events(result):
                     emit(
                         _event(
@@ -197,8 +189,30 @@ class WorkflowExecutor:
                             f"{result.agent.value} 步骤执行失败。",
                         )
                     )
+                return {"results": {step.id: result}}
 
-        # Dict insertion order is normalized to the plan, not completion timing.
+            return execute_node
+
+        graph = StateGraph(_WorkflowState)
+        for step in plan.steps:
+            graph.add_node(step.id, make_node(step))
+
+        if not plan.steps:
+            graph.add_edge(START, END)
+        else:
+            waves = _execution_waves(plan)
+            previous_nodes: list[str] = []
+            for index, wave in enumerate(waves):
+                start_node = f"__alphaos_wave_{index}__"
+                graph.add_node(start_node, make_wave_start(wave))
+                graph.add_edge(previous_nodes or START, start_node)
+                for step in wave:
+                    graph.add_edge(start_node, step.id)
+                previous_nodes = [step.id for step in wave]
+            graph.add_edge(previous_nodes, END)
+
+        final_state = graph.compile().invoke({"results": {}})
+        results = final_state["results"]
         return events, {
             step.id: results[step.id]
             for step in plan.steps
@@ -235,6 +249,30 @@ def _default_handlers() -> dict[AgentId, ExpertHandler]:
         AgentId.MACRO: MacroAgent(),
         AgentId.REPORT: ReportAgent(),
     }
+
+
+def _execution_waves(plan: ExecutionPlan) -> list[list[PlanStep]]:
+    """Return stable dependency-ready batches matching the public SSE contract."""
+
+    pending = {step.id: step for step in plan.steps}
+    completed: set[str] = set()
+    waves: list[list[PlanStep]] = []
+    while pending:
+        ready = sorted(
+            (
+                step
+                for step in pending.values()
+                if set(step.all_dependency_step_ids()) <= completed
+            ),
+            key=lambda item: item.id,
+        )
+        if not ready:
+            raise RuntimeError("No executable steps remain in the task graph")
+        waves.append(ready)
+        for step in ready:
+            completed.add(step.id)
+            pending.pop(step.id)
+    return waves
 
 
 def _failure(task: ExpertTask, error: str) -> ExpertResult:

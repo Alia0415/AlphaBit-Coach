@@ -1,4 +1,5 @@
 fastapi
+langgraph==1.0.7
 numpy
 openai
 pandas
