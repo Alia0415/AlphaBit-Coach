@@ -38,7 +38,11 @@ for (const field of [
 }
 
 assert.match(profile, /保存退出/);
-assert.match(profile, /跳过/);
+assert.match(profile, /投资知识水平（必答）/);
+assert.match(profile, /你目前的投资知识水平如何/);
+assert.match(profile, /跳过其余问题并完成/);
+assert.match(profile, /REQUIRED_FIELD\s*=\s*"investment_experience"/);
+assert.match(profile, /required aria-required="true"/);
 assert.match(profile, /重新进行建档/);
 assert.match(profile, /确认清空用户画像/);
 assert.match(profile, /SQLite 是画像事实源/);

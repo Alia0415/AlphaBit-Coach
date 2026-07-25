@@ -16,6 +16,8 @@ def test_ark_client_ignores_environment_proxy_configuration(
 ) -> None:
     monkeypatch.setenv("ARK_API_KEY", "test-key")
     monkeypatch.setenv("ARK_MODEL", "test-model")
+    monkeypatch.delenv("ARK_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("ARK_MAX_RETRIES", raising=False)
     http_client = object()
     http_factory = Mock(return_value=http_client)
     openai_client = SimpleNamespace(responses=SimpleNamespace(create=Mock()))
@@ -25,13 +27,52 @@ def test_ark_client_ignores_environment_proxy_configuration(
 
     client = ArkClient()
 
-    http_factory.assert_called_once_with(trust_env=False)
+    http_factory.assert_called_once_with(
+        trust_env=False,
+        timeout=ark_client.DEFAULT_ARK_TIMEOUT_SECONDS,
+    )
     openai_factory.assert_called_once_with(
         base_url=ark_client.ARK_BASE_URL,
         api_key="test-key",
         http_client=http_client,
+        max_retries=ark_client.DEFAULT_ARK_MAX_RETRIES,
     )
     assert client._model == "test-model"
+
+
+def test_ark_client_accepts_only_bounded_timeout_and_retry_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ARK_API_KEY", "test-key")
+    monkeypatch.setenv("ARK_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("ARK_MAX_RETRIES", "2")
+    http_factory = Mock(return_value=object())
+    openai_factory = Mock(
+        return_value=SimpleNamespace(responses=SimpleNamespace(create=Mock()))
+    )
+    monkeypatch.setattr(ark_client, "DefaultHttpxClient", http_factory)
+    monkeypatch.setattr(ark_client, "OpenAI", openai_factory)
+
+    ArkClient()
+
+    http_factory.assert_called_once_with(trust_env=False, timeout=45.0)
+    assert openai_factory.call_args.kwargs["max_retries"] == 2
+
+    monkeypatch.setenv("ARK_TIMEOUT_SECONDS", "3600")
+    monkeypatch.setenv("ARK_MAX_RETRIES", "99")
+    http_factory.reset_mock()
+    openai_factory.reset_mock()
+
+    ArkClient()
+
+    http_factory.assert_called_once_with(
+        trust_env=False,
+        timeout=ark_client.DEFAULT_ARK_TIMEOUT_SECONDS,
+    )
+    assert (
+        openai_factory.call_args.kwargs["max_retries"]
+        == ark_client.DEFAULT_ARK_MAX_RETRIES
+    )
 
 
 def test_chat_reports_connection_error_type_without_sensitive_details(

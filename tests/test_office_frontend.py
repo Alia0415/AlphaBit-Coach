@@ -17,7 +17,14 @@ def test_office_keeps_only_backend_supported_navigation() -> None:
 
     assert response.status_code == 200
     script = response.text
-    for label in ("投研大厅", "任务中心", "专家中心", "研究报告", "用户画像", "Skills"):
+    for label in (
+        "投研大厅",
+        "任务中心",
+        "专家中心",
+        "研究报告",
+        "用户画像",
+        "研究能力",
+    ):
         assert f'label: "{label}"' in script
     for label in ("数据市场", "策略库", "监控看板", "知识库", "帮助中心"):
         assert f'label: "{label}"' not in script
@@ -54,6 +61,14 @@ def test_office_demo_skills_mirror_supported_skill_surface() -> None:
         "a_share_stock_dossier",
     ):
         assert skill_id in mock_response.text
+
+
+def test_demo_and_live_reports_share_the_research_presentation_adapter() -> None:
+    script = client.get("/static/office/js/app.js").text
+
+    assert "const researchReport = buildDemoResearchReport(report);" in script
+    assert "layout.appendChild(buildReportMainLive(researchReport));" in script
+    assert "researchPresentation.buildResearchViewModel" in script
 
 
 def test_office_versions_the_demo_data_module_import() -> None:

@@ -533,6 +533,59 @@ def test_quant_agent_can_call_only_r020_with_mocked_pandadata() -> None:
     assert any(call["tool"] == "pandadata_market_data" for call in result.tool_calls)
 
 
+def test_quant_agent_repairs_false_market_data_skill_clarification() -> None:
+    r020_adapter = StubAdapter(
+        {
+            "factor_id": "R020",
+            "coverage_ratio": 0.8,
+            "validation_status": "computed_not_validated",
+        }
+    )
+    registry = SkillRegistry(
+        adapters={"r020_volume_expansion": r020_adapter},
+        register_default_adapters=False,
+    )
+    false_clarification = json.dumps(
+        {
+            "selected_skills": [],
+            "steps": [],
+            "needs_clarification": True,
+            "clarification_question": (
+                "允许的 Skills 中没有 PandaData 市场数据获取 Skill，"
+                "请补充 market_data 或授权数据调用。"
+            ),
+        },
+        ensure_ascii=False,
+    )
+    panda = MockPandaData(_market_rows(("000001.SZ",)))
+    ark = MockArk(
+        false_clarification,
+        _skill_plan("r020_volume_expansion"),
+    )
+    agent = QuantAgent(
+        ark_client=ark,
+        data_client=panda,
+        skill_registry=registry,
+    )
+
+    result = agent.execute(
+        _quant_task(
+            {
+                "symbols": ["000001.SZ"],
+                "start_date": "20240101",
+                "end_date": "20240125",
+            }
+        )
+    )
+
+    assert result.status == "completed"
+    assert result.metadata["actual_skills"] == ["r020_volume_expansion"]
+    assert len(ark.prompts) == 2
+    assert len(panda.calls) == 1
+    assert "自动调用" in ark.prompts[0]
+    assert "自动调用" in ark.prompts[1]
+
+
 def test_quant_agent_rejects_unauthorized_planner_output() -> None:
     invalid = _skill_plan("factor_backtest")
     registry = SkillRegistry(register_default_adapters=False)
