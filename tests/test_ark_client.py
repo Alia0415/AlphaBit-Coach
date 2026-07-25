@@ -71,8 +71,7 @@ def test_ark_client_accepts_only_bounded_timeout_and_retry_configuration(
     ArkClient()
 
     http_factory.assert_called_once_with(
-        trust_env=False,
-        timeout=ark_client.DEFAULT_DEEPSEEK_TIMEOUT_SECONDS,
+        trust_env=False, timeout=ark_client.DEFAULT_DEEPSEEK_TIMEOUT_SECONDS
     )
     assert (
         openai_factory.call_args.kwargs["max_retries"]

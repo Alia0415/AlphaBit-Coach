@@ -51,16 +51,16 @@ import {
   createClassroomPanel,
 } from "./coach.js?v=20260725-report-dynamic";
 import {
+  buildOfficeGlossaryPage,
   highlightGlossaryScope,
   initOfficeGlossary,
-  openOfficeGlossary,
   registerGlossaryTerms,
-} from "./glossary-ui.js?v=20260725-p12";
+} from "./glossary-ui.js?v=20260726-full-page";
 import {
   buildStockResearchPrompt,
   mountStockChartPage,
   mountStockLibraryPage,
-} from "../../stock-workspace.js?v=20260726-auto-analysis1";
+} from "../../stock-workspace.js?v=20260726-main-sync2";
 
 const researchPresentation = globalThis.AlphaResearchPresentation;
 
@@ -501,7 +501,7 @@ const NAV = [
   { route: "reports", ico: "📑", label: "研究报告" },
   { route: "stock-library", ico: "▦", label: "股票库" },
   { route: "stocks", ico: "📈", label: "股票行情" },
-  { action: "glossary", ico: "📚", label: "投研知识库" },
+  { route: "glossary", ico: "📚", label: "投研知识库" },
   { route: "profile", ico: "🪪", label: "用户画像" },
   { route: "skills", ico: "🧩", label: "研究能力" },
 ];
@@ -579,25 +579,16 @@ function renderSidebar() {
       nav.appendChild(el("div", "nav-sep"));
       return;
     }
-    const opensGlossary = item.action === "glossary";
     const active = item.route === currentRoute;
     const btn = el(
       "button",
-      `nav-item${active ? " active" : ""}${opensGlossary ? " glossary-toggle" : ""}`,
+      `nav-item${active ? " active" : ""}`,
     );
     btn.title = item.label;
     btn.setAttribute("aria-label", item.label);
     btn.appendChild(el("span", "nav-ico", item.ico));
     btn.appendChild(el("span", "nav-label", esc(item.label)));
-    if (opensGlossary) {
-      btn.id = "glossaryToggle";
-      btn.title = "打开金融术语收藏";
-      btn.setAttribute("aria-controls", "glossaryPanel");
-      btn.setAttribute("aria-expanded", "false");
-      btn.addEventListener("click", openOfficeGlossary);
-    } else {
-      btn.addEventListener("click", () => navigate(item.route));
-    }
+    btn.addEventListener("click", () => navigate(item.route));
     nav.appendChild(btn);
   });
   side.appendChild(nav);
@@ -895,6 +886,9 @@ function renderPage() {
       break;
     case "skills":
       page.appendChild(live ? pageSkillsLive() : pageSkills());
+      break;
+    case "glossary":
+      page.appendChild(buildOfficeGlossaryPage());
       break;
     case "profile":
       mountProfilePage(page, toast);
@@ -3836,7 +3830,7 @@ function renderLearningSummary(summary, knowledgeCount = 0) {
       `📚 ${knowledgeCount} 个本次术语已接入投研知识库`,
     );
     knowledgeLink.type = "button";
-    knowledgeLink.addEventListener("click", openOfficeGlossary);
+    knowledgeLink.addEventListener("click", () => navigate("glossary"));
     terms.appendChild(knowledgeLink);
   }
   grid.appendChild(terms);

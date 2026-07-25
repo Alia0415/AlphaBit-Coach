@@ -31,16 +31,23 @@ def test_office_keeps_only_backend_supported_navigation() -> None:
         assert f'label: "{label}"' not in script
 
 
-def test_office_places_the_glossary_in_the_sidebar() -> None:
+def test_office_opens_the_glossary_as_a_full_page_route() -> None:
     script = client.get("/static/office/js/app.js").text
+    controller = client.get("/static/office/js/glossary-ui.js").text
+    styles = client.get("/static/office/css/office.css").text
 
-    glossary_item = '{ action: "glossary", ico: "📚", label: "投研知识库" }'
+    glossary_item = '{ route: "glossary", ico: "📚", label: "投研知识库" }'
     assert glossary_item in script
     assert script.index('label: "研究报告"') < script.index(glossary_item)
     assert script.index(glossary_item) < script.index('label: "用户画像"')
-    assert 'const opensGlossary = item.action === "glossary";' in script
-    assert 'btn.id = "glossaryToggle";' in script
-    assert 'el("button", "pill glossary-toggle", "📚 投研知识库")' not in script
+    assert 'case "glossary":' in script
+    assert "buildOfficeGlossaryPage()" in script
+    assert 'navigate("glossary")' in script
+    assert "glossary-overlay" not in controller
+    assert "glossary-panel" not in controller
+    assert 'className = "glossary-page"' in controller
+    assert ".glossary-page {" in styles
+    assert ".glossary-library {" in styles
 
 
 def test_office_does_not_render_unimplemented_actions() -> None:
@@ -213,7 +220,8 @@ def test_office_glossary_is_functional_and_scoped_to_research_content() -> None:
     api_script = client.get("/static/office/js/api.js").text
     live_script = client.get("/static/office/js/live.js").text
 
-    assert 'id = "glossaryToggle"' in script
+    assert 'route: "glossary"' in script
+    assert "buildOfficeGlossaryPage" in controller
     assert '"glossary-scope"' in script
     assert "highlightGlossaryScope" in script
     assert "extractReportGlossary" in script

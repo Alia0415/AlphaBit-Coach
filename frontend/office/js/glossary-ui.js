@@ -24,36 +24,6 @@ function safeColor(value) {
     : "var(--cyan)";
 }
 
-function ensureGlossaryShell() {
-  let panel = document.getElementById("glossaryPanel");
-  if (panel) return panel;
-
-  const overlay = document.createElement("div");
-  overlay.id = "glossaryOverlay";
-  overlay.className = "glossary-overlay";
-  overlay.addEventListener("click", closeOfficeGlossary);
-
-  panel = document.createElement("aside");
-  panel.id = "glossaryPanel";
-  panel.className = "glossary-panel";
-  panel.setAttribute("aria-hidden", "true");
-  panel.setAttribute("aria-label", "投研知识库");
-  panel.innerHTML = `
-    <header class="glossary-panel-head">
-      <div>
-        <span class="glossary-kicker">ALPHABIT COACH REFERENCE</span>
-        <h2>投研知识库</h2>
-      </div>
-      <button class="glossary-close" type="button" title="关闭术语库" aria-label="关闭术语库">×</button>
-    </header>
-    <div class="glossary-panel-note">本次研究指标会自动接入。点击报告中的高亮术语，可查看公式、实际结果与局限并收藏。</div>
-    <div class="glossary-knowledge-list" id="glossaryKnowledgeList"></div>
-  `;
-  panel.querySelector(".glossary-close").addEventListener("click", closeOfficeGlossary);
-  document.body.append(overlay, panel);
-  return panel;
-}
-
 function ensureTooltip() {
   let tooltip = document.getElementById("glossaryTooltip");
   if (tooltip) return tooltip;
@@ -126,12 +96,18 @@ function hideTooltip() {
   activeTerm = null;
 }
 
-function renderKnowledgePanel() {
+function renderKnowledgePanel(list = document.getElementById("glossaryKnowledgeList")) {
   const glossary = api();
-  const list = document.getElementById("glossaryKnowledgeList");
   if (!glossary || !list) return;
 
   const knowledge = glossary.getKnowledge();
+  const page = list.closest(".glossary-page");
+  page?.querySelectorAll("[data-glossary-count]").forEach((node) => {
+    node.textContent = String(knowledge.length);
+  });
+  const countLabel = page?.querySelector("[data-glossary-count-label]");
+  if (countLabel) countLabel.textContent = `${knowledge.length} 个术语`;
+
   if (!knowledge.length) {
     list.innerHTML = `
       <div class="glossary-empty">
@@ -162,6 +138,40 @@ function renderKnowledgePanel() {
   });
 }
 
+export function buildOfficeGlossaryPage() {
+  hideTooltip();
+  const page = document.createElement("section");
+  page.className = "glossary-page";
+  page.setAttribute("aria-labelledby", "glossaryPageTitle");
+  page.innerHTML = `
+    <header class="glossary-page-hero">
+      <div class="glossary-page-heading">
+        <span class="glossary-kicker">ALPHABIT COACH REFERENCE</span>
+        <h1 id="glossaryPageTitle">投研知识库</h1>
+        <p>本次研究指标会自动接入。点击报告中的高亮术语，可查看公式、实际结果与局限并收藏。</p>
+      </div>
+      <div class="glossary-page-summary" aria-label="知识库收藏统计">
+        <span>个人术语库</span>
+        <strong data-glossary-count>0</strong>
+        <small>已收藏术语</small>
+      </div>
+    </header>
+    <section class="glossary-library" aria-labelledby="glossaryLibraryTitle">
+      <header class="glossary-library-head">
+        <div>
+          <span class="glossary-section-label">SAVED TERMS</span>
+          <h2 id="glossaryLibraryTitle">已收藏术语</h2>
+          <p>这里汇总你在研究报告与追问结果中保存的专业概念。</p>
+        </div>
+        <span class="glossary-count-badge" data-glossary-count-label>0 个术语</span>
+      </header>
+      <div class="glossary-knowledge-list" id="glossaryKnowledgeList"></div>
+    </section>
+  `;
+  renderKnowledgePanel(page.querySelector("#glossaryKnowledgeList"));
+  return page;
+}
+
 export function highlightGlossaryScope(root) {
   const glossary = api();
   if (!glossary || !root) return;
@@ -185,31 +195,9 @@ export function registerGlossaryTerms(items, root) {
   return added;
 }
 
-export function openOfficeGlossary() {
-  hideTooltip();
-  const panel = ensureGlossaryShell();
-  const overlay = document.getElementById("glossaryOverlay");
-  renderKnowledgePanel();
-  overlay.classList.add("open");
-  panel.classList.add("open");
-  panel.setAttribute("aria-hidden", "false");
-  document.getElementById("glossaryToggle")?.setAttribute("aria-expanded", "true");
-  panel.querySelector(".glossary-close")?.focus();
-}
-
-export function closeOfficeGlossary() {
-  const panel = document.getElementById("glossaryPanel");
-  document.getElementById("glossaryOverlay")?.classList.remove("open");
-  panel?.classList.remove("open");
-  panel?.setAttribute("aria-hidden", "true");
-  const toggle = document.getElementById("glossaryToggle");
-  toggle?.setAttribute("aria-expanded", "false");
-}
-
 export function initOfficeGlossary() {
   if (initialized) return;
   initialized = true;
-  ensureGlossaryShell();
 
   document.addEventListener("mouseover", (event) => {
     const term = event.target.closest?.(".glossary-term");
@@ -235,7 +223,6 @@ export function initOfficeGlossary() {
     }
     if (event.key === "Escape") {
       hideTooltip();
-      closeOfficeGlossary();
     }
   });
 }
