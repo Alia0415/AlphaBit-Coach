@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 from dataclasses import asdict
 from datetime import datetime
+from statistics import median
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -15,6 +18,7 @@ from backend.agents.quant_cross_check import (
     MarketAlignment,
     PriceRow,
     assess_market_alignment,
+    cross_section_rank,
     run_cross_check,
 )
 from backend.core.contracts import AgentId, ExpertResult, ExpertTask
@@ -38,6 +42,33 @@ PANDADATA_FIELDS = [
     "close",
     "volume",
 ]
+MAX_THESIS_PEER_CANDIDATES = 12
+MAX_THESIS_VALID_PEERS = 5
+MAX_FUNDAMENTAL_METRICS_PER_CLAIM = 3
+_A_SHARE_SYMBOL_PATTERN = re.compile(r"^\d{6}\.(?:SH|SZ)$")
+_GROWTH_METRICS = {
+    "revenue_yoy",
+    "operating_profit_yoy",
+    "net_profit_yoy",
+    "net_profit_excluding_nonrecurring_yoy",
+}
+_TREND_METRICS = {
+    "gross_margin",
+    "operating_margin",
+    "net_margin",
+    "operating_cash_flow_to_net_profit",
+    "asset_liability_ratio",
+    "current_ratio",
+    "accounts_receivable_to_revenue",
+    "inventory_to_revenue",
+    "total_asset_turnover",
+}
+_LOWER_IS_HEALTHIER_METRICS = {
+    "asset_liability_ratio",
+    "accounts_receivable_to_revenue",
+    "inventory_to_revenue",
+}
+_DOSSIER_METRICS = _GROWTH_METRICS | _TREND_METRICS
 
 
 class SelectedSkill(BaseModel):
@@ -412,11 +443,17 @@ class QuantAgent:
             )
 
         selections, fallback_used = self._select_thesis_claims(task, candidates)
+        target_symbols = _symbols(task.inputs.get("symbols"))
+        peer_symbols = _dependency_peer_symbols(
+            task.dependency_results,
+            target_symbols,
+        )
         market_task = task.model_copy(
             update={
                 "inputs": {
                     **task.inputs,
                     "analysis_mode": "historical_cross_check",
+                    "symbols": [*target_symbols, *peer_symbols],
                 }
             }
         )
@@ -433,10 +470,15 @@ class QuantAgent:
             )
 
         metrics_by_symbol = _cross_check_results_by_symbol(market_result.evidence)
+        financial_metrics = _dependency_financial_metrics(
+            task.dependency_results,
+            target_symbols,
+        )
         validations: list[dict[str, Any]] = []
         for selection in selections:
             claim = candidates[selection.claim_id]
-            for symbol, metrics in metrics_by_symbol.items():
+            for symbol in target_symbols:
+                metrics = metrics_by_symbol.get(symbol, [])
                 alignment = assess_market_alignment(selection.direction, metrics)
                 validations.append(
                     _thesis_validation_evidence(
@@ -447,19 +489,47 @@ class QuantAgent:
                         alignment=alignment,
                     )
                 )
+                validations.extend(
+                    _fundamental_validation_evidence(
+                        claim=claim,
+                        direction=selection.direction,
+                        symbol=symbol,
+                        metrics=financial_metrics.get(
+                            claim["source_step"],
+                            {},
+                        ).get(symbol, {}),
+                    )
+                )
+                relative = _peer_relative_validation_evidence(
+                    claim=claim,
+                    direction=selection.direction,
+                    symbol=symbol,
+                    target_metrics=metrics,
+                    peer_symbols=peer_symbols,
+                    metrics_by_symbol=metrics_by_symbol,
+                )
+                if relative is not None:
+                    validations.append(relative)
+
+        target_market_evidence = [
+            item
+            for item in market_result.evidence
+            if item.get("type") != "quant_cross_check"
+            or item.get("symbol") in target_symbols
+        ]
 
         return market_result.model_copy(
             update={
                 "summary": (
-                    f"Quant Agent 对 {len(selections)} 条上游观点完成历史市场"
+                    f"Quant Agent 对 {len(selections)} 条上游观点完成多源"
                     f"一致性校验，形成 {len(validations)} 条量化决策证据。"
                 ),
-                "evidence": [*market_result.evidence, *validations],
+                "evidence": [*target_market_evidence, *validations],
                 "limitations": list(
                     dict.fromkeys(
                         [
                             *market_result.limitations,
-                            "历史市场一致性不能证明基本面或宏观观点成立。",
+                            "历史市场与财务一致性不能证明观点成立或预测未来收益。",
                         ]
                     )
                 ),
@@ -470,6 +540,7 @@ class QuantAgent:
                     "validated_claim_ids": [
                         selection.claim_id for selection in selections
                     ],
+                    "peer_symbols": peer_symbols,
                 },
             }
         )
@@ -829,6 +900,311 @@ def _dependency_claim_candidates(
         if len(candidates) >= 12:
             break
     return dict(list(candidates.items())[:12])
+
+
+def _dependency_peer_symbols(
+    dependencies: dict[str, ExpertResult],
+    target_symbols: list[str],
+) -> list[str]:
+    targets = set(target_symbols)
+    peers: list[str] = []
+    for result in dependencies.values():
+        if result.status != "completed" or result.agent != AgentId.RESEARCH:
+            continue
+        for evidence in result.evidence:
+            if evidence.get("type") != "competitor_candidates":
+                continue
+            values = evidence.get("competitors")
+            if not isinstance(values, list):
+                continue
+            for value in values:
+                symbol = str(value).strip().upper()
+                if (
+                    not _A_SHARE_SYMBOL_PATTERN.fullmatch(symbol)
+                    or symbol in targets
+                    or symbol in peers
+                ):
+                    continue
+                peers.append(symbol)
+                if len(peers) == MAX_THESIS_PEER_CANDIDATES:
+                    return peers
+    return peers
+
+
+def _dependency_financial_metrics(
+    dependencies: dict[str, ExpertResult],
+    target_symbols: list[str],
+) -> dict[str, dict[str, dict[str, list[dict[str, Any]]]]]:
+    grouped: dict[
+        str,
+        dict[str, dict[str, list[dict[str, Any]]]],
+    ] = {}
+    for step_id, result in dependencies.items():
+        if result.status != "completed" or result.agent != AgentId.RESEARCH:
+            continue
+        for evidence in result.evidence:
+            if evidence.get("type") != "skill_result":
+                continue
+            data = evidence.get("data")
+            if not isinstance(data, dict):
+                continue
+            symbol = str(data.get("symbol") or "").strip().upper()
+            if not symbol and len(target_symbols) == 1:
+                symbol = target_symbols[0]
+            if symbol not in target_symbols:
+                continue
+            by_metric = grouped.setdefault(step_id, {}).setdefault(symbol, {})
+            for section in data.values():
+                if not isinstance(section, dict):
+                    continue
+                metrics = section.get("derived_metrics")
+                if not isinstance(metrics, list):
+                    continue
+                for item in metrics:
+                    normalized = _normalize_financial_metric(item)
+                    if normalized is None:
+                        continue
+                    observations = by_metric.setdefault(
+                        normalized["metric"],
+                        [],
+                    )
+                    key = (normalized["period"], normalized["value"])
+                    if not any(
+                        (existing["period"], existing["value"]) == key
+                        for existing in observations
+                    ):
+                        observations.append(normalized)
+    for by_symbol in grouped.values():
+        for by_metric in by_symbol.values():
+            for observations in by_metric.values():
+                observations.sort(key=lambda item: _period_sort_key(item["period"]))
+    return grouped
+
+
+def _normalize_financial_metric(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    metric = str(value.get("metric") or "").strip()
+    raw_value = value.get("value")
+    period = str(value.get("period") or "").strip()
+    if (
+        metric not in _DOSSIER_METRICS
+        or isinstance(raw_value, bool)
+        or not isinstance(raw_value, (int, float))
+        or not math.isfinite(float(raw_value))
+        or not period
+    ):
+        return None
+    return {
+        "metric": metric,
+        "value": float(raw_value),
+        "period": period,
+        "comparison_period": value.get("comparison_period"),
+    }
+
+
+def _period_sort_key(period: str) -> tuple[tuple[int, ...], str]:
+    return tuple(int(item) for item in re.findall(r"\d+", period)), period
+
+
+def _fundamental_validation_evidence(
+    *,
+    claim: dict[str, str],
+    direction: Literal["positive", "negative", "risk", "neutral"],
+    symbol: str,
+    metrics: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    if direction == "neutral":
+        return []
+    evidence: list[dict[str, Any]] = []
+    for metric_id, observations in metrics.items():
+        assessed = _assess_fundamental_metric(
+            metric_id,
+            observations,
+            direction,
+        )
+        if assessed is None:
+            continue
+        assessment, reason, snapshot = assessed
+        label = "方向一致" if assessment == "aligned" else "方向背离"
+        evidence.append(
+            {
+                "type": "quant_thesis_validation",
+                "claim_id": claim["claim_id"],
+                "claim_source_step": claim["source_step"],
+                "claim_text": claim["text"],
+                "claim_direction": direction,
+                "symbol": symbol,
+                "assessment": assessment,
+                "assessment_scope": "fundamental_metric_alignment",
+                "metric_ids": [metric_id],
+                "metric_snapshot": snapshot,
+                "reason": reason,
+                "text": (
+                    f"{claim['text']}：{metric_id} 的财务数据校验为"
+                    f"“{label}”。{reason}该结果仅说明财务方向一致性，"
+                    "不证明观点成立。"
+                ),
+                "falsification_conditions": [
+                    "若后续同口径财务指标转向相反方向，该一致性将减弱。"
+                ],
+                "limitations": [
+                    "财务指标可能受会计口径、基数和报告期时点影响。"
+                ],
+                "validation_status": "historical_computation",
+            }
+        )
+        if len(evidence) == MAX_FUNDAMENTAL_METRICS_PER_CLAIM:
+            break
+    return evidence
+
+
+def _assess_fundamental_metric(
+    metric_id: str,
+    observations: list[dict[str, Any]],
+    direction: Literal["positive", "negative", "risk", "neutral"],
+) -> tuple[
+    Literal["aligned", "divergent"],
+    str,
+    list[dict[str, Any]],
+] | None:
+    if direction == "neutral" or not observations:
+        return None
+    if metric_id in _GROWTH_METRICS:
+        latest = observations[-1]
+        value = float(latest["value"])
+        if value == 0:
+            return None
+        health_signal = 1 if value > 0 else -1
+        snapshot = [latest]
+        reason = (
+            f"最新报告期 {latest['period']} 的 {metric_id} 为 {value:.2%}。"
+        )
+    elif metric_id in _TREND_METRICS and len(observations) >= 2:
+        previous, latest = observations[-2:]
+        change = float(latest["value"]) - float(previous["value"])
+        if change == 0:
+            return None
+        trend_signal = 1 if change > 0 else -1
+        health_signal = (
+            -trend_signal
+            if metric_id in _LOWER_IS_HEALTHIER_METRICS
+            else trend_signal
+        )
+        snapshot = [previous, latest]
+        reason = (
+            f"{metric_id} 从 {previous['period']} 的 "
+            f"{float(previous['value']):.4f} 变为 {latest['period']} 的 "
+            f"{float(latest['value']):.4f}。"
+        )
+    else:
+        return None
+    expected = 1 if direction == "positive" else -1
+    assessment: Literal["aligned", "divergent"] = (
+        "aligned" if health_signal == expected else "divergent"
+    )
+    return assessment, reason, snapshot
+
+
+def _peer_relative_validation_evidence(
+    *,
+    claim: dict[str, str],
+    direction: Literal["positive", "negative", "risk", "neutral"],
+    symbol: str,
+    target_metrics: list[CrossCheckResult],
+    peer_symbols: list[str],
+    metrics_by_symbol: dict[str, list[CrossCheckResult]],
+) -> dict[str, Any] | None:
+    target_return = _metric_value(target_metrics, "period_return")
+    valid_peers = [
+        (peer, value)
+        for peer in peer_symbols
+        if (
+            value := _metric_value(
+                metrics_by_symbol.get(peer, []),
+                "period_return",
+            )
+        )
+        is not None
+    ][:MAX_THESIS_VALID_PEERS]
+    if target_return is None or len(valid_peers) < 2:
+        return None
+    peer_values = [value for _, value in valid_peers]
+    peer_median = float(median(peer_values))
+    rank = cross_section_rank(target_return, peer_values, "period_return")
+    relative_difference = target_return - peer_median
+    if direction in {"neutral", "risk"} or relative_difference == 0:
+        assessment: Literal[
+            "aligned", "divergent", "mixed", "inconclusive"
+        ] = "inconclusive"
+        reason = "同行相对收益只能提供市场背景，无法验证该类定性观点。"
+    else:
+        observed = 1 if relative_difference > 0 else -1
+        expected = 1 if direction == "positive" else -1
+        assessment = "aligned" if observed == expected else "divergent"
+        reason = (
+            f"目标区间收益率为 {target_return:.2%}，同行中位数为 "
+            f"{peer_median:.2%}，相对差为 {relative_difference:.2%}。"
+        )
+    labels = {
+        "aligned": "方向一致",
+        "divergent": "方向背离",
+        "inconclusive": "证据不足",
+    }
+    return {
+        "type": "quant_thesis_validation",
+        "claim_id": claim["claim_id"],
+        "claim_source_step": claim["source_step"],
+        "claim_text": claim["text"],
+        "claim_direction": direction,
+        "symbol": symbol,
+        "assessment": assessment,
+        "assessment_scope": "peer_relative_performance",
+        "metric_ids": ["period_return", rank.metric_id],
+        "metric_snapshot": [
+            {
+                "symbol": symbol,
+                "metric_id": "period_return",
+                "value": target_return,
+            },
+            *[
+                {
+                    "symbol": peer,
+                    "metric_id": "period_return",
+                    "value": value,
+                }
+                for peer, value in valid_peers
+            ],
+        ],
+        "target_return": target_return,
+        "peer_median_return": peer_median,
+        "percentile": rank.value,
+        "peer_sample_size": len(valid_peers),
+        "peer_symbols": [peer for peer, _ in valid_peers],
+        "reason": reason,
+        "text": (
+            f"{claim['text']}：同行相对表现校验为"
+            f"“{labels[assessment]}”。{reason}"
+            "该结果仅描述历史相对表现，不代表未来收益。"
+        ),
+        "falsification_conditions": [
+            "若目标与同行的相对收益方向反转，该一致性将减弱。"
+        ],
+        "limitations": [
+            "同行样本来自 Research 候选池，未校正规模、估值或业务结构差异。"
+        ],
+        "validation_status": "historical_computation",
+    }
+
+
+def _metric_value(
+    metrics: list[CrossCheckResult],
+    metric_id: str,
+) -> float | None:
+    for item in metrics:
+        if item.metric_id == metric_id and item.value is not None:
+            return float(item.value)
+    return None
 
 
 def _thesis_selection_prompt(

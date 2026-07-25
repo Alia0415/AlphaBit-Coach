@@ -253,6 +253,27 @@ def _market_rows(symbols: tuple[str, ...] = ("000001.SZ", "000002.SZ")):
     ]
 
 
+def _market_rows_with_end_closes(
+    end_closes: dict[str, float],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for symbol, end_close in end_closes.items():
+        for day in range(1, 26):
+            close = 10 + (end_close - 10) * (day - 1) / 24
+            rows.append(
+                {
+                    "trade_date": f"202401{day:02d}",
+                    "symbol": symbol,
+                    "open": close,
+                    "high": close * 1.01,
+                    "low": close * 0.99,
+                    "close": close,
+                    "volume": 1000 + day,
+                }
+            )
+    return rows
+
+
 def _skill_plan(skill_id: str) -> str:
     return json.dumps(
         {
@@ -663,6 +684,243 @@ def test_quant_thesis_validation_calibrates_upstream_claim() -> None:
     assert validations[0]["assessment"] == "aligned"
     assert validations[0]["assessment_scope"] == "historical_market_alignment"
     assert "period_return" in validations[0]["metric_ids"]
+
+
+def test_quant_thesis_validation_adds_fundamental_metric_alignment() -> None:
+    selection = json.dumps(
+        {
+            "claims": [
+                {
+                    "claim_id": "research_1:summary",
+                    "direction": "positive",
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    agent = QuantAgent(
+        ark_client=MockArk(selection),
+        data_client=MockPandaData(_market_rows(("002594.SZ",))),
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+    task = _quant_task(
+        {
+            "analysis_mode": "thesis_validation",
+            "symbols": ["002594.SZ"],
+            "start_date": "20240101",
+            "end_date": "20240125",
+        }
+    )
+    task.dependency_results = {
+        "research_1": ExpertResult(
+            task_id="research_1",
+            agent=AgentId.RESEARCH,
+            status="completed",
+            summary="公司的盈利增长仍具有韧性。",
+            evidence=[
+                {
+                    "type": "skill_result",
+                    "skill_id": "a_share_stock_dossier",
+                    "data": {
+                        "symbol": "002594.SZ",
+                        "growth": {
+                            "derived_metrics": [
+                                {
+                                    "metric": "revenue_yoy",
+                                    "value": 0.18,
+                                    "period": "2025q4",
+                                }
+                            ]
+                        },
+                        "profitability": {
+                            "derived_metrics": [
+                                {
+                                    "metric": "gross_margin",
+                                    "value": 0.21,
+                                    "period": "2025q4",
+                                }
+                            ]
+                        },
+                    },
+                }
+            ],
+        )
+    }
+
+    result = agent.execute(task)
+
+    fundamental = [
+        item
+        for item in result.evidence
+        if item.get("assessment_scope") == "fundamental_metric_alignment"
+    ]
+    assert result.status == "completed"
+    assert len(fundamental) == 1
+    assert fundamental[0]["assessment"] == "aligned"
+    assert fundamental[0]["metric_ids"] == ["revenue_yoy"]
+    assert fundamental[0]["metric_snapshot"][0]["period"] == "2025q4"
+    assert all(
+        "gross_margin" not in item.get("metric_ids", [])
+        for item in fundamental
+    )
+
+
+def test_quant_thesis_validation_adds_bounded_peer_relative_performance() -> None:
+    selection = json.dumps(
+        {
+            "claims": [
+                {
+                    "claim_id": "research_1:summary",
+                    "direction": "positive",
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    peers = [
+        "601633.SH",
+        "601238.SH",
+        "600104.SH",
+        "000625.SZ",
+        "000800.SZ",
+        "600006.SH",
+        "000030.SZ",
+        "000338.SZ",
+        "000549.SZ",
+        "000550.SZ",
+        "000559.SZ",
+        "000570.SZ",
+        "000572.SZ",
+        "000581.SZ",
+        "601633.SH",
+        "002594.SZ",
+    ]
+    fetched_symbols = [
+        "002594.SZ",
+        "601633.SH",
+        "601238.SH",
+        "600104.SH",
+        "000625.SZ",
+        "000800.SZ",
+        "600006.SH",
+        "000030.SZ",
+        "000338.SZ",
+        "000549.SZ",
+        "000550.SZ",
+        "000559.SZ",
+        "000570.SZ",
+    ]
+    panda = MockPandaData(
+        _market_rows_with_end_closes(
+            {
+                "002594.SZ": 12.0,
+                "601633.SH": 9.0,
+                "601238.SH": 10.0,
+                "600104.SH": 10.5,
+                "000625.SZ": 11.0,
+                "000800.SZ": 13.0,
+            }
+        )
+    )
+    agent = QuantAgent(
+        ark_client=MockArk(selection),
+        data_client=panda,
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+    task = _quant_task(
+        {
+            "analysis_mode": "thesis_validation",
+            "symbols": ["002594.SZ"],
+            "start_date": "20240101",
+            "end_date": "20240125",
+        }
+    )
+    task.dependency_results = {
+        "research_1": ExpertResult(
+            task_id="research_1",
+            agent=AgentId.RESEARCH,
+            status="completed",
+            summary="公司的竞争优势正在扩大。",
+            evidence=[
+                {
+                    "type": "competitor_candidates",
+                    "symbol": "002594.SZ",
+                    "competitors": peers,
+                    "source": "pandadata",
+                }
+            ],
+        )
+    }
+
+    result = agent.execute(task)
+
+    relative = [
+        item
+        for item in result.evidence
+        if item.get("assessment_scope") == "peer_relative_performance"
+    ]
+    assert result.status == "completed"
+    assert panda.calls[0]["symbols"] == fetched_symbols
+    assert len(relative) == 1
+    assert relative[0]["assessment"] == "aligned"
+    assert relative[0]["target_return"] == pytest.approx(0.2)
+    assert relative[0]["peer_median_return"] == pytest.approx(0.05)
+    assert relative[0]["percentile"] == pytest.approx(0.8333)
+    assert relative[0]["peer_sample_size"] == 5
+    assert relative[0]["peer_symbols"] == fetched_symbols[1:6]
+
+
+def test_quant_thesis_validation_omits_peer_scope_with_one_valid_peer() -> None:
+    selection = json.dumps(
+        {
+            "claims": [
+                {
+                    "claim_id": "research_1:summary",
+                    "direction": "positive",
+                }
+            ]
+        }
+    )
+    panda = MockPandaData(
+        _market_rows_with_end_closes(
+            {"002594.SZ": 12.0, "601633.SH": 11.0}
+        )
+    )
+    agent = QuantAgent(
+        ark_client=MockArk(selection),
+        data_client=panda,
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+    task = _quant_task(
+        {
+            "analysis_mode": "thesis_validation",
+            "symbols": ["002594.SZ"],
+            "start_date": "20240101",
+            "end_date": "20240125",
+        }
+    )
+    task.dependency_results = {
+        "research_1": ExpertResult(
+            task_id="research_1",
+            agent=AgentId.RESEARCH,
+            status="completed",
+            summary="公司的竞争优势正在扩大。",
+            evidence=[
+                {
+                    "type": "competitor_candidates",
+                    "competitors": ["601633.SH"],
+                }
+            ],
+        )
+    }
+
+    result = agent.execute(task)
+
+    assert result.status == "completed"
+    assert not any(
+        item.get("assessment_scope") == "peer_relative_performance"
+        for item in result.evidence
+    )
 
 
 def test_quant_thesis_validation_falls_back_to_bounded_dependency_summary() -> None:

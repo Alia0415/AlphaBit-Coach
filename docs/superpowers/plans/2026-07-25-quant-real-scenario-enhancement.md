@@ -17,14 +17,14 @@
 - Modify: `backend/agents/quant_cross_check.py`
 - Modify: `backend/agents/quant_agent.py`
 
-- [ ] **Step 1: Write failing tests for financial evidence**
+- [x] **Step 1: Write failing tests for financial evidence**
 
 Add tests that build a completed Research dependency containing dossier
 `derived_metrics`. Assert that positive revenue growth produces a
 `fundamental_metric_alignment` item and that a single margin observation is not
 classified.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -34,7 +34,7 @@ pytest tests/test_quant_runtime.py -k "fundamental_metric_alignment or single_ma
 
 Expected: failures because Quant does not extract or assess dossier metrics.
 
-- [ ] **Step 3: Implement bounded deterministic helpers**
+- [x] **Step 3: Implement bounded deterministic helpers**
 
 Add allowlisted metric extraction from `skill_result.data`, chronological
 normalization, and an assessment function with these exact rules:
@@ -62,14 +62,14 @@ trend_metrics = {
 Growth metrics use their latest sign. Trend metrics require two ordered periods.
 Single levels, non-finite numbers, and neutral claims remain unclassified.
 
-- [ ] **Step 4: Emit fundamental validation evidence**
+- [x] **Step 4: Emit fundamental validation evidence**
 
 For each selected Research claim, emit at most three relevant observations with
 `assessment_scope="fundamental_metric_alignment"`, metric snapshot, reason,
 limitations, and falsification conditions. Preserve all existing market
 validation evidence.
 
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [x] **Step 5: Run focused tests and verify GREEN**
 
 Run:
 
@@ -86,14 +86,15 @@ Expected: all selected tests pass.
 - Modify: `backend/agents/quant_agent.py`
 - Modify: `backend/agents/quant_cross_check.py`
 
-- [ ] **Step 1: Write failing peer tests**
+- [x] **Step 1: Write failing peer tests**
 
 Add tests asserting that Quant extracts unique peers from
-`competitor_candidates`, excludes the target, bounds the pool at five, fetches
-target and peers in one PandaData call, and reports target return, peer median,
-percentile, and sample size.
+`competitor_candidates`, excludes the target, bounds the candidate scan at
+twelve, retains at most five valid peers, fetches target and candidates in one
+PandaData call, and reports target return, peer median, percentile, and sample
+size.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run:
 
@@ -104,15 +105,16 @@ pytest tests/test_quant_runtime.py -k "peer_relative or bounded_peer" -q
 Expected: failures because thesis validation currently fetches only Manager
 symbols and only emits absolute market alignment.
 
-- [ ] **Step 3: Implement peer extraction and shared fetch**
+- [x] **Step 3: Implement peer extraction and shared fetch**
 
 Read peer symbols only from completed Research evidence of type
 `competitor_candidates`, normalize them through the existing symbol rules,
-exclude targets, deduplicate in source order, and keep at most five. Extend only
-the thesis-validation market task symbols so the existing controlled PandaData
-call fetches target and peers together.
+exclude targets, deduplicate in source order, and scan at most twelve. Extend
+only the thesis-validation market task symbols so the existing controlled
+PandaData call fetches target and candidates together, then retain at most five
+peers with valid observations.
 
-- [ ] **Step 4: Implement relative assessment**
+- [x] **Step 4: Implement relative assessment**
 
 Compute same-window period returns for the target and valid peers. Require at
 least two peers. Emit one `peer_relative_performance` item per selected claim
@@ -130,7 +132,7 @@ and target containing:
 Map positive or negative claim direction to `aligned` or `divergent` only from
 the target-minus-peer-median sign. Neutral and risk claims remain inconclusive.
 
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [x] **Step 5: Run focused tests and verify GREEN**
 
 Run:
 
@@ -147,7 +149,7 @@ Expected: all selected tests pass.
 - Modify only if needed: `tests/test_result_aggregator.py`
 - Create: `scripts/manual_test_quant_real_scenario.py`
 
-- [ ] **Step 1: Verify aggregator compatibility**
+- [x] **Step 1: Verify aggregator compatibility**
 
 Run:
 
@@ -159,14 +161,14 @@ The existing `量化决策校验` block must include the new items without a fro
 contract change. Add a focused aggregator test only if the existing generic
 collection behavior does not preserve the new fields.
 
-- [ ] **Step 2: Add a manual real-flow script**
+- [x] **Step 2: Add a manual real-flow script**
 
 Create a script that executes a real Research to Quant workflow for one A-share
 company using environment credentials, then prints bounded JSON containing
 timings, statuses, assessment scopes, assessments, peer sample size, and output
 block titles. It must not print credentials or raw responses.
 
-- [ ] **Step 3: Run fresh automated verification**
+- [x] **Step 3: Run fresh automated verification**
 
 Run:
 
@@ -178,7 +180,7 @@ git diff --check
 
 Expected: zero test failures, zero Ruff errors, and no whitespace errors.
 
-- [ ] **Step 4: Run the real workflow**
+- [x] **Step 4: Run the real workflow**
 
 Run:
 
@@ -186,11 +188,13 @@ Run:
 python scripts/manual_test_quant_real_scenario.py
 ```
 
-Expected: Research and Quant complete, the output contains
+Expected with credentials: Research and Quant complete, the output contains
 `量化决策校验`, and at least one of `fundamental_metric_alignment` or
 `peer_relative_performance` is present when upstream data is available.
+Observed locally without credentials: script returned a bounded
+`{"status": "skipped"}` response and did not call PandaData.
 
-- [ ] **Step 5: Commit and push**
+- [x] **Step 5: Commit and push**
 
 Stage only the plan, Quant implementation, focused tests, and manual script.
 Do not stage unrelated untracked diagnostic files.
