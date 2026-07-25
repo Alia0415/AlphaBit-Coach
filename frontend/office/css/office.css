@@ -690,6 +690,21 @@ button.expert-mini:hover { border-color: var(--cyan); transform: translateY(-3px
 .manager-core-icon { font-size: 28px; line-height: 1; }
 .manager-core small, .manager-pending small { color: var(--text-3); line-height: 1.5; }
 .manager-pending span { color: var(--cyan); font-size: 13px; }
+.manager-planning-progress {
+  width: min(760px, 100%); margin: 4px auto 0; display: grid;
+  grid-template-columns: 48px 1fr auto; align-items: center; gap: 12px;
+}
+.manager-planning-progress > span {
+  color: var(--cyan); font-family: var(--mono); font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.manager-planning-progress small { color: var(--text-3); white-space: nowrap; }
+.manager-selected-list { width: 100%; display: grid; gap: 7px; margin: 2px 0; }
+.manager-selected-item {
+  border: 1px solid var(--line); border-radius: 8px; background: #fff;
+  padding: 7px 9px; text-align: left; display: grid; gap: 2px;
+}
+.manager-selected-item > span { color: var(--text); font-weight: 700; }
 .manager-arrow, .manager-dispatch-arrow { color: var(--cyan); text-align: center; font-weight: 800; }
 .manager-arrow { font-size: 34px; animation: manager-arrow 1.2s ease-in-out infinite; }
 .manager-planning-stages {
@@ -701,13 +716,14 @@ button.expert-mini:hover { border-color: var(--cyan); transform: translateY(-3px
 }
 .manager-planning-stage span { color: var(--cyan); font-family: var(--mono); font-size: 11px; }
 .manager-planning-stage strong { font-size: 12px; }
-.manager-planning-stage i {
-  position: absolute; left: 0; bottom: 0; height: 2px; width: 42%;
-  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
-  animation: manager-scan 1.4s linear infinite;
+.manager-planning-stage em {
+  margin-left: auto; color: var(--text-3); font-size: 10px; font-style: normal;
 }
-.manager-planning-stage:nth-child(2) i { animation-delay: 0.25s; }
-.manager-planning-stage:nth-child(3) i { animation-delay: 0.5s; }
+.manager-planning-stage.is-active { border-color: #111; box-shadow: inset 0 -2px 0 #111; }
+.manager-planning-stage.is-active em { color: var(--cyan); }
+.manager-planning-stage.is-done { background: rgba(22,163,74,.08); border-color: rgba(22,163,74,.35); }
+.manager-planning-stage.is-done em { color: var(--green); }
+.manager-planning-stage.is-pending { opacity: .62; }
 .manager-truth-note { color: var(--text-3); font-size: 11.5px; text-align: center; margin: 20px 0 0; }
 .manager-dispatch {
   display: grid; grid-template-columns: auto 70px 1fr; align-items: center; gap: 12px; margin-bottom: 14px; padding: 12px 14px;

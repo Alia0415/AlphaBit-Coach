@@ -7,6 +7,7 @@ import json
 import os
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Literal
@@ -53,6 +54,12 @@ from backend.core.coach_service import (
 from backend.core.policy_gate import PolicyGate
 from backend.core.profile_service import UserProfileService
 from backend.core.registry_factory import build_registry
+from backend.core.research_run import (
+    STAGE_PROGRESS,
+    ResearchRunCreated,
+    ResearchRunStage,
+    ResearchRunState,
+)
 from backend.core.reporting import build_report_record
 from backend.core.result_aggregator import ResultAggregator
 from backend.core.result_policy_checker import ResultPolicyChecker
@@ -148,6 +155,7 @@ manager = ManagerAgent(registry=build_registry(store))
 workflow_executor = WorkflowExecutor(registry=build_registry(store))
 glossary_extractor = GlossaryExtractor()
 query_refiner = ResearchQueryRefiner()
+_research_run_tasks: set[asyncio.Task[None]] = set()
 
 
 def _rebuild_experts() -> None:
@@ -594,6 +602,101 @@ async def rewrite_research_query(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.post(
+    "/api/research/runs",
+    response_model=ResearchRunCreated,
+    status_code=202,
+)
+async def create_research_run(request: SessionRequest) -> ResearchRunCreated:
+    """Start observable planning and return before Manager work completes."""
+
+    run_id = uuid.uuid4().hex
+    initial = ResearchRunState(
+        run_id=run_id,
+        status="running",
+        current_stage="received",
+        progress=STAGE_PROGRESS["received"],
+        started_at=datetime.now(timezone.utc),
+        selected_agents=[],
+        dag=None,
+        elapsed_ms=0,
+        estimated_remaining_ms=store.estimate_research_run_remaining(0),
+        error=None,
+        failed_stage=None,
+        message="研究请求已由后端接收。",
+    )
+    store.create_research_run(initial.model_dump(mode="json"))
+    task = asyncio.create_task(_execute_research_run(run_id, request))
+    _research_run_tasks.add(task)
+    task.add_done_callback(_research_run_tasks.discard)
+    return ResearchRunCreated(
+        run_id=run_id,
+        events_url=f"/api/research/runs/{run_id}/events",
+        status_url=f"/api/research/runs/{run_id}/status",
+    )
+
+
+@app.get(
+    "/api/research/runs/{run_id}/status",
+    response_model=ResearchRunState,
+)
+async def get_research_run_status(run_id: str) -> ResearchRunState:
+    state = store.get_research_run(run_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="研究运行不存在")
+    return ResearchRunState.model_validate(state)
+
+
+@app.get("/api/research/runs/{run_id}/events")
+async def stream_research_run_events(
+    run_id: str,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+) -> StreamingResponse:
+    if store.get_research_run(run_id) is None:
+        raise HTTPException(status_code=404, detail="研究运行不存在")
+    try:
+        cursor = max(0, int(last_event_id or 0))
+    except ValueError:
+        cursor = 0
+
+    async def event_stream() -> Any:
+        nonlocal cursor
+        last_heartbeat = 0.0
+        while True:
+            events = store.list_research_run_events(run_id, after_seq=cursor)
+            for event in events:
+                cursor = event["seq"]
+                yield _sse_with_id(
+                    _research_run_sse_payload(event["payload"]),
+                    cursor,
+                )
+
+            state = store.get_research_run(run_id)
+            if state is None:
+                yield _sse_named("error", {"detail": "研究运行不存在"})
+                return
+            if state["status"] in {"plan_ready", "failed"}:
+                yield _sse_named("done", _research_run_sse_payload(state))
+                return
+
+            now = asyncio.get_running_loop().time()
+            if not events and now - last_heartbeat >= 1.0:
+                # A heartbeat changes only backend-measured elapsed time and a
+                # history-derived estimate. It never advances stage/progress.
+                yield _sse(_research_run_sse_payload(state))
+                last_heartbeat = now
+            await asyncio.sleep(0.25)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/api/tasks/sessions", response_model=SessionResponse)
 async def create_session(request: SessionRequest) -> SessionResponse:
     task_id = uuid.uuid4().hex
@@ -779,6 +882,12 @@ async def stream_task(task_id: str) -> StreamingResponse:
             yield _sse_named("done", {"task_id": task_id, "status": task["status"]})
             return
 
+        _record_research_run_stage(
+            task_id,
+            "executing",
+            "已按研究经理验证通过的动态任务图开始执行。",
+            status="executing",
+        )
         queue: asyncio.Queue[Any] = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
@@ -862,6 +971,14 @@ async def stream_task(task_id: str) -> StreamingResponse:
                 break
             if isinstance(item, tuple) and item and item[0] == "__error__":
                 store.finish_task(task_id, status="failed")
+                _record_research_run_stage(
+                    task_id,
+                    "failed",
+                    "专家任务执行失败，请查看研究日志后重试。",
+                    status="failed",
+                    error="专家任务执行失败，请查看研究日志后重试。",
+                    failed_stage="executing",
+                )
                 yield _sse_named("error", {"detail": "任务执行失败"})
                 return
             event = item
@@ -2057,6 +2174,229 @@ def _profile_action_task_response(
     )
 
 
+def _research_run_agents(plan: ExecutionPlan) -> list[dict[str, Any]]:
+    return [
+        {
+            "agent": selection.agent.value,
+            "reason": selection.reason,
+        }
+        for selection in plan.selected_agents
+    ]
+
+
+def _record_research_run_stage(
+    run_id: str,
+    stage: ResearchRunStage,
+    message: str,
+    *,
+    status: Literal["running", "plan_ready", "executing", "failed"] | None = None,
+    selected_agents: list[dict[str, Any]] | None = None,
+    dag: dict[str, Any] | None = None,
+    error: str | None = None,
+    failed_stage: ResearchRunStage | None = None,
+) -> ResearchRunState | None:
+    current = store.get_research_run(run_id)
+    if current is None:
+        return None
+    elapsed_ms = current["elapsed_ms"]
+    next_status = status or current["status"]
+    progress = (
+        current["progress"]
+        if stage == "failed"
+        else STAGE_PROGRESS[stage]
+    )
+    next_state = ResearchRunState(
+        run_id=run_id,
+        status=next_status,
+        current_stage=stage,
+        progress=progress,
+        started_at=current["started_at"],
+        selected_agents=(
+            selected_agents
+            if selected_agents is not None
+            else current["selected_agents"]
+        ),
+        dag=dag if dag is not None else current["dag"],
+        elapsed_ms=elapsed_ms,
+        estimated_remaining_ms=(
+            None
+            if next_status != "running"
+            else store.estimate_research_run_remaining(elapsed_ms)
+        ),
+        error=error,
+        failed_stage=failed_stage,
+        message=message,
+    )
+    store.record_research_run_state(next_state.model_dump(mode="json"))
+    return next_state
+
+
+def _research_run_failure_message(
+    stage: ResearchRunStage,
+    exc: Exception,
+) -> str:
+    if isinstance(exc, ManagerAgentError):
+        return f"研究经理未能完成动态规划：{exc}"
+    if isinstance(exc, ValueError):
+        return str(exc)
+    labels = {
+        "received": "接收研究请求",
+        "interpreting": "理解研究目标",
+        "interpreted": "整理研究目标",
+        "selecting_agents": "动态选择专家",
+        "agents_selected": "确认专家分工",
+        "building_dag": "生成任务依赖图",
+        "validating_dag": "校验任务依赖图",
+        "executing": "执行研究任务",
+    }
+    return f"{labels.get(stage, '研究规划')}阶段未能完成，请稍后重试。"
+
+
+async def _execute_research_run(run_id: str, request: SessionRequest) -> None:
+    """Run the existing dynamic Manager workflow with observable checkpoints."""
+
+    failed_stage: ResearchRunStage = "received"
+    try:
+        original_query, rewritten_query, final_query = request.query_versions()
+        failed_stage = "interpreting"
+        _record_research_run_stage(
+            run_id,
+            "interpreting",
+            "正在解释研究目标与证据边界。",
+        )
+        policy = policy_gate.evaluate(final_query)
+        if not policy.allowed:
+            raise ValueError(policy.safe_response)
+        task_spec = await run_in_threadpool(
+            task_interpreter.interpret,
+            final_query,
+            policy,
+        )
+        _record_research_run_stage(
+            run_id,
+            "interpreted",
+            "研究目标已完成解释，准备交给研究经理。",
+        )
+
+        profile_summary: dict[str, Any] | None = None
+        if task_spec.task_type == "personal_investment_decision":
+            profile = _profile_service().get()
+            if profile is None or not profile.onboarding_completed:
+                raise ValueError(
+                    "这是个人投资任务，请先完成用户画像建档后重新尝试。"
+                )
+            missing = profile.missing_fields(PERSONAL_DECISION_REQUIRED_FIELDS)
+            if missing:
+                raise ValueError(
+                    "请先在用户画像页面补充本次个人投资任务所需信息后重新尝试。"
+                )
+            profile_summary = profile.risk_summary()
+
+        failed_stage = "selecting_agents"
+        _record_research_run_stage(
+            run_id,
+            "selecting_agents",
+            "研究经理正在动态选择完成本次任务所需的最小专家集合。",
+        )
+        if profile_summary is None:
+            plan = await run_in_threadpool(
+                manager.create_plan,
+                task_spec,
+                final_query,
+            )
+        else:
+            task_spec = task_spec.model_copy(
+                update={
+                    "missing_fields": [],
+                    "execution_decision": "execute_with_defaults",
+                    "clarification_question": None,
+                }
+            )
+            plan = await run_in_threadpool(
+                manager.create_plan,
+                task_spec,
+                final_query,
+                profile_summary,
+            )
+            plan = _attach_profile_to_risk(plan, profile_summary)
+
+        selected_agents = _research_run_agents(plan)
+        _record_research_run_stage(
+            run_id,
+            "agents_selected",
+            "研究经理已完成专家选择与选择理由确认。",
+            selected_agents=selected_agents,
+        )
+        failed_stage = "building_dag"
+        _record_research_run_stage(
+            run_id,
+            "building_dag",
+            "正在整理研究经理生成的专家任务依赖关系。",
+            selected_agents=selected_agents,
+        )
+        failed_stage = "validating_dag"
+        _record_research_run_stage(
+            run_id,
+            "validating_dag",
+            "正在确认任务图只包含已选专家、合法依赖且不存在环。",
+            selected_agents=selected_agents,
+        )
+
+        status = "needs_clarification" if plan.needs_clarification else "planned"
+        plan_payload = plan.model_dump(mode="json")
+        store.create_task(
+            task_id=run_id,
+            prompt=final_query,
+            status=status,
+            plan=plan_payload,
+            original_query=original_query,
+            rewritten_query=rewritten_query,
+            final_query=final_query,
+        )
+        store.append_event(
+            run_id,
+            type="plan_created",
+            message="Manager Agent 已创建并验证动态任务图。",
+            metadata={
+                "step_count": len(plan.steps),
+                "selected_agents": [
+                    selection.agent.value
+                    for selection in plan.selected_agents
+                ],
+            },
+        )
+        if plan.needs_clarification:
+            store.append_event(
+                run_id,
+                type="clarification_required",
+                message=plan.clarification_question or "任务需要补充关键信息。",
+                metadata={
+                    "options": [
+                        group.model_dump(mode="json")
+                        for group in plan.clarification_options
+                    ]
+                },
+            )
+        _record_research_run_stage(
+            run_id,
+            "plan_ready",
+            "动态专家选择和任务依赖图均已通过后端校验。",
+            status="plan_ready",
+            selected_agents=selected_agents,
+            dag=plan_payload,
+        )
+    except Exception as exc:
+        message = _research_run_failure_message(failed_stage, exc)
+        _record_research_run_stage(
+            run_id,
+            "failed",
+            message,
+            status="failed",
+            error=message,
+            failed_stage=failed_stage,
+        )
+
+
 def _create_profile_action_session(
     task_id: str,
     prompt: str,
@@ -2140,6 +2480,22 @@ def _persist_event(task_id: str, event: ExecutionEvent) -> None:
 
 def _sse(data: dict[str, Any]) -> str:
     return "data: " + json.dumps(data, ensure_ascii=False) + "\n\n"
+
+
+def _research_run_sse_payload(state: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **state,
+        "stage": state.get("current_stage"),
+    }
+
+
+def _sse_with_id(data: dict[str, Any], event_id: int) -> str:
+    return (
+        f"id: {event_id}\n"
+        + "data: "
+        + json.dumps(data, ensure_ascii=False)
+        + "\n\n"
+    )
 
 
 def _sse_named(event: str, data: dict[str, Any]) -> str:

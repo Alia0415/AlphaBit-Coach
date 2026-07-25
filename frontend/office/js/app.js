@@ -41,11 +41,13 @@ import {
   fetchCoachGuide,
   fetchCoachNarrations,
   rewriteResearchQuery as liveRewriteResearchQuery,
-  createSession as liveCreateSession,
+  startResearchRun,
+  openResearchRunStream,
   clarifySession as liveClarifySession,
   openTaskStream,
+  mapPlan,
   roleFor as liveRoleFor,
-} from "./live.js?v=20260726-query-refine";
+} from "./live.js?v=20260726-research-run";
 import {
   attachSelectionQuoting,
   buildCoachSidebar,
@@ -148,21 +150,32 @@ function publicAgentMethods(agent) {
 // phase is explicit so the war room can open immediately without inventing a
 // selected Agent or DAG before the real Manager response arrives.
 let liveSession = {
+  runId: null,
   taskId: null,
   prompt: "",
   plan: null,
+  researchState: null,
+  connectionIssue: false,
   phase: "idle",
   error: null,
   originalQuery: "",
   rewrittenQuery: "",
   finalQuery: "",
 };
+let livePlanningSource = null;
 function setLiveSession(next) { liveSession = { ...liveSession, ...next }; }
 function resetLiveSession() {
+  if (livePlanningSource) {
+    try { livePlanningSource.close(); } catch (_) {}
+    livePlanningSource = null;
+  }
   liveSession = {
+    runId: null,
     taskId: null,
     prompt: "",
     plan: null,
+    researchState: null,
+    connectionIssue: false,
     phase: "idle",
     error: null,
     originalQuery: "",
@@ -198,20 +211,52 @@ function beginLiveResearch(prompt, queryContext = {}) {
       renderStatusbar();
     });
   }
-  liveCreateSession(normalizedPrompt, versions)
-    .then(({ taskId, plan }) => {
-      setLiveSession({
-        taskId,
-        prompt: normalizedPrompt,
-        plan,
-        phase: plan && plan.needsClarification ? "clarification" : "planned",
-        error: null,
-        ...versions,
+  startResearchRun(normalizedPrompt, versions)
+    .then(({ runId }) => {
+      setLiveSession({ runId, connectionIssue: false });
+      livePlanningSource = openResearchRunStream(runId, {
+        onState: (state) => {
+          setLiveSession({
+            researchState: state,
+            connectionIssue: false,
+            error: state.error,
+          });
+          if (state.status === "failed") {
+            livePlanningSource = null;
+            setLiveSession({ phase: "failed" });
+            if (currentRoute === "war") renderPage();
+            return;
+          }
+          if (state.status === "plan_ready" && state.dag) {
+            livePlanningSource = null;
+            const plan = mapPlan(state.dag);
+            setLiveSession({
+              taskId: runId,
+              plan,
+              phase: plan && plan.needsClarification ? "clarification" : "planned",
+              error: null,
+            });
+            navigate(plan && plan.needsClarification ? "clarify" : "war");
+            return;
+          }
+          if (currentRoute === "war") renderPage();
+        },
+        onDisconnect: () => {
+          setLiveSession({ connectionIssue: true });
+          if (currentRoute === "war") renderPage();
+        },
+        onRecovering: () => {
+          setLiveSession({ connectionIssue: true });
+          if (currentRoute === "war") renderPage();
+        },
+        onRecoveryError: () => {
+          setLiveSession({ connectionIssue: true });
+          if (currentRoute === "war") renderPage();
+        },
       });
-      navigate(plan && plan.needsClarification ? "clarify" : "war");
     })
-    .catch(() => {
-      const message = "研究服务暂时无法完成任务规划，请稍后重试。";
+    .catch((error) => {
+      const message = error?.message || "研究服务暂时无法创建任务，请稍后重试。";
       setLiveSession({ phase: "failed", error: message });
       navigate("war");
       toast(`规划失败：${message}`);
@@ -4489,26 +4534,73 @@ function pageClarifyLive() {
 // live: war room — consume real SSE execution stream (界面 03 · 实时)
 // ---------------------------------------------------------------------------
 function pageManagerPlanningLive(session) {
+  const state = session.researchState;
+  const stageLabels = {
+    received: "请求已接收",
+    interpreting: "正在理解用户目标",
+    interpreted: "目标解释完成",
+    selecting_agents: "正在动态选择专家",
+    agents_selected: "专家选择完成",
+    building_dag: "正在生成依赖 DAG",
+    validating_dag: "正在校验依赖 DAG",
+    plan_ready: "研究计划已就绪",
+  };
+  const stageOrder = [
+    "received",
+    "interpreting",
+    "interpreted",
+    "selecting_agents",
+    "agents_selected",
+    "building_dag",
+    "validating_dag",
+    "plan_ready",
+  ];
+  const stageRank = state ? stageOrder.indexOf(state.currentStage) : -1;
+  const progress = state ? Math.max(0, Math.min(100, state.progress)) : null;
+  const elapsedSeconds = state ? Math.max(0, Math.floor(state.elapsedMs / 1000)) : 0;
+  const timingText = state && state.estimatedRemainingMs != null
+    ? `基于历史真实耗时，预计还需约 ${Math.max(1, Math.ceil(state.estimatedRemainingMs / 1000))} 秒`
+    : state
+      ? `已等待 ${elapsedSeconds} 秒`
+      : "正在连接后端运行状态";
+  const selectedAgents = state?.selectedAgents || [];
+
   const wrap = el("div", "war-room-page war-room-page-planning");
   const head = el("div", "war-head");
   head.appendChild(el("h1", "", "研究作战室"));
-  head.appendChild(el("span", "sub", "正在拆解研究问题"));
+  head.appendChild(el("span", "sub", "后端真实规划状态"));
   const task = el("div", "war-task");
   task.appendChild(el("span", "wt-name", esc(session.prompt)));
-  task.appendChild(el("span", "badge running", '<span class="dot"></span>规划中'));
+  task.appendChild(el(
+    "span",
+    "badge running",
+    `<span class="dot"></span>${esc(state ? stageLabels[state.currentStage] || "规划中" : "连接中")}`,
+  ));
   head.appendChild(task);
   wrap.appendChild(head);
 
   const panel = el("div", "panel manager-planning-shell");
-  panel.appendChild(el("div", "panel-title", "任务拆解 <span class='title-extra'>等待研究计划</span>"));
+  panel.appendChild(el(
+    "div",
+    "panel-title",
+    `任务拆解 <span class='title-extra'>${esc(state?.message || "等待后端状态")}</span>`,
+  ));
+
+  const progressRow = el("div", "manager-planning-progress");
+  progressRow.innerHTML = `
+    <span>${progress == null ? "—" : `${progress}%`}</span>
+    <div class="pbar"><i style="width:${progress == null ? 0 : progress}%"></i></div>
+    <small>${esc(timingText)}</small>
+  `;
+  panel.appendChild(progressRow);
 
   const flow = el("div", "manager-planning-flow");
   const manager = el("div", "manager-core is-planning");
   manager.innerHTML = `
     <span class="manager-core-icon">🧠</span>
     <strong>研究经理</strong>
-    <small>正在理解目标、选择专家并检查依赖关系</small>
-    <span class="badge running"><span class="dot"></span>研究规划进行中</span>
+    <small>${esc(state?.message || "等待后端开始解释研究目标")}</small>
+    <span class="badge running"><span class="dot"></span>${esc(state ? stageLabels[state.currentStage] || "研究规划进行中" : "正在连接")}</span>
   `;
   flow.appendChild(manager);
 
@@ -4517,24 +4609,52 @@ function pageManagerPlanningLive(session) {
   flow.appendChild(arrow);
 
   const pending = el("div", "manager-pending");
-  pending.appendChild(el("strong", "", "动态专家池"));
-  pending.appendChild(el("span", "", "尚未返回选择结果"));
-  pending.appendChild(el("small", "", "研究计划返回前不会预设专家或伪造执行步骤"));
+  pending.appendChild(el("strong", "", selectedAgents.length ? "本次动态专家" : "动态专家池"));
+  if (selectedAgents.length) {
+    const list = el("div", "manager-selected-list");
+    selectedAgents.forEach((selection) => {
+      const info = researchPresentation
+        ? researchPresentation.agentInfo(selection.agent)
+        : { name: selection.agent };
+      const item = el("div", "manager-selected-item");
+      item.innerHTML = `
+        <span>${esc(info.name || selection.agent)}</span>
+        <small>${esc(selection.reason || "由研究经理按任务需要选择")}</small>
+      `;
+      list.appendChild(item);
+    });
+    pending.appendChild(list);
+    pending.appendChild(el("small", "", "以上结果来自研究经理的真实返回"));
+  } else {
+    pending.appendChild(el("span", "", "尚未返回选择结果"));
+    pending.appendChild(el("small", "", "研究经理完成选择前不会预设任何专家"));
+  }
   flow.appendChild(pending);
   panel.appendChild(flow);
 
   const stages = el("div", "manager-planning-stages");
   [
-    ["01", "理解用户目标"],
-    ["02", "选择最小充分专家集合"],
-    ["03", "生成并验证依赖 DAG"],
-  ].forEach(([num, label]) => {
-    const stage = el("div", "manager-planning-stage");
-    stage.innerHTML = `<span>${num}</span><strong>${esc(label)}</strong><i></i>`;
+    ["01", "理解用户目标", 1, 2],
+    ["02", "选择最小充分专家集合", 3, 4],
+    ["03", "生成并验证依赖 DAG", 5, 7],
+  ].forEach(([num, label, startRank, endRank]) => {
+    const visualState = stageRank >= endRank
+      ? "is-done"
+      : stageRank >= startRank
+        ? "is-active"
+        : "is-pending";
+    const stage = el("div", `manager-planning-stage ${visualState}`);
+    stage.innerHTML = `<span>${num}</span><strong>${esc(label)}</strong><em>${visualState === "is-done" ? "已完成" : visualState === "is-active" ? "进行中" : "等待"}</em>`;
     stages.appendChild(stage);
   });
   panel.appendChild(stages);
-  panel.appendChild(el("p", "manager-truth-note", "研究计划返回后，将展示本次选择的专家、依赖关系和执行状态。"));
+  panel.appendChild(el(
+    "p",
+    "manager-truth-note",
+    session.connectionIssue
+      ? "实时连接暂时中断，正在自动重连，并通过状态接口恢复。"
+      : "进度、阶段、专家和 DAG 均由后端真实执行状态提供。",
+  ));
   wrap.appendChild(panel);
   return wrap;
 }
@@ -4552,9 +4672,22 @@ function pageWarRoomLive() {
       failed ? "error" : "empty",
       failed ? "Manager 规划失败" : "尚无进行中的任务",
       failed
-        ? "研究团队尚未启动：研究服务暂时无法完成任务规划，请稍后重试。"
+        ? `${session.researchState?.failedStage ? `失败阶段：${session.researchState.failedStage}。` : ""}${session.error || "研究服务未能完成任务规划。"}`
         : "请先在投研大厅提交研究请求。",
     );
+    if (failed && session.prompt) {
+      const retry = el("button", "btn btn-primary", "重新尝试");
+      retry.style.marginTop = "10px";
+      retry.addEventListener("click", () => beginLiveResearch(
+        session.prompt,
+        buildQueryContext(
+          session.originalQuery,
+          session.rewrittenQuery,
+          session.finalQuery || session.prompt,
+        ),
+      ));
+      box.appendChild(retry);
+    }
     const back = el("button", "btn btn-primary", "‹ 返回大厅");
     back.style.marginTop = "10px";
     back.addEventListener("click", () => navigate("hall"));

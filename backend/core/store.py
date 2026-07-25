@@ -143,6 +143,29 @@ CREATE TABLE IF NOT EXISTS coach_narrations (
     created_at TEXT NOT NULL,
     PRIMARY KEY (task_id, seq)
 );
+CREATE TABLE IF NOT EXISTS research_runs (
+    run_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    current_stage TEXT NOT NULL,
+    progress INTEGER NOT NULL,
+    started_at TEXT NOT NULL,
+    selected_agents_json TEXT NOT NULL,
+    dag_json TEXT,
+    elapsed_ms INTEGER NOT NULL,
+    estimated_remaining_ms INTEGER,
+    error TEXT,
+    failed_stage TEXT,
+    message TEXT NOT NULL,
+    plan_ready_ms INTEGER,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS research_run_events (
+    run_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (run_id, seq)
+);
 """
 
 
@@ -412,6 +435,155 @@ class Store:
             }
             for row in rows
         ]
+
+    # -- observable Manager planning runs ----------------------------------
+
+    def create_research_run(self, state: dict[str, Any]) -> None:
+        """Persist a new run and its first real state event atomically."""
+
+        payload = dict(state)
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO research_runs ("
+                "run_id, status, current_stage, progress, started_at, "
+                "selected_agents_json, dag_json, elapsed_ms, "
+                "estimated_remaining_ms, error, failed_stage, message, "
+                "plan_ready_ms, updated_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    payload["run_id"],
+                    payload["status"],
+                    payload["current_stage"],
+                    payload["progress"],
+                    payload["started_at"],
+                    _dumps(payload.get("selected_agents") or []),
+                    _dumps(payload["dag"]) if payload.get("dag") is not None else None,
+                    payload.get("elapsed_ms", 0),
+                    payload.get("estimated_remaining_ms"),
+                    payload.get("error"),
+                    payload.get("failed_stage"),
+                    payload["message"],
+                    payload.get("plan_ready_ms"),
+                    _now(),
+                ),
+            )
+            self._conn.execute(
+                "INSERT INTO research_run_events "
+                "(run_id, seq, payload_json, created_at) VALUES (?, 1, ?, ?)",
+                (payload["run_id"], _dumps(payload), _now()),
+            )
+            self._conn.commit()
+
+    def record_research_run_state(self, state: dict[str, Any]) -> int:
+        """Update current state and append the corresponding SSE event."""
+
+        payload = dict(state)
+        plan_ready_ms = (
+            payload.get("elapsed_ms")
+            if payload.get("current_stage") == "plan_ready"
+            else None
+        )
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT plan_ready_ms FROM research_runs WHERE run_id = ?",
+                (payload["run_id"],),
+            ).fetchone()
+            if existing is None:
+                raise KeyError(payload["run_id"])
+            self._conn.execute(
+                "UPDATE research_runs SET "
+                "status = ?, current_stage = ?, progress = ?, "
+                "selected_agents_json = ?, dag_json = ?, elapsed_ms = ?, "
+                "estimated_remaining_ms = ?, error = ?, failed_stage = ?, "
+                "message = ?, plan_ready_ms = COALESCE(?, plan_ready_ms), "
+                "updated_at = ? WHERE run_id = ?",
+                (
+                    payload["status"],
+                    payload["current_stage"],
+                    payload["progress"],
+                    _dumps(payload.get("selected_agents") or []),
+                    _dumps(payload["dag"]) if payload.get("dag") is not None else None,
+                    payload.get("elapsed_ms", 0),
+                    payload.get("estimated_remaining_ms"),
+                    payload.get("error"),
+                    payload.get("failed_stage"),
+                    payload["message"],
+                    plan_ready_ms,
+                    _now(),
+                    payload["run_id"],
+                ),
+            )
+            row = self._conn.execute(
+                "SELECT COALESCE(MAX(seq), 0) + 1 AS next "
+                "FROM research_run_events WHERE run_id = ?",
+                (payload["run_id"],),
+            ).fetchone()
+            seq = int(row["next"])
+            self._conn.execute(
+                "INSERT INTO research_run_events "
+                "(run_id, seq, payload_json, created_at) VALUES (?, ?, ?, ?)",
+                (payload["run_id"], seq, _dumps(payload), _now()),
+            )
+            self._conn.commit()
+            return seq
+
+    def get_research_run(self, run_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM research_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        state = _research_run_to_dict(row)
+        if state["status"] == "running":
+            started = datetime.fromisoformat(state["started_at"])
+            now = datetime.now(timezone.utc)
+            state["elapsed_ms"] = max(0, int((now - started).total_seconds() * 1000))
+            state["estimated_remaining_ms"] = self.estimate_research_run_remaining(
+                state["elapsed_ms"]
+            )
+        return state
+
+    def list_research_run_events(
+        self,
+        run_id: str,
+        *,
+        after_seq: int = 0,
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT seq, payload_json, created_at "
+                "FROM research_run_events "
+                "WHERE run_id = ? AND seq > ? ORDER BY seq ASC",
+                (run_id, after_seq),
+            ).fetchall()
+        return [
+            {
+                "seq": int(row["seq"]),
+                "payload": _loads(row["payload_json"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    def estimate_research_run_remaining(self, elapsed_ms: int) -> int | None:
+        """Estimate from real completed planning runs only.
+
+        Three samples are required before the estimate is considered reliable.
+        """
+
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT plan_ready_ms FROM research_runs "
+                "WHERE plan_ready_ms IS NOT NULL "
+                "ORDER BY updated_at DESC LIMIT 20"
+            ).fetchall()
+        samples = [int(row["plan_ready_ms"]) for row in rows]
+        if len(samples) < 3:
+            return None
+        average_ms = round(sum(samples) / len(samples))
+        return max(0, average_ms - max(0, int(elapsed_ms)))
 
     # -- reports -------------------------------------------------------------
 
@@ -758,6 +930,23 @@ def _event_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "message": row["message"],
         "metadata": _loads(row["metadata_json"]) or {},
         "ts": row["ts"],
+    }
+
+
+def _research_run_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "run_id": row["run_id"],
+        "status": row["status"],
+        "current_stage": row["current_stage"],
+        "progress": int(row["progress"]),
+        "started_at": row["started_at"],
+        "selected_agents": _loads(row["selected_agents_json"]) or [],
+        "dag": _loads(row["dag_json"]),
+        "elapsed_ms": int(row["elapsed_ms"]),
+        "estimated_remaining_ms": row["estimated_remaining_ms"],
+        "error": row["error"],
+        "failed_stage": row["failed_stage"],
+        "message": row["message"],
     }
 
 
