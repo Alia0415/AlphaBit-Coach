@@ -34,6 +34,9 @@ const MODEL_BADGE = '<span class="coach-badge model">模型生成</span>';
 const DEMO_BADGE = '<span class="coach-badge demo">示例</span>';
 const EVIDENCE_BADGE = '<span class="coach-badge evidence">证据检索 · 未调模型</span>';
 
+// 合规风险提示：陪练与课堂解说均属教学性研究评述，面板底部常驻展示
+const COMPLIANCE_NOTE = "⚠ 风险提示：陪练内容由 AI 生成，仅供投研学习交流，不构成投资建议；模型可能出错，请以报告证据为准。";
+
 // 分区折叠状态在同一页面会话内记住（buildCoachSidebar 每份报告都会重建）。
 const FOLD_STATE = new Map();
 
@@ -325,6 +328,7 @@ export function buildCoachSidebar(options) {
   inputBar.append(input, send);
   compose.append(quoteBar, modeBar, inputBar);
   panel.appendChild(compose);
+  panel.appendChild(el("div", "coach-compliance-note", esc(COMPLIANCE_NOTE)));
   applyMode("coach");
 
   const contexts = new Map(
@@ -534,6 +538,7 @@ export function createClassroomPanel({ demo = false, agentName } = {}) {
 
   const feed = el("div", "classroom-feed");
   root.appendChild(feed);
+  root.appendChild(el("div", "coach-compliance-note", esc(COMPLIANCE_NOTE)));
   const waiting = el(
     "div",
     "classroom-waiting",
