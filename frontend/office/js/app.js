@@ -20,7 +20,9 @@ import {
   WAR_SCRIPT,
   SKILL_FINAL_COUNTS,
   HISTORY_TASKS,
+  DEMO_COMPANION,
 } from "./mock.js?v=20260725-p07";
+import { companionAdapter, renderCompanionCard } from "./companion.js?v=20260725-p01";
 import {
   isLive,
   connectivity,
@@ -1623,6 +1625,13 @@ function pageWarRoom() {
   stagePanel.appendChild(prog);
   centerCol.appendChild(stagePanel);
 
+  // companion interpretation feed
+  const companionPanel = el("div", "panel companion-panel");
+  companionPanel.appendChild(el("div", "panel-title", "🔍 专家解读"));
+  const companionFeed = el("div", "companion-feed");
+  companionPanel.appendChild(companionFeed);
+  centerCol.appendChild(companionPanel);
+
   // timeline
   const tlPanel = el("div", "panel");
   tlPanel.style.marginTop = "14px";
@@ -1780,7 +1789,9 @@ function pageWarRoom() {
       case "work": setDag(ev.agent, "working"); { const a = agentById2(ev.agent); if (a) a.status = "working"; } break;
       case "dag": setDag(ev.agent, ev.status); break;
       case "say": say(ev.agent, ev.text, ev.dur); break;
-      case "done": setDag(ev.agent, "done"); { const a = agentById2(ev.agent); if (a) a.status = "done"; } break;
+      case "done": setDag(ev.agent, "done"); { const a = agentById2(ev.agent); if (a) a.status = "done"; }
+        if (DEMO_COMPANION[ev.agent]) renderCompanionCard(companionFeed, DEMO_COMPANION[ev.agent]);
+        break;
       case "skill":
         skillCounts[ev.name] = ev.n;
         if (skillRows[ev.name]) {
@@ -3747,6 +3758,14 @@ function pageWarRoomLive() {
   prog.append(pstats.done, pstats.working, pstats.logs, pstats.elapsed);
   stagePanel.appendChild(prog);
   centerCol.appendChild(stagePanel);
+
+  // companion interpretation feed
+  const companionPanel = el("div", "panel companion-panel");
+  companionPanel.appendChild(el("div", "panel-title", "🔍 专家解读"));
+  const companionFeed = el("div", "companion-feed");
+  companionPanel.appendChild(companionFeed);
+  centerCol.appendChild(companionPanel);
+
   grid.appendChild(centerCol);
 
   // ---- RIGHT: skills + logs ----
@@ -3902,6 +3921,12 @@ function pageWarRoomLive() {
         if (stepId) { stepStatus[stepId] = "done"; setNode(stepId, "done"); }
         if (agent) setAgentFlow(agent);
         pushLog(publicAgent, publicMessage, "done");
+        (() => {
+          try {
+            const cd = companionAdapter(agent, evt.metadata || {});
+            if (cd) renderCompanionCard(companionFeed, cd);
+          } catch (e) { /* silently skip malformed companion data */ }
+        })();
         break;
       case "step_failed":
         if (stepId) { stepStatus[stepId] = "failed"; setNode(stepId, "failed"); }
