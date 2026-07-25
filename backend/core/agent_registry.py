@@ -81,6 +81,7 @@ DEFAULT_EXPERTS = (
             "pandadata_market_data",
         ),
         accepted_inputs=(
+            "analysis_mode",
             "symbols",
             "start_date",
             "end_date",

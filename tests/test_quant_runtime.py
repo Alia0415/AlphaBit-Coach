@@ -533,6 +533,87 @@ def test_quant_agent_can_call_only_r020_with_mocked_pandadata() -> None:
     assert any(call["tool"] == "pandadata_market_data" for call in result.tool_calls)
 
 
+def test_quant_agent_runs_historical_cross_check_without_ark() -> None:
+    panda = MockPandaData(_market_rows(("002594.SZ",)))
+    agent = QuantAgent(
+        ark_client=MockArk(),
+        data_client=panda,
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+
+    result = agent.execute(
+        _quant_task(
+            {
+                "analysis_mode": "historical_cross_check",
+                "symbols": ["002594.SZ"],
+                "start_date": "20240101",
+                "end_date": "20240125",
+            }
+        )
+    )
+
+    assert result.status == "completed"
+    assert len(panda.calls) == 1
+    assert result.metadata["execution_path"] == "deterministic_cross_check"
+    assert result.metadata["actual_skills"] == []
+    metric_ids = {item["metric_id"] for item in result.evidence}
+    assert {
+        "period_return",
+        "annualized_volatility",
+        "maximum_drawdown",
+    }.issubset(metric_ids)
+    assert all(item["type"] == "quant_cross_check" for item in result.evidence)
+    serialized = result.model_dump_json().lower()
+    assert "trading_signal" not in serialized
+    assert "backtest_performance" not in serialized
+    assert "ic_calculated" not in serialized
+
+
+def test_quant_cross_check_reports_missing_dates_without_ark() -> None:
+    agent = QuantAgent(
+        ark_client=MockArk(),
+        data_client=MockPandaData(error=AssertionError("must not fetch data")),
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+
+    result = agent.execute(
+        _quant_task(
+            {
+                "analysis_mode": "historical_cross_check",
+                "symbols": ["002594.SZ"],
+            }
+        )
+    )
+
+    assert result.status == "failed"
+    assert result.metadata["needs_clarification"] is True
+    assert "start_date" in result.error
+    assert "end_date" in result.error
+
+
+def test_quant_cross_check_requires_peer_pool_for_cross_section() -> None:
+    agent = QuantAgent(
+        ark_client=MockArk(),
+        data_client=MockPandaData(error=AssertionError("must not fetch data")),
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+    task = _quant_task(
+        {
+            "analysis_mode": "historical_cross_check",
+            "symbols": ["002594.SZ"],
+            "start_date": "20240101",
+            "end_date": "20240125",
+        }
+    )
+    task.original_user_request = "请做横截面排名"
+
+    result = agent.execute(task)
+
+    assert result.status == "failed"
+    assert result.metadata["needs_clarification"] is True
+    assert "至少需要两个 symbol" in result.error
+
+
 def test_quant_agent_repairs_false_market_data_skill_clarification() -> None:
     r020_adapter = StubAdapter(
         {

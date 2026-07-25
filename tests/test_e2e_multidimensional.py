@@ -94,6 +94,7 @@ def _comprehensive_plan() -> ExecutionPlan:
                 agent=AgentId.QUANT,
                 objective="量化交叉验证",
                 inputs={
+                    "analysis_mode": "historical_cross_check",
                     "symbols": ["002594.SZ"],
                     "start_date": "20240101",
                     "end_date": "20241231",
@@ -308,6 +309,7 @@ class TestE2EComprehensiveFlow:
                     agent=AgentId.QUANT,
                     objective="波动分析",
                     inputs={
+                        "analysis_mode": "historical_cross_check",
                         "symbols": ["002594.SZ"],
                         "start_date": "20240101",
                         "end_date": "20241231",

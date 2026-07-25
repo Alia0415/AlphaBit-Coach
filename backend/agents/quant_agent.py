@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
@@ -10,6 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from backend.core.contracts import AgentId, ExpertResult, ExpertTask
+from backend.agents.quant_cross_check import PriceRow, run_cross_check
 from backend.services.ark_client import ArkClient, ArkClientError
 from backend.services.pandadata_client import PandaDataClient
 from backend.skills.contracts import (
@@ -21,7 +23,15 @@ from backend.skills.skill_registry import SkillRegistry
 
 
 MAX_SKILL_STEPS = 3
-PANDADATA_FIELDS = ["open", "high", "low", "close", "volume"]
+PANDADATA_FIELDS = [
+    "trade_date",
+    "symbol",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+]
 
 
 class SelectedSkill(BaseModel):
@@ -73,6 +83,8 @@ class QuantAgent:
     def execute(self, task: ExpertTask) -> ExpertResult:
         if task.agent != AgentId.QUANT:
             return _failed(task, "Quant Agent 收到了不匹配的任务类型。")
+        if task.inputs.get("analysis_mode") == "historical_cross_check":
+            return self._execute_cross_check(task)
         try:
             plan = self.create_skill_plan(task)
         except QuantAgentError as exc:
@@ -237,6 +249,140 @@ class QuantAgent:
             skill_results,
             tool_calls,
             agent_events,
+        )
+
+    def _execute_cross_check(self, task: ExpertTask) -> ExpertResult:
+        symbols = _symbols(task.inputs.get("symbols"))
+        missing = [
+            name
+            for name in ("symbols", "start_date", "end_date")
+            if task.inputs.get(name) in (None, "", [], {})
+        ]
+        if missing:
+            question = "请补充以下 Quant 输入：" + "、".join(missing) + "。"
+            return _failed(
+                task,
+                question,
+                metadata={
+                    "needs_clarification": True,
+                    "clarification_question": question,
+                    "execution_path": "deterministic_cross_check",
+                },
+            )
+        if _requests_cross_section(task.original_user_request) and len(symbols) < 2:
+            question = "横截面排序至少需要两个 symbol；请补充标的池。"
+            return _failed(
+                task,
+                question,
+                metadata={
+                    "needs_clarification": True,
+                    "clarification_question": question,
+                    "execution_path": "deterministic_cross_check",
+                },
+            )
+
+        start_date = str(task.inputs["start_date"])
+        end_date = str(task.inputs["end_date"])
+        validation_error = _validate_market_request(
+            symbols,
+            start_date,
+            end_date,
+        )
+        if validation_error:
+            return _failed(
+                task,
+                validation_error,
+                metadata={"execution_path": "deterministic_cross_check"},
+            )
+        tool_call = {
+            "tool": "pandadata_market_data",
+            "status": "started",
+            "arguments": {
+                "symbols": symbols,
+                "start_date": start_date,
+                "end_date": end_date,
+                "fields": PANDADATA_FIELDS,
+            },
+        }
+        try:
+            raw_rows = self._data_client.get_market_data(
+                symbols=symbols,
+                start_date=start_date,
+                end_date=end_date,
+                fields=PANDADATA_FIELDS,
+                indicator="000300",
+                st=True,
+            )
+            grouped = _price_rows_by_symbol(raw_rows, symbols)
+        except Exception:
+            tool_call["status"] = "failed"
+            return _failed(
+                task,
+                "PandaData OHLCV 获取失败。",
+                metadata={"execution_path": "deterministic_cross_check"},
+            ).model_copy(update={"tool_calls": [tool_call]})
+        tool_call["status"] = "completed"
+
+        evidence: list[dict[str, Any]] = []
+        for symbol in symbols:
+            target = grouped.get(symbol, [])
+            peers = {
+                peer: rows
+                for peer, rows in grouped.items()
+                if peer != symbol and rows
+            }
+            for metric in run_cross_check(
+                target,
+                peer_prices=peers if _requests_cross_section(
+                    task.original_user_request
+                ) else None,
+            ):
+                evidence.append(
+                    {
+                        "type": "quant_cross_check",
+                        "symbol": symbol,
+                        **asdict(metric),
+                        "validation_status": "historical_computation",
+                    }
+                )
+        if not evidence:
+            return _failed(
+                task,
+                "PandaData 未返回足够的有效行情数据。",
+                metadata={"execution_path": "deterministic_cross_check"},
+            ).model_copy(update={"tool_calls": [tool_call]})
+
+        return ExpertResult(
+            task_id=task.task_id,
+            agent=AgentId.QUANT,
+            status="completed",
+            summary=(
+                f"Quant Agent 基于 PandaData 完成 {len(symbols)} 个标的的"
+                f" {len(evidence)} 项历史量化交叉验证。"
+            ),
+            evidence=evidence,
+            risks=["历史统计不代表未来表现，不能单独作为投资决策依据。"],
+            limitations=[
+                "未计算 IC，未运行回测，未生成交易信号或未来收益预测。"
+            ],
+            recommendations=["结合基本面、宏观和风险证据进行综合判断。"],
+            tool_calls=[tool_call],
+            data_sources=[
+                {
+                    "name": "PandaData",
+                    "symbols": symbols,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "fields": PANDADATA_FIELDS,
+                }
+            ],
+            metadata={
+                "execution_path": "deterministic_cross_check",
+                "actual_skills": [],
+                "validation_status": "historical_computation",
+                "calculation_engine": "quant_cross_check",
+                "agent_events": [],
+            },
         )
 
     def __call__(self, task: ExpertTask) -> ExpertResult:
@@ -528,6 +674,39 @@ def _symbols(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip().upper() for item in value if str(item).strip()]
+
+
+def _price_rows_by_symbol(
+    raw_rows: Any,
+    requested_symbols: list[str],
+) -> dict[str, list[PriceRow]]:
+    if not isinstance(raw_rows, list):
+        raise ValueError("PandaData market data must be a list")
+    grouped: dict[str, list[PriceRow]] = {symbol: [] for symbol in requested_symbols}
+    default_symbol = requested_symbols[0] if len(requested_symbols) == 1 else ""
+    for row in raw_rows:
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("symbol") or default_symbol).strip().upper()
+        date = str(row.get("trade_date") or row.get("date") or "").strip()
+        if symbol not in grouped or not date:
+            continue
+        try:
+            grouped[symbol].append(
+                PriceRow(
+                    date=date,
+                    close=float(row["close"]),
+                    volume=float(row.get("volume") or 0),
+                    high=float(row.get("high") or 0),
+                    low=float(row.get("low") or 0),
+                    open=float(row.get("open") or 0),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    for rows in grouped.values():
+        rows.sort(key=lambda item: item.date)
+    return grouped
 
 
 def _validate_market_request(

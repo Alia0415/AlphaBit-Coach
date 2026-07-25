@@ -8,7 +8,7 @@ import pytest
 from openai import APIConnectionError, APIStatusError
 
 from backend.services import ark_client
-from backend.services.ark_client import ArkClient, ArkClientError
+from backend.services.ark_client import ArkClient, ArkClientError, ArkTextRequest
 
 
 def test_ark_client_ignores_environment_proxy_configuration(
@@ -131,3 +131,41 @@ def test_chat_reports_http_status_without_response_body(
         ArkClient().chat("hello")
 
     assert "sensitive upstream detail" not in str(exc_info.value)
+
+
+def test_chat_text_applies_request_timeout_and_output_token_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ARK_API_KEY", "test-key")
+    create = Mock(return_value=SimpleNamespace(output_text="ok"))
+    monkeypatch.setattr(
+        ark_client,
+        "DefaultHttpxClient",
+        Mock(return_value=object()),
+    )
+    monkeypatch.setattr(
+        ark_client,
+        "OpenAI",
+        Mock(
+            return_value=SimpleNamespace(
+                responses=SimpleNamespace(create=create)
+            )
+        ),
+    )
+
+    response = ArkClient().chat_text(
+        ArkTextRequest(
+            prompt="bounded request",
+            timeout_seconds=37.0,
+            max_output_tokens=1234,
+        )
+    )
+
+    assert response.text == "ok"
+    create.assert_called_once_with(
+        model=ark_client.DEFAULT_ARK_MODEL,
+        input="bounded request",
+        temperature=0.0,
+        timeout=37.0,
+        max_output_tokens=1234,
+    )

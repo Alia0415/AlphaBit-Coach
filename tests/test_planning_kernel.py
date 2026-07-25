@@ -25,6 +25,7 @@ from backend.core.plan_validator import (
     validate_execution_plan,
 )
 from backend.core.workflow_executor import WorkflowExecutor
+from backend.services.ark_client import ArkClientError, ArkErrorKind
 
 
 class MockArkClient:
@@ -33,6 +34,7 @@ class MockArkClient:
     def __init__(self, *responses: str, error: Exception | None = None) -> None:
         self.responses = list(responses)
         self.prompts: list[str] = []
+        self.json_requests: list[Any] = []
         self.error = error
 
     def chat(self, prompt: str, model: str | None = None) -> str:
@@ -42,6 +44,17 @@ class MockArkClient:
         if not self.responses:
             raise AssertionError("Unexpected ArkClient call")
         return self.responses.pop(0)
+
+    def chat_json(self, request: Any) -> Any:
+        self.json_requests.append(request)
+        raw = self.chat(request.prompt)
+        try:
+            return request.response_model.model_validate_json(raw)
+        except Exception as exc:
+            raise ArkClientError(
+                str(exc),
+                kind=ArkErrorKind.SCHEMA_VALIDATION,
+            ) from None
 
 
 class MockPandaData:
@@ -174,6 +187,30 @@ def test_manager_stops_after_one_invalid_json_repair_attempt() -> None:
     assert client.responses == ["unused"]
 
 
+def test_manager_uses_structured_json_for_initial_plan() -> None:
+    client = MockArkClient(json.dumps(_plan_payload(["research"])))
+
+    plan = ManagerAgent(client=client).create_plan("分析 000001.SZ 的价格表现")
+
+    assert plan.steps[0].agent == AgentId.RESEARCH
+    assert len(client.json_requests) == 1
+    assert client.json_requests[0].response_model is ExecutionPlan
+    assert client.json_requests[0].purpose == "manager_plan"
+    assert len(client.prompts) == 1
+
+
+def test_quant_cross_check_plan_requires_explicit_analysis_mode() -> None:
+    payload = _plan_payload(["quant"])
+    payload["steps"][0]["covers_dimensions"] = ["quantitative_cross_check"]
+    client = MockArkClient(json.dumps(payload), json.dumps(payload))
+
+    with pytest.raises(ManagerAgentError):
+        ManagerAgent(client=client).create_plan("分析 002594.SZ 的历史波动")
+
+    assert len(client.prompts) == 2
+    assert "analysis_mode=historical_cross_check" in client.prompts[1]
+
+
 def test_manager_prompt_uses_registry_and_minimal_sufficient_principle() -> None:
     client = MockArkClient(json.dumps(_plan_payload(["research"])))
 
@@ -254,6 +291,7 @@ def test_manager_repairs_research_input_contract_once() -> None:
     )
 
     assert len(client.prompts) == 2
+    assert len(client.json_requests) == 2
     assert plan.steps[0].inputs["symbols"] == ["000001.SZ"]
     assert "must use inputs.symbols as a list" in client.prompts[1]
     assert "不要为了修复契约而增加不需要的专家" in client.prompts[1]
