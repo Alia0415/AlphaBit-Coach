@@ -56,6 +56,7 @@ import {
   openOfficeGlossary,
   registerGlossaryTerms,
 } from "./glossary-ui.js?v=20260725-p12";
+import { mountStockWorkspace } from "../../stock-workspace.js?v=20260725-s03";
 
 const researchPresentation = globalThis.AlphaResearchPresentation;
 
@@ -453,6 +454,7 @@ function avatar(agentOrSheet, sizePx = 40, wrapCls = "pix-ava") {
 // nav definition
 // ---------------------------------------------------------------------------
 const NAV = [
+  { route: "stocks", ico: "📈", label: "股票行情" },
   { route: "hall", ico: "🏛", label: "投研大厅" },
   { route: "war", ico: "🛰", label: "多 Agent 作战室" },
   { route: "experts", ico: "👥", label: "专家中心" },
@@ -462,7 +464,7 @@ const NAV = [
   { route: "skills", ico: "🧩", label: "研究能力" },
 ];
 
-let currentRoute = "reports";
+let currentRoute = "stocks";
 let routeParam = null;
 const CURRENT_REPORT_KEY = "alphabit-coach.current-report-id";
 let currentReportId = null;
@@ -759,6 +761,32 @@ function renderPage() {
   page.innerHTML = "";
   const live = isLive();
   switch (currentRoute) {
+    case "stocks": {
+      const stockHost = el("div");
+      page.appendChild(stockHost);
+      registerTeardown(
+        mountStockWorkspace(stockHost, {
+          forceDemo: !live,
+          notify: toast,
+          onResearch: (_stock, prompt) => {
+            navigate("hall");
+            requestAnimationFrame(() => {
+              const input = $("#page .ask-box textarea");
+              if (!input) {
+                toast("任务输入框暂时不可用，请从投研大厅发起研究。");
+                return;
+              }
+              input.value = prompt;
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+              input.scrollIntoView({ behavior: "smooth", block: "center" });
+              input.focus({ preventScroll: true });
+              toast("已填入当前股票，确认后再开始研究。");
+            });
+          },
+        }),
+      );
+      break;
+    }
     case "reports":
       if (live) page.appendChild(routeParam ? pageReportDetailLive(routeParam) : pageReportListLive());
       else if (routeParam) page.appendChild(pageReportDetail(routeParam));
@@ -4368,14 +4396,14 @@ function boot() {
   window.__navigate = navigate;
   window.__openProfileOnboarding = () => openProfileOnboarding(toast);
   if (isLive()) {
-    // live mode: probe the backend, then land on a page with real data.
+    // Live mode probes the backend before opening the shared stock workspace.
     refreshServiceStatus().finally(() => {
       renderTopbar();
-      navigate("hall");
+      navigate("stocks");
     });
   } else {
-    // Demo mode starts from the hall so the full guided flow is visible.
-    navigate("hall");
+    // Demo mode uses the same UI and explicitly requests the fixed demo dataset.
+    navigate("stocks");
   }
   maybeStartProfileOnboarding(toast);
   setInterval(renderStatusbar, 30_000);
