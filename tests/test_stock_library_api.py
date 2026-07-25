@@ -61,11 +61,100 @@ def test_search_by_board_returns_board_members() -> None:
     assert {stock["board"] for stock in stocks} == {"科创板"}
 
 
-def test_search_unknown_stock_returns_empty_list() -> None:
+class _OfflinePandaData:
+    configured = False
+
+
+class _SearchPandaData:
+    configured = True
+
+    def __init__(self) -> None:
+        self.catalog_calls = 0
+        self.detail_calls: list[str] = []
+
+    def get_stock_catalog(self) -> list[dict[str, object]]:
+        self.catalog_calls += 1
+        return [
+            {"symbol": "601633.SH", "name": "长城汽车", "status": 1},
+            {"symbol": "603986.SH", "name": "兆易创新", "status": 1},
+        ]
+
+    def get_stock_detail(self, *, symbol: str) -> list[dict[str, object]]:
+        self.detail_calls.append(symbol)
+        return [
+            row
+            for row in self.get_stock_catalog()
+            if row["symbol"] == symbol
+        ]
+
+
+def test_search_unknown_stock_returns_empty_list(monkeypatch) -> None:
+    monkeypatch.setattr(
+        main_module,
+        "stock_charts",
+        StockChartService(_OfflinePandaData()),  # type: ignore[arg-type]
+    )
+
     response = client.get("/api/stocks/search", params={"q": "不存在的股票"})
 
     assert response.status_code == 200
     assert response.json()["stocks"] == []
+
+
+def test_search_nondefault_stock_name_uses_provider_catalog_and_cache() -> None:
+    provider = _SearchPandaData()
+    service = StockChartService(provider)  # type: ignore[arg-type]
+
+    assert service.search("长城汽车") == [
+        {
+            "symbol": "601633.SH",
+            "name": "长城汽车",
+            "market": "SH",
+            "board": "沪市主板",
+        }
+    ]
+    assert service.search("兆易") == [
+        {
+            "symbol": "603986.SH",
+            "name": "兆易创新",
+            "market": "SH",
+            "board": "沪市主板",
+        }
+    ]
+    assert provider.catalog_calls == 1
+
+
+def test_search_nondefault_six_digit_code_resolves_provider_metadata() -> None:
+    provider = _SearchPandaData()
+    service = StockChartService(provider)  # type: ignore[arg-type]
+
+    assert service.search("601633") == [
+        {
+            "symbol": "601633.SH",
+            "name": "长城汽车",
+            "market": "SH",
+            "board": "沪市主板",
+        }
+    ]
+    assert provider.detail_calls == ["601633.SH"]
+
+
+def test_provider_metadata_is_reused_for_nondefault_chart_title() -> None:
+    provider = _SearchPandaData()
+    service = StockChartService(provider)  # type: ignore[arg-type]
+
+    service.search("长城汽车")
+
+    assert service._stock_metadata("601633.SH")["name"] == "长城汽车"
+    assert provider.catalog_calls == 1
+    assert provider.detail_calls == []
+
+
+def test_search_normalizes_exchange_prefix_and_suffix() -> None:
+    service = StockChartService(_OfflinePandaData())  # type: ignore[arg-type]
+
+    assert service.search("sh601633")[0]["symbol"] == "601633.SH"
+    assert service.search("300999sz")[0]["symbol"] == "300999.SZ"
 
 
 def test_demo_chart_is_available_without_provider_credentials() -> None:

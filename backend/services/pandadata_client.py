@@ -238,6 +238,16 @@ class PandaDataClient:
     def get_stock_detail(self, *, symbol: str) -> Any:
         return self._call("get_stock_detail", symbol=_validate_symbol(symbol))
 
+    def get_stock_catalog(self) -> Any:
+        """Return active A-share identifiers and names for stock search."""
+
+        return self._call(
+            "get_stock_detail",
+            symbol="",
+            fields=["symbol", "name", "status"],
+            status=1,
+        )
+
     def get_stock_industry(self, *, symbol: str) -> Any:
         return self._call(
             "get_stock_industry",

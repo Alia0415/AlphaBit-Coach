@@ -148,7 +148,17 @@ export function mountStockLibraryPage(
       library.setSelected(selected);
       onOpenChart(selected);
     },
-    onSearch: async (query) => searchStockCatalog(query),
+    onSearch: async (query) => {
+      try {
+        const response = await fetch(
+          `/api/stocks/search?q=${encodeURIComponent(query)}`,
+        );
+        const payload = await responseJson(response);
+        return Array.isArray(payload.stocks) ? payload.stocks : [];
+      } catch (_) {
+        return searchStockCatalog(query);
+      }
+    },
     onStorageError: () => notify("浏览器未允许保存关注列表，选股功能仍可正常使用。"),
   });
   library.setSelected(selected);
@@ -340,10 +350,14 @@ export function mountStockChartPage(
   }
 
   function updateDetails(payload) {
+    const payloadName =
+      payload.name && payload.name !== payload.symbol
+        ? payload.name
+        : selected.name;
     selected =
       normalizeSelectedStock({
         symbol: payload.symbol || selected.symbol,
-        name: payload.name || selected.name,
+        name: payloadName || selected.name,
       }) || selected;
     rememberSelectedStock(selected);
     name.textContent = selected.name;

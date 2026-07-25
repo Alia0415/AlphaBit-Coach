@@ -61,7 +61,7 @@ import {
   buildStockResearchPrompt,
   mountStockChartPage,
   mountStockLibraryPage,
-} from "../../stock-workspace.js?v=20260726-main-sync2";
+} from "../../stock-workspace.js?v=20260726-backend-search2";
 import {
   applyClarificationOption,
   buildQueryContext,
