@@ -249,13 +249,17 @@ class QuantAgent:
         prompt = _planner_prompt(task, allowed)
         try:
             raw = self._get_client().chat(prompt)
-            return _parse_and_validate_plan(raw, allowed)
+            plan = _parse_and_validate_plan(raw, allowed)
+            _validate_runtime_clarification(plan, task, allowed)
+            return plan
         except (json.JSONDecodeError, ValidationError, ValueError) as exc:
             try:
                 repaired = self._get_client().chat(
                     _planner_repair_prompt(task, allowed, raw, str(exc))
                 )
-                return _parse_and_validate_plan(repaired, allowed)
+                plan = _parse_and_validate_plan(repaired, allowed)
+                _validate_runtime_clarification(plan, task, allowed)
+                return plan
             except (
                 ArkClientError,
                 json.JSONDecodeError,
@@ -431,6 +435,13 @@ def _planner_prompt(
 若用户要求横截面排序但只有一个 symbol，应要求补充标的池或明确限制。
 不得规划完整回测、自动交易、买卖建议，或声称未实际计算的 IC/绩效。
 
+重要运行时约定：
+- pandadata_market_data 是 Quant Agent 自动调用的受控数据工具，不是 Skill，
+  不得放入 selected_skills 或 steps。
+- 对 input_schema 标记 x-data-source=pandadata_market_data 的 Skill，
+  只要任务已有 symbols、start_date 和 end_date，运行时会在执行 Skill 前自动获取
+  market_data；不得因此要求用户补充 market_data、安装数据 Skill 或授权 PandaData。
+
 只返回严格 JSON，不要 Markdown。selected_skills 必须与 steps 使用的 Skill 完全一致。
 
 allowed Skills：
@@ -455,12 +466,53 @@ def _planner_repair_prompt(
 只能使用这些 Skill ID：{json.dumps([item["id"] for item in allowed])}。
 最多 3 步，检查 depends_on，selected_skills 必须与 steps 完全一致。
 缺少计算所需的 symbols/start_date/end_date 时返回空步骤澄清计划。
+pandadata_market_data 是运行时自动调用的数据工具而不是可选 Skill。对于声明
+x-data-source=pandadata_market_data 的 Skill，只要任务已有 symbols、start_date
+和 end_date，就直接选择合适的已授权 Skill；不要要求 market_data、数据 Skill
+或 PandaData 授权。
 只返回严格 JSON。
 
 任务：{task.objective}
 验证错误：{error}
 无效输出：{raw[:20_000]}
 """.strip()
+
+
+def _validate_runtime_clarification(
+    plan: QuantSkillPlan,
+    task: ExpertTask,
+    allowed: list[dict[str, Any]],
+) -> None:
+    """Reject clarifications that contradict the declared runtime data contract."""
+
+    if not plan.needs_clarification:
+        return
+    if any(
+        task.inputs.get(name) in (None, "", [], {})
+        for name in ("symbols", "start_date", "end_date")
+    ):
+        return
+    has_automatic_market_data = any(
+        isinstance(item.get("input_schema"), dict)
+        and item["input_schema"].get("x-data-source")
+        == "pandadata_market_data"
+        for item in allowed
+    )
+    if not has_automatic_market_data:
+        return
+    question = (plan.clarification_question or "").lower()
+    data_contract_terms = (
+        "market_data",
+        "pandadata",
+        "市场数据",
+        "数据获取",
+        "数据 skill",
+        "数据授权",
+    )
+    if any(term in question for term in data_contract_terms):
+        raise ValueError(
+            "Clarification contradicts the automatic PandaData runtime contract"
+        )
 
 
 def _extract_json(value: str) -> Any:

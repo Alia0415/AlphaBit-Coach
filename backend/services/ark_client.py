@@ -10,6 +10,8 @@ from openai import APIConnectionError, APIStatusError, DefaultHttpxClient, OpenA
 
 ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 DEFAULT_ARK_MODEL = "ep-20260708162855-pcf9x"
+DEFAULT_ARK_TIMEOUT_SECONDS = 90.0
+DEFAULT_ARK_MAX_RETRIES = 1
 ALPHAOS_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
@@ -29,10 +31,26 @@ class ArkClient:
             )
 
         self._model = os.getenv("ARK_MODEL", "").strip() or DEFAULT_ARK_MODEL
+        timeout = _bounded_float_env(
+            "ARK_TIMEOUT_SECONDS",
+            DEFAULT_ARK_TIMEOUT_SECONDS,
+            minimum=5.0,
+            maximum=180.0,
+        )
+        max_retries = _bounded_int_env(
+            "ARK_MAX_RETRIES",
+            DEFAULT_ARK_MAX_RETRIES,
+            minimum=0,
+            maximum=2,
+        )
         self._client = OpenAI(
             base_url=ARK_BASE_URL,
             api_key=api_key,
-            http_client=DefaultHttpxClient(trust_env=False),
+            http_client=DefaultHttpxClient(
+                trust_env=False,
+                timeout=timeout,
+            ),
+            max_retries=max_retries,
         )
 
     def chat(self, prompt: str, model: str | None = None) -> str:
@@ -64,3 +82,31 @@ class ArkClient:
         if not output_text or not output_text.strip():
             raise ArkClientError("Volcano Ark API 返回了空响应。")
         return output_text
+
+
+def _bounded_float_env(
+    name: str,
+    default: float,
+    *,
+    minimum: float,
+    maximum: float,
+) -> float:
+    try:
+        value = float(os.getenv(name, ""))
+    except ValueError:
+        return default
+    return value if minimum <= value <= maximum else default
+
+
+def _bounded_int_env(
+    name: str,
+    default: int,
+    *,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        value = int(os.getenv(name, ""))
+    except ValueError:
+        return default
+    return value if minimum <= value <= maximum else default
