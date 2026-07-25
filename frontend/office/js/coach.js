@@ -34,6 +34,9 @@ const MODEL_BADGE = '<span class="coach-badge model">模型生成</span>';
 const DEMO_BADGE = '<span class="coach-badge demo">示例</span>';
 const EVIDENCE_BADGE = '<span class="coach-badge evidence">证据检索 · 未调模型</span>';
 
+// 分区折叠状态在同一页面会话内记住（buildCoachSidebar 每份报告都会重建）。
+const FOLD_STATE = new Map();
+
 // ---- coach message rendering ------------------------------------------------
 
 function renderCoachMessage(m) {
@@ -128,11 +131,8 @@ function renderGuide(guide, { demo, onPick, onRefresh }) {
   const box = el("div", "coach-guide");
   const review = guide.review || {};
   const head = el("div", "coach-guide-head");
-  head.appendChild(el(
-    "span",
-    "",
-    `研究复盘 ${demo ? DEMO_BADGE : MODEL_BADGE}`,
-  ));
+  // 分区标题已由外层折叠栏提供，这里只保留来源标识与刷新入口
+  head.appendChild(el("span", "", demo ? DEMO_BADGE : MODEL_BADGE));
   const refresh = el("button", "coach-guide-refresh", "↻ 重新生成");
   refresh.title = "重新调用模型生成复盘与思考题";
   refresh.addEventListener("click", onRefresh);
@@ -214,18 +214,47 @@ export function buildCoachSidebar(options) {
   head.appendChild(collapseBtn);
   panel.appendChild(head);
 
+  // 可折叠分区：分区标题即开关，收起不常用区块可以给对话流让出空间
+  const makeFold = (key, label, target, { open = true } = {}) => {
+    const head = el("button", "coach-section-label coach-fold-toggle");
+    head.type = "button";
+    const title = el("span", "coach-fold-title", esc(label));
+    const arrow = el("span", "coach-fold-arrow");
+    head.append(title, arrow);
+    let opened = FOLD_STATE.has(key) ? FOLD_STATE.get(key) : open;
+    const setOpen = (next) => {
+      opened = next;
+      FOLD_STATE.set(key, next);
+      target.classList.toggle("folded", !next);
+      arrow.textContent = next ? "▾" : "▸";
+      head.title = next ? "收起该分区" : "展开该分区";
+    };
+    head.addEventListener("click", () => setOpen(!opened));
+    setOpen(opened);
+    return {
+      head,
+      setOpen,
+      isOpen: () => opened,
+      setLabel: (text) => { title.textContent = text; },
+    };
+  };
+
   // current report section: deterministic teaching cues from the real view model
   const contextSlot = el("div", "coach-reading-slot");
+  const readingFold = makeFold("reading", "本节导读", contextSlot);
+  panel.appendChild(readingFold.head);
   panel.appendChild(contextSlot);
 
-  // guide slot
-  panel.appendChild(el("div", "coach-section-label", "研究复盘"));
+  // guide slot（默认收起为标签栏，展开后再看复盘与思考题）
   const guideSlot = el("div", "coach-guide-slot");
+  const guideFold = makeFold("guide", "研究复盘", guideSlot, { open: false });
+  panel.appendChild(guideFold.head);
   panel.appendChild(guideSlot);
 
   // chat stream
   const chatSection = el("div", "coach-chat-section");
-  chatSection.appendChild(el("div", "coach-section-label", "对话记录"));
+  const chatFold = makeFold("chat", "对话记录", chatSection);
+  chatSection.appendChild(chatFold.head);
   const scroll = el("div", "coach-scroll");
   chatSection.appendChild(scroll);
   panel.appendChild(chatSection);
@@ -308,6 +337,7 @@ export function buildCoachSidebar(options) {
     if (!context || (currentContextId === context.id && contextSlot.childElementCount)) return;
     currentContextId = context.id;
     readingLabel.textContent = `正在陪练 · ${context.label}`;
+    readingFold.setLabel(`本节导读 · ${context.label}`);
     contextSlot.innerHTML = "";
     const card = el("section", "coach-reading-card");
     const rows = [
@@ -346,6 +376,7 @@ export function buildCoachSidebar(options) {
     if (!q || busy) return;
     input.value = "";
     busy = true;
+    if (!chatFold.isOpen()) chatFold.setOpen(true);
     const quote = mode === "coach" ? quotedText : null;
     push({ role: "user", text: q, quoted_text: quote, time: nowClock() });
     if (quote) setQuote(null);
@@ -413,7 +444,7 @@ export function buildCoachSidebar(options) {
       });
   };
   if (loadGuide) mountGuide(false);
-  else guideSlot.remove();
+  else { guideFold.head.remove(); guideSlot.remove(); }
 
   // collapse / expand（窄屏折叠为悬浮按钮）
   const fab = el("button", "coach-fab", "🎓");
