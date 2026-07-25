@@ -457,6 +457,7 @@ const NAV = [
   { route: "war", ico: "🛰", label: "多 Agent 作战室" },
   { route: "experts", ico: "👥", label: "专家中心" },
   { route: "reports", ico: "📑", label: "研究报告" },
+  { action: "glossary", ico: "📚", label: "投研知识库" },
   { route: "profile", ico: "🪪", label: "用户画像" },
   { route: "skills", ico: "🧩", label: "研究能力" },
 ];
@@ -502,13 +503,25 @@ function renderSidebar() {
       nav.appendChild(el("div", "nav-sep"));
       return;
     }
+    const opensGlossary = item.action === "glossary";
     const active = item.route === currentRoute;
-    const btn = el("button", `nav-item${active ? " active" : ""}`);
+    const btn = el(
+      "button",
+      `nav-item${active ? " active" : ""}${opensGlossary ? " glossary-toggle" : ""}`,
+    );
     btn.title = item.label;
     btn.setAttribute("aria-label", item.label);
     btn.appendChild(el("span", "nav-ico", item.ico));
     btn.appendChild(el("span", "", esc(item.label)));
-    btn.addEventListener("click", () => navigate(item.route));
+    if (opensGlossary) {
+      btn.id = "glossaryToggle";
+      btn.title = "打开金融术语收藏";
+      btn.setAttribute("aria-controls", "glossaryPanel");
+      btn.setAttribute("aria-expanded", "false");
+      btn.addEventListener("click", openOfficeGlossary);
+    } else {
+      btn.addEventListener("click", () => navigate(item.route));
+    }
     nav.appendChild(btn);
   });
   side.appendChild(nav);
@@ -552,14 +565,6 @@ function renderTopbar() {
   const history = el("button", "pill", "🕘 历史记录");
   history.addEventListener("click", () => navigate("tasks"));
   bar.append(history);
-
-  const glossary = el("button", "pill glossary-toggle", "📚 投研知识库");
-  glossary.id = "glossaryToggle";
-  glossary.title = "打开金融术语收藏";
-  glossary.setAttribute("aria-controls", "glossaryPanel");
-  glossary.setAttribute("aria-expanded", "false");
-  glossary.addEventListener("click", openOfficeGlossary);
-  bar.append(glossary);
 
   const avaBtn = el("button", "avatar-btn");
   avaBtn.appendChild(avatar("user", 34, "pix-ava"));
