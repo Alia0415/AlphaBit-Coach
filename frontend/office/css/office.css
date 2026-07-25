@@ -846,7 +846,6 @@ button.task-item:hover { border-color: var(--cyan-dim); }
   .statusbar { height: 32px; justify-content: flex-end; padding-inline: 12px; }
   .statusbar .sb-item:first-child { display: none; }
   .statusbar .spacer { display: none; }
-  .glossary-toggle { order: -1; }
   .glossary-panel { width: 100vw; }
   .glossary-scope { min-width: 0; }
 }

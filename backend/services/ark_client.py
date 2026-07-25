@@ -196,17 +196,17 @@ class ArkClient:
             try:
                 request_options: dict[str, Any] = {
                     "model": selected_model,
-                    "input": request.prompt,
+                    "messages": [{"role": "user", "content": request.prompt}],
                     "temperature": request.temperature,
                     "timeout": request.timeout_seconds,
                 }
                 if request.max_output_tokens is not None:
-                    request_options["max_output_tokens"] = request.max_output_tokens
-                response = self._client.responses.create(
+                    request_options["max_tokens"] = request.max_output_tokens
+                response = self._client.chat.completions.create(
                     **request_options,
                 )
                 duration_ms = int((time.monotonic() - start_time) * 1000)
-                output_text = response.output_text
+                output_text = response.choices[0].message.content or ""
                 if not output_text or not output_text.strip():
                     raise ArkClientError(
                         "Volcano Ark API 返回了空响应。",
