@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import uuid
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -74,6 +75,10 @@ app = FastAPI(title="AlphaOS API", version="0.4.0")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = REPO_ROOT / "frontend"
 PUBLIC_DIR = REPO_ROOT / "public"
+A2A_AGENT_CARD_PATH = "/.well-known/agent-card.json"
+A2A_ENDPOINT_PATH = "/a2a"
+A2A_TOKEN_ENV = "ALPHAOS_A2A_TOKEN"
+A2A_PUBLIC_BASE_URL_ENV = "ALPHAOS_PUBLIC_BASE_URL"
 app.mount(
     "/static",
     StaticFiles(directory=FRONTEND_DIR),
@@ -205,6 +210,13 @@ class MarketDataResponse(BaseModel):
     data: Any
 
 
+class A2AJsonRpcRequest(BaseModel):
+    jsonrpc: str = "2.0"
+    id: str | int | None = None
+    method: str = Field(min_length=1)
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
 @app.get("/", include_in_schema=False)
 async def frontend() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "office" / "index.html")
@@ -218,6 +230,58 @@ async def office_frontend() -> RedirectResponse:
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get(A2A_AGENT_CARD_PATH)
+async def a2a_agent_card(request: Request) -> dict[str, Any]:
+    return _build_a2a_agent_card(request)
+
+
+@app.get("/agent-card.json")
+async def a2a_agent_card_compat(request: Request) -> dict[str, Any]:
+    return _build_a2a_agent_card(request)
+
+
+@app.post(A2A_ENDPOINT_PATH)
+async def a2a_json_rpc(
+    request: A2AJsonRpcRequest,
+    authorization: str | None = Header(default=None),
+) -> JSONResponse:
+    _verify_a2a_auth(authorization)
+    try:
+        if request.method == "message/send":
+            task = await _a2a_send_message(request.params)
+            return _json_rpc_result(request.id, task)
+        if request.method == "tasks/get":
+            task_id = _extract_a2a_task_id(request.params)
+            return _json_rpc_result(request.id, _a2a_task_response(task_id))
+    except HTTPException as exc:
+        return _json_rpc_error(request.id, exc.status_code, str(exc.detail))
+    except ManagerAgentError as exc:
+        return _json_rpc_error(request.id, -32002, str(exc))
+    return _json_rpc_error(
+        request.id,
+        -32601,
+        f"Unsupported A2A method: {request.method}",
+    )
+
+
+@app.post("/a2a/message:send")
+async def a2a_rest_message_send(
+    params: dict[str, Any],
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _verify_a2a_auth(authorization)
+    return await _a2a_send_message(params)
+
+
+@app.get("/a2a/tasks/{task_id}")
+async def a2a_rest_task_get(
+    task_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _verify_a2a_auth(authorization)
+    return _a2a_task_response(task_id)
 
 
 @app.get("/api/pandadata/status")
@@ -989,6 +1053,563 @@ def _profile_envelope(
             "largest_position_ratio": profile.largest_position_ratio,
             "profile_completeness": profile.profile_completeness,
         },
+    )
+
+
+def _build_a2a_agent_card(request: Request) -> dict[str, Any]:
+    base_url = os.environ.get(A2A_PUBLIC_BASE_URL_ENV)
+    if not base_url:
+        base_url = str(request.base_url).rstrip("/")
+    else:
+        base_url = base_url.rstrip("/")
+    token_configured = bool(os.environ.get(A2A_TOKEN_ENV))
+    specs = [spec for spec in skill_registry.specs() if spec.enabled]
+    return {
+        "name": "AlphaOS Quant Research Organization",
+        "description": (
+            "Autonomous multi-agent AI quant research organization. "
+            "The Manager Agent dynamically plans a validated expert DAG, "
+            "expert agents execute authorized research Skills, and the "
+            "Result Aggregator returns evidence-bounded explanations."
+        ),
+        "version": app.version,
+        "protocolVersion": "0.3.0",
+        "url": f"{base_url}{A2A_ENDPOINT_PATH}",
+        "documentationUrl": f"{base_url}/",
+        "preferredTransport": "JSONRPC",
+        "capabilities": {
+            "streaming": False,
+            "pushNotifications": False,
+        },
+        "defaultInputModes": ["text/plain", "application/json"],
+        "defaultOutputModes": ["text/plain", "application/json"],
+        "securitySchemes": (
+            {
+                "bearerAuth": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "description": f"Set by {A2A_TOKEN_ENV}.",
+                }
+            }
+            if token_configured
+            else {}
+        ),
+        "security": [{"bearerAuth": []}] if token_configured else [],
+        "provider": {
+            "organization": "AlphaOS",
+            "url": base_url,
+        },
+        "skills": [
+            {
+                "id": "multi_agent_quant_research",
+                "name": "multi_agent_quant_research",
+                "description": (
+                    "Handle natural-language quant, market, company, macro, "
+                    "factor, and risk research tasks through dynamic expert "
+                    "selection and DAG execution."
+                ),
+                "tags": ["quant-research", "multi-agent", "A-share"],
+                "inputModes": ["text/plain"],
+                "outputModes": ["text/plain", "application/json"],
+                "examples": [
+                    "分析 000001.SZ 过去一年的股价表现和主要风险。",
+                    "计算 000001.SZ、000002.SZ 在 2024 年的 R020，并说明局限。",
+                    "扫描 600519.SH 从 20260401 到 20260725 的事件风险。",
+                ],
+            },
+            *[
+                {
+                    "id": spec.id,
+                    "name": spec.name,
+                    "description": spec.description,
+                    "tags": [*spec.owner_agents, *spec.capabilities],
+                    "inputModes": ["text/plain", "application/json"],
+                    "outputModes": ["text/plain", "application/json"],
+                }
+                for spec in specs
+            ],
+        ],
+    }
+
+
+def _verify_a2a_auth(authorization: str | None) -> None:
+    expected = os.environ.get(A2A_TOKEN_ENV)
+    if not expected:
+        return
+    if authorization != f"Bearer {expected}":
+        raise HTTPException(status_code=401, detail="A2A Bearer token is invalid")
+
+
+async def _a2a_send_message(params: dict[str, Any]) -> dict[str, Any]:
+    prompt = _extract_a2a_prompt(params)
+    if not prompt:
+        raise HTTPException(status_code=422, detail="A2A message text is required")
+    task_id = str(
+        params.get("taskId")
+        or params.get("id")
+        or params.get("message", {}).get("taskId")
+        or uuid.uuid4().hex
+    )
+    response = await _execute_a2a_prompt(task_id, prompt)
+    return _a2a_task_from_execution(task_id, prompt, response)
+
+
+async def _execute_a2a_prompt(
+    task_id: str,
+    prompt: str,
+) -> TaskExecutionResponse:
+    started_at = perf_counter()
+    plan: ExecutionPlan | None = None
+    results: dict[str, ExpertResult] = {}
+    try:
+        policy = policy_gate.evaluate(prompt)
+        if not policy.allowed:
+            aggregation = result_policy_checker.check(
+                result_aggregator.build_boundary_response(prompt, policy)
+            )
+            events = [
+                ExecutionEvent(
+                    type="policy_checked",
+                    message="AlphaOS 已完成请求边界判断。",
+                    metadata={
+                        "decision": policy.decision,
+                        "allowed": False,
+                        "policy_tags": policy.policy_tags,
+                    },
+                ),
+                ExecutionEvent(
+                    type="result_policy_checked",
+                    message="AlphaOS 已完成最终结果合规检查。",
+                    metadata={"policy_rewrite": aggregation.metadata["policy_rewrite"]},
+                ),
+                ExecutionEvent(
+                    type="task_completed",
+                    message="AlphaOS 已返回能力边界说明。",
+                    metadata={"completed_steps": 0, "failed_steps": 0},
+                ),
+            ]
+            final_answer = (
+                f"{aggregation.direct_answer.headline}\n\n"
+                f"{aggregation.direct_answer.explanation}"
+            )
+            _persist_a2a_task(
+                task_id,
+                prompt,
+                "rejected",
+                None,
+                events,
+                aggregation,
+                final_answer,
+                started_at,
+            )
+            return TaskExecutionResponse(
+                plan=None,
+                events=events,
+                results={},
+                aggregation=aggregation,
+                final_answer=final_answer,
+                duration_ms=max(0, round((perf_counter() - started_at) * 1000)),
+                disclaimer=RESEARCH_DISCLAIMER,
+            )
+
+        task_spec = task_interpreter.interpret(prompt, policy)
+        profile_summary: dict[str, Any] | None = None
+        if task_spec.task_type == "personal_investment_decision":
+            profile = _profile_service().get()
+            if profile is None or not profile.onboarding_completed:
+                task_spec = task_spec.model_copy(
+                    update={
+                        "execution_decision": "clarify",
+                        "missing_fields": list(PERSONAL_DECISION_REQUIRED_FIELDS),
+                        "clarification_question": (
+                            "这是个人投资决策。请先进入 AlphaOS 用户画像完成建档；"
+                            "画像完成前不会给出买卖或具体仓位建议。"
+                        ),
+                    }
+                )
+            else:
+                missing = profile.missing_fields(PERSONAL_DECISION_REQUIRED_FIELDS)
+                if missing:
+                    task_spec = task_spec.model_copy(
+                        update={
+                            "execution_decision": "clarify",
+                            "missing_fields": missing,
+                            "clarification_question": (
+                                "当前个人投资任务仍缺少必要画像字段："
+                                + "、".join(missing)
+                                + "。请先补充用户画像。"
+                            ),
+                        }
+                    )
+                else:
+                    task_spec = task_spec.model_copy(
+                        update={
+                            "missing_fields": [],
+                            "execution_decision": "execute_with_defaults",
+                            "clarification_question": None,
+                        }
+                    )
+                    profile_summary = profile.risk_summary()
+
+        if task_spec.execution_decision == "clarify":
+            aggregation = result_policy_checker.check(
+                result_aggregator.build_clarification_response(task_spec)
+            )
+            events = [
+                ExecutionEvent(
+                    type="clarification_required",
+                    message=task_spec.clarification_question
+                    or "任务需要补充关键信息。",
+                    metadata={"missing_fields": task_spec.missing_fields},
+                ),
+                ExecutionEvent(
+                    type="task_completed",
+                    message="AlphaOS 已返回澄清请求。",
+                    metadata={"completed_steps": 0, "failed_steps": 0},
+                ),
+            ]
+            final_answer = (
+                f"{aggregation.direct_answer.headline}\n\n"
+                f"{aggregation.direct_answer.explanation}"
+            )
+            _persist_a2a_task(
+                task_id,
+                prompt,
+                "needs_clarification",
+                None,
+                events,
+                aggregation,
+                final_answer,
+                started_at,
+            )
+            return TaskExecutionResponse(
+                plan=None,
+                events=events,
+                results={},
+                aggregation=aggregation,
+                final_answer=final_answer,
+                duration_ms=max(0, round((perf_counter() - started_at) * 1000)),
+                disclaimer=RESEARCH_DISCLAIMER,
+            )
+
+        if profile_summary is None:
+            plan = await run_in_threadpool(manager.create_plan, task_spec, prompt)
+        else:
+            plan = await run_in_threadpool(
+                manager.create_plan,
+                task_spec,
+                prompt,
+                profile_summary,
+            )
+            plan = _attach_profile_to_risk(plan, profile_summary)
+
+        events = [
+            ExecutionEvent(
+                type="plan_created",
+                message="Manager Agent 已创建并验证动态任务图。",
+                metadata={
+                    "step_count": len(plan.steps),
+                    "selected_agents": [
+                        selection.agent.value for selection in plan.selected_agents
+                    ],
+                },
+            )
+        ]
+        if plan.needs_clarification:
+            events.append(
+                ExecutionEvent(
+                    type="clarification_required",
+                    message=plan.clarification_question or "任务需要补充关键信息。",
+                )
+            )
+            clarification_spec = task_spec.model_copy(
+                update={
+                    "execution_decision": "clarify",
+                    "clarification_question": plan.clarification_question,
+                }
+            )
+            aggregation = result_policy_checker.check(
+                result_aggregator.build_clarification_response(clarification_spec)
+            )
+        else:
+            execution_events, results = await run_in_threadpool(
+                workflow_executor.execute,
+                plan,
+                prompt,
+            )
+            events.extend(execution_events)
+            events.append(
+                ExecutionEvent(
+                    type="synthesis_started",
+                    message="Result Aggregator 开始整理实际执行结果。",
+                    metadata={"component": "result_aggregator"},
+                )
+            )
+            evidence_validation = await run_in_threadpool(
+                evidence_validator.validate,
+                task_spec,
+                plan,
+                results,
+            )
+            aggregation = await run_in_threadpool(
+                result_aggregator.aggregate,
+                task_spec,
+                plan,
+                evidence_validation,
+            )
+            aggregation = await run_in_threadpool(
+                result_policy_checker.check,
+                aggregation,
+            )
+        final_answer = (
+            f"{aggregation.direct_answer.headline}\n\n"
+            f"{aggregation.direct_answer.explanation}"
+        )
+        events.append(
+            ExecutionEvent(
+                type="task_completed",
+                message="AlphaOS 任务处理完成。",
+                metadata={
+                    "completed_steps": sum(
+                        result.status == "completed" for result in results.values()
+                    ),
+                    "failed_steps": sum(
+                        result.status in {"failed", "blocked"}
+                        for result in results.values()
+                    ),
+                },
+            )
+        )
+        _persist_a2a_task(
+            task_id,
+            prompt,
+            aggregation.completion_status,
+            plan,
+            events,
+            aggregation,
+            final_answer,
+            started_at,
+        )
+        if plan is not None and not plan.needs_clarification:
+            record = build_report_record(task_id, plan, aggregation, results)
+            store.create_report(
+                report_id=uuid.uuid4().hex,
+                task_id=task_id,
+                title=record["title"],
+                completeness=record["completeness"],
+                aggregation=record["aggregation"],
+            )
+        return TaskExecutionResponse(
+            plan=plan,
+            events=events,
+            results=results,
+            aggregation=aggregation,
+            final_answer=final_answer,
+            duration_ms=max(0, round((perf_counter() - started_at) * 1000)),
+            disclaimer=RESEARCH_DISCLAIMER,
+        )
+    except ManagerAgentError:
+        store.create_task(task_id=task_id, prompt=prompt, status="failed", plan=None)
+        raise
+
+
+def _persist_a2a_task(
+    task_id: str,
+    prompt: str,
+    status: str,
+    plan: ExecutionPlan | None,
+    events: list[ExecutionEvent],
+    aggregation: Any,
+    final_answer: str,
+    started_at: float,
+) -> None:
+    existing = store.get_task(task_id)
+    if existing is None:
+        store.create_task(
+            task_id=task_id,
+            prompt=prompt,
+            status="running",
+            plan=plan.model_dump(mode="json") if plan is not None else None,
+            owner="a2a",
+        )
+    for event in events:
+        _persist_event(task_id, event)
+    store.finish_task(
+        task_id,
+        status=status,
+        aggregation=aggregation.model_dump(mode="json"),
+        final_answer=final_answer,
+        duration_ms=max(0, round((perf_counter() - started_at) * 1000)),
+    )
+
+
+def _extract_a2a_prompt(params: dict[str, Any]) -> str:
+    for key in ("prompt", "text", "query"):
+        value = params.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    message = params.get("message")
+    if not isinstance(message, dict):
+        return ""
+    for key in ("text", "content"):
+        value = message.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    parts = message.get("parts", [])
+    texts: list[str] = []
+    if isinstance(parts, list):
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            root = part.get("text") or part.get("data")
+            if isinstance(root, str) and root.strip():
+                texts.append(root.strip())
+                continue
+            text_part = part.get("text")
+            if isinstance(text_part, dict):
+                text = text_part.get("text")
+                if isinstance(text, str) and text.strip():
+                    texts.append(text.strip())
+    return "\n".join(texts).strip()
+
+
+def _extract_a2a_task_id(params: dict[str, Any]) -> str:
+    task_id = params.get("id") or params.get("taskId")
+    if not isinstance(task_id, str) or not task_id.strip():
+        raise HTTPException(status_code=422, detail="A2A task id is required")
+    return task_id.strip()
+
+
+def _a2a_task_from_execution(
+    task_id: str,
+    prompt: str,
+    response: TaskExecutionResponse,
+) -> dict[str, Any]:
+    state = _a2a_state(response.aggregation.completion_status)
+    return {
+        "kind": "task",
+        "id": task_id,
+        "contextId": task_id,
+        "status": {
+            "state": state,
+            "message": {
+                "kind": "message",
+                "role": "agent",
+                "messageId": f"{task_id}-status",
+                "parts": [{"kind": "text", "text": response.final_answer}],
+            },
+        },
+        "history": [
+            {
+                "kind": "message",
+                "role": "user",
+                "messageId": f"{task_id}-user",
+                "parts": [{"kind": "text", "text": prompt}],
+            }
+        ],
+        "artifacts": [
+            {
+                "artifactId": f"{task_id}-answer",
+                "name": "AlphaOS Research Result",
+                "parts": [
+                    {"kind": "text", "text": response.final_answer},
+                    {
+                        "kind": "data",
+                        "data": response.model_dump(mode="json"),
+                    },
+                ],
+            }
+        ],
+        "metadata": {
+            "duration_ms": response.duration_ms,
+            "completion_status": response.aggregation.completion_status,
+            "selected_agents": (
+                [
+                    selection.agent.value
+                    for selection in response.plan.selected_agents
+                ]
+                if response.plan is not None
+                else []
+            ),
+            "disclaimer": response.disclaimer,
+        },
+    }
+
+
+def _a2a_task_response(task_id: str) -> dict[str, Any]:
+    task = store.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="A2A task not found")
+    state = _a2a_state(task["status"])
+    final_answer = task.get("final_answer") or ""
+    return {
+        "kind": "task",
+        "id": task["id"],
+        "contextId": task["id"],
+        "status": {
+            "state": state,
+            "message": {
+                "kind": "message",
+                "role": "agent",
+                "messageId": f"{task['id']}-status",
+                "parts": [{"kind": "text", "text": final_answer}],
+            },
+        },
+        "artifacts": [
+            {
+                "artifactId": f"{task['id']}-answer",
+                "name": "AlphaOS Research Result",
+                "parts": [
+                    {"kind": "text", "text": final_answer},
+                    {
+                        "kind": "data",
+                        "data": {
+                            "plan": task.get("plan"),
+                            "aggregation": task.get("aggregation"),
+                            "events": task.get("events"),
+                            "duration_ms": task.get("duration_ms"),
+                        },
+                    },
+                ],
+            }
+        ],
+        "metadata": {
+            "completion_status": task["status"],
+            "created_at": task["created_at"],
+            "duration_ms": task.get("duration_ms"),
+        },
+    }
+
+
+def _a2a_state(status: str) -> str:
+    if status in {"completed", "partially_completed", "rejected"}:
+        return "completed"
+    if status in {"needs_clarification", "profile_onboarding_required", "profile_update_required"}:
+        return "input-required"
+    if status == "failed":
+        return "failed"
+    return "working"
+
+
+def _json_rpc_result(request_id: str | int | None, result: Any) -> JSONResponse:
+    return JSONResponse(
+        {"jsonrpc": "2.0", "id": request_id, "result": result}
+    )
+
+
+def _json_rpc_error(
+    request_id: str | int | None,
+    code: int,
+    message: str,
+) -> JSONResponse:
+    status_code = code if 400 <= code < 600 else 200
+    return JSONResponse(
+        {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": code, "message": message},
+        },
+        status_code=status_code,
     )
 
 
