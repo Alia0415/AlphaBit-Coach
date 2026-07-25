@@ -156,3 +156,20 @@ def test_office_separates_current_report_from_history() -> None:
     assert "实时报告库" not in source
     assert "rememberCurrentReport(finalReport);" in source
     assert 'navigate("reports", finalReport);' in source
+
+
+def test_live_recommendations_are_three_verified_multi_agent_questions() -> None:
+    source = (REPO_ROOT / "frontend" / "office" / "js" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    start = source.index("const LIVE_RECOMMENDED = [")
+    end = source.index("];", start)
+    recommendations = source[start:end]
+
+    expected = [
+        "分析贵州茅台（600519.SH）近三个财年的盈利能力与财务质量",
+        "评估宁德时代（300750.SZ）的成长性与估值水平",
+        "全面分析比亚迪（002594.SZ）的基本面、行业竞争、宏观环境、量化表现与主要风险",
+    ]
+    assert all(question in recommendations for question in expected)
+    assert recommendations.count('\n  "') == 3
