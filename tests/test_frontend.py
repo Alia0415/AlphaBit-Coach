@@ -62,6 +62,9 @@ def test_presentation_modules_are_served() -> None:
     status = client.get("/static/presentation/status-labels.js")
     events = client.get("/static/presentation/event-labels.js")
     adapter = client.get("/static/presentation/build-plain-language-result.js")
+    research_adapter = client.get(
+        "/static/presentation/build-research-view-model.js"
+    )
 
     assert status.status_code == 200
     assert "computed_not_validated" in status.text
@@ -70,6 +73,9 @@ def test_presentation_modules_are_served() -> None:
     assert adapter.status_code == 200
     assert "buildPlainLanguageResult" in adapter.text
     assert "source.aggregation" in adapter.text
+    assert research_adapter.status_code == 200
+    assert "buildResearchViewModel" in research_adapter.text
+    assert "translateProgressEvent" in research_adapter.text
 
 
 def test_frontend_presentation_adapter() -> None:
@@ -87,3 +93,53 @@ def test_frontend_presentation_adapter() -> None:
 
     assert completed.returncode == 0, completed.stderr
     assert "frontend presentation tests passed" in completed.stdout
+
+
+def test_research_presentation_adapter() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the zero-dependency frontend unit tests")
+
+    completed = subprocess.run(
+        [node, "tests/test_research_presentation.cjs"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "research presentation tests passed" in completed.stdout
+
+
+def test_research_terms_connect_to_knowledge_base() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the zero-dependency frontend unit tests")
+
+    completed = subprocess.run(
+        [node, "tests/test_glossary_knowledge.cjs"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "glossary knowledge tests passed" in completed.stdout
+
+
+def test_office_capability_pages_do_not_render_runtime_internals() -> None:
+    source = (REPO_ROOT / "frontend" / "office" / "js" / "app.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"Skills"' not in source
+    assert "Skills · 实时" not in source
+    assert "skill_registry" not in source
+    assert "${esc(s.id)}" not in source
+    assert "归属 ${esc(s.owner_agents" not in source
+    assert "后端不可用" not in source
+    assert "后端拒绝" not in source
+    assert "配置 ARK 凭证" not in source
+    assert "Skill 来源" not in source

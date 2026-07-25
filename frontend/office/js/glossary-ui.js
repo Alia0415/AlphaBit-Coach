@@ -37,16 +37,16 @@ function ensureGlossaryShell() {
   panel.id = "glossaryPanel";
   panel.className = "glossary-panel";
   panel.setAttribute("aria-hidden", "true");
-  panel.setAttribute("aria-label", "金融术语库");
+  panel.setAttribute("aria-label", "投研知识库");
   panel.innerHTML = `
     <header class="glossary-panel-head">
       <div>
         <span class="glossary-kicker">ALPHAOS REFERENCE</span>
-        <h2>金融术语库</h2>
+        <h2>投研知识库</h2>
       </div>
       <button class="glossary-close" type="button" title="关闭术语库" aria-label="关闭术语库">×</button>
     </header>
-    <div class="glossary-panel-note">点击研究报告中的高亮术语查看解释，并收藏到这里。</div>
+    <div class="glossary-panel-note">本次研究指标会自动接入。点击报告中的高亮术语，可查看公式、实际结果与局限并收藏。</div>
     <div class="glossary-knowledge-list" id="glossaryKnowledgeList"></div>
   `;
   panel.querySelector(".glossary-close").addEventListener("click", closeOfficeGlossary);
@@ -104,7 +104,7 @@ function showTooltip(term, event) {
   tooltip.querySelector(".glossary-tooltip-exp").textContent = explanation;
 
   const saveButton = tooltip.querySelector(".glossary-save-btn");
-  saveButton.textContent = saved ? "★ 已收藏" : "☆ 收藏到术语库";
+  saveButton.textContent = saved ? "★ 已收藏" : "☆ 收藏到知识库";
   saveButton.classList.toggle("saved", saved);
   saveButton.onclick = (clickEvent) => {
     clickEvent.stopPropagation();
