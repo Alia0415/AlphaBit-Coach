@@ -40,11 +40,12 @@ import {
   askCoach,
   fetchCoachGuide,
   fetchCoachNarrations,
+  rewriteResearchQuery as liveRewriteResearchQuery,
   createSession as liveCreateSession,
   clarifySession as liveClarifySession,
   openTaskStream,
   roleFor as liveRoleFor,
-} from "./live.js?v=20260725-c01";
+} from "./live.js?v=20260726-query-refine";
 import {
   attachSelectionQuoting,
   buildCoachSidebar,
@@ -61,6 +62,10 @@ import {
   mountStockChartPage,
   mountStockLibraryPage,
 } from "../../stock-workspace.js?v=20260726-main-sync2";
+import {
+  applyClarificationOption,
+  buildQueryContext,
+} from "./query-refinement.js?v=20260726-query-refine";
 
 const researchPresentation = globalThis.AlphaResearchPresentation;
 
@@ -148,6 +153,9 @@ let liveSession = {
   plan: null,
   phase: "idle",
   error: null,
+  originalQuery: "",
+  rewrittenQuery: "",
+  finalQuery: "",
 };
 function setLiveSession(next) { liveSession = { ...liveSession, ...next }; }
 function resetLiveSession() {
@@ -157,10 +165,13 @@ function resetLiveSession() {
     plan: null,
     phase: "idle",
     error: null,
+    originalQuery: "",
+    rewrittenQuery: "",
+    finalQuery: "",
   };
 }
 
-function beginLiveResearch(prompt) {
+function beginLiveResearch(prompt, queryContext = {}) {
   const normalizedPrompt = String(prompt || "").trim();
   if (!normalizedPrompt) {
     toast("请先描述你的研究意向");
@@ -170,7 +181,16 @@ function beginLiveResearch(prompt) {
   if (switchedToLive) store.set({ mode: "live" });
   resetLiveSession();
   rememberCurrentReport(null);
-  setLiveSession({ prompt: normalizedPrompt, phase: "planning" });
+  const versions = buildQueryContext(
+    queryContext.originalQuery,
+    queryContext.rewrittenQuery,
+    normalizedPrompt,
+  );
+  setLiveSession({
+    prompt: normalizedPrompt,
+    phase: "planning",
+    ...versions,
+  });
   navigate("war");
   if (switchedToLive) {
     refreshServiceStatus().finally(() => {
@@ -178,7 +198,7 @@ function beginLiveResearch(prompt) {
       renderStatusbar();
     });
   }
-  liveCreateSession(normalizedPrompt)
+  liveCreateSession(normalizedPrompt, versions)
     .then(({ taskId, plan }) => {
       setLiveSession({
         taskId,
@@ -186,6 +206,7 @@ function beginLiveResearch(prompt) {
         plan,
         phase: plan && plan.needsClarification ? "clarification" : "planned",
         error: null,
+        ...versions,
       });
       navigate(plan && plan.needsClarification ? "clarify" : "war");
     })
@@ -4073,24 +4094,35 @@ function pageHallLive() {
 
   // ---- ask box ----
   const askPanel = el("div", "panel");
-  askPanel.appendChild(el("div", "panel-title", "今天想研究什么？ <span class='title-extra'>提交后进入研究规划</span>"));
+  const askTitle = el("div", "panel-title", "今天想研究什么？ <span class='title-extra'>提交后进入研究规划</span>");
+  askPanel.appendChild(askTitle);
   const askBox = el("div", "ask-box");
   const ta = el("textarea");
   ta.placeholder = "例如：分析贵州茅台（600519.SH）近三个财年的盈利能力与财务质量…";
   if (liveSession.prompt) ta.value = liveSession.prompt;
   askBox.appendChild(ta);
+
+  const refinement = el("div", "query-refinement");
+  refinement.hidden = true;
+  const queryActions = el("div", "query-actions");
+  const originalToggle = el("button", "query-action", "查看原问题");
+  originalToggle.type = "button";
+  originalToggle.setAttribute("aria-expanded", "false");
+  const retryRewrite = el("button", "query-action", "重新整理");
+  retryRewrite.type = "button";
+  queryActions.append(originalToggle, retryRewrite);
+  const originalBox = el("div", "query-original");
+  originalBox.hidden = true;
+  const clarification = el("div", "query-clarification");
+  clarification.hidden = true;
+  const fallbackNote = el("div", "query-fallback-note");
+  fallbackNote.hidden = true;
+  refinement.append(queryActions, originalBox, clarification, fallbackNote);
+  askBox.appendChild(refinement);
+
   const foot = el("div", "ask-foot");
   const count = el("span", "ask-count", `${ta.value.length} / 500`);
-  ta.addEventListener("input", () => { count.textContent = `${ta.value.length} / 500`; });
   const startBtn = el("button", "btn btn-primary", "🚀 开始研究");
-  const submit = () => {
-    const prompt = ta.value.trim();
-    if (!prompt) { toast("请先描述你的研究意向"); ta.focus(); return; }
-    startBtn.disabled = true;
-    startBtn.textContent = "正在规划…";
-    beginLiveResearch(prompt);
-  };
-  startBtn.addEventListener("click", submit);
   foot.append(count, startBtn);
   askBox.appendChild(foot);
   askPanel.appendChild(askBox);
@@ -4104,6 +4136,142 @@ function pageHallLive() {
   });
   askPanel.appendChild(rec);
   grid.appendChild(askPanel);
+
+  let queryState = "input";
+  let originalQuery = "";
+  let rewrittenQuery = "";
+
+  const updateCount = () => {
+    count.textContent = `${ta.value.length} / 500`;
+  };
+  const setTitle = (title, hint) => {
+    askTitle.innerHTML = `${esc(title)} <span class="title-extra">${esc(hint)}</span>`;
+  };
+  const showOriginal = (expanded) => {
+    originalBox.hidden = !expanded;
+    originalToggle.textContent = expanded ? "收起原问题" : "查看原问题";
+    originalToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  };
+  const renderClarification = (result) => {
+    clarification.innerHTML = "";
+    const options = result.needClarification ? result.options : [];
+    clarification.hidden = !options.length;
+    if (!options.length) return;
+    clarification.appendChild(el("span", "query-clarification-label", "补充关键时间范围"));
+    const optionRow = el("div", "query-option-row");
+    options.forEach((option) => {
+      const button = el("button", "query-option", esc(option));
+      button.type = "button";
+      button.addEventListener("click", () => {
+        ta.value = applyClarificationOption(
+          ta.value,
+          option,
+          result.clarificationType,
+        );
+        optionRow.querySelectorAll(".query-option").forEach((item) => {
+          item.classList.toggle("sel", item === button);
+        });
+        updateCount();
+        ta.focus();
+      });
+      optionRow.appendChild(button);
+    });
+    clarification.appendChild(optionRow);
+  };
+  const setOrganizingState = () => {
+    queryState = "organizing";
+    ta.readOnly = true;
+    startBtn.disabled = true;
+    startBtn.textContent = "正在整理研究问题…";
+    retryRewrite.disabled = true;
+    fallbackNote.hidden = true;
+    rec.hidden = true;
+  };
+  const setConfirmationState = (result) => {
+    queryState = "confirmation";
+    rewrittenQuery = result.rewrittenQuery;
+    ta.value = rewrittenQuery;
+    ta.readOnly = false;
+    refinement.hidden = false;
+    retryRewrite.disabled = false;
+    showOriginal(false);
+    originalBox.textContent = originalQuery;
+    renderClarification(result);
+    fallbackNote.hidden = true;
+    rec.hidden = true;
+    setTitle("我理解你的研究需求是", "可直接修改");
+    startBtn.disabled = false;
+    startBtn.textContent = "确认并开始研究";
+    updateCount();
+    ta.focus();
+  };
+  const setFallbackState = () => {
+    queryState = "fallback";
+    rewrittenQuery = originalQuery;
+    ta.value = originalQuery;
+    ta.readOnly = false;
+    refinement.hidden = false;
+    retryRewrite.disabled = false;
+    showOriginal(false);
+    originalBox.textContent = originalQuery;
+    clarification.hidden = true;
+    fallbackNote.hidden = false;
+    fallbackNote.textContent = "暂时无法自动整理，原问题已保留。你可以修改后直接继续。";
+    rec.hidden = true;
+    setTitle("研究问题整理暂时不可用", "可直接修改");
+    startBtn.disabled = false;
+    startBtn.textContent = "直接开始研究";
+    updateCount();
+    ta.focus();
+  };
+  const runRewrite = async ({ retry = false } = {}) => {
+    const source = retry ? originalQuery : ta.value.trim();
+    if (!source) {
+      toast("请先描述你的研究意向");
+      ta.focus();
+      return;
+    }
+    if (!retry) originalQuery = source;
+    setOrganizingState();
+    try {
+      const result = await liveRewriteResearchQuery(originalQuery);
+      if (!result.requiresConfirmation) {
+        const finalQuery = result.rewrittenQuery || originalQuery;
+        beginLiveResearch(
+          finalQuery,
+          buildQueryContext(originalQuery, finalQuery, finalQuery),
+        );
+        return;
+      }
+      setConfirmationState(result);
+    } catch {
+      setFallbackState();
+    }
+  };
+  const submit = () => {
+    if (queryState === "organizing") return;
+    if (queryState === "input") {
+      runRewrite();
+      return;
+    }
+    const finalQuery = ta.value.trim();
+    if (!finalQuery) {
+      toast("请保留一个可研究的问题");
+      ta.focus();
+      return;
+    }
+    startBtn.disabled = true;
+    startBtn.textContent = "正在进入研究规划…";
+    beginLiveResearch(
+      finalQuery,
+      buildQueryContext(originalQuery, rewrittenQuery, finalQuery),
+    );
+  };
+
+  ta.addEventListener("input", updateCount);
+  startBtn.addEventListener("click", submit);
+  originalToggle.addEventListener("click", () => showOriginal(originalBox.hidden));
+  retryRewrite.addEventListener("click", () => runRewrite({ retry: true }));
 
   // ---- live office preview ----
   const officePanel = el("div", "panel");

@@ -78,7 +78,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     duration_ms INTEGER,
     execution_id TEXT,
     idempotency_key TEXT,
-    owner TEXT
+    owner TEXT,
+    original_query TEXT,
+    rewritten_query TEXT,
+    final_query TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
     task_id TEXT NOT NULL,
@@ -171,6 +174,18 @@ class Store:
             ("execution_id", "ALTER TABLE tasks ADD COLUMN execution_id TEXT"),
             ("idempotency_key", "ALTER TABLE tasks ADD COLUMN idempotency_key TEXT"),
             ("owner", "ALTER TABLE tasks ADD COLUMN owner TEXT"),
+            (
+                "original_query",
+                "ALTER TABLE tasks ADD COLUMN original_query TEXT",
+            ),
+            (
+                "rewritten_query",
+                "ALTER TABLE tasks ADD COLUMN rewritten_query TEXT",
+            ),
+            (
+                "final_query",
+                "ALTER TABLE tasks ADD COLUMN final_query TEXT",
+            ),
         ]
         for col_name, sql in migrations:
             if col_name not in existing_cols:
@@ -179,6 +194,12 @@ class Store:
         self._conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_idempotency "
             "ON tasks(idempotency_key) WHERE idempotency_key IS NOT NULL"
+        )
+        self._conn.execute(
+            "UPDATE tasks SET "
+            "original_query = COALESCE(original_query, prompt), "
+            "rewritten_query = COALESCE(rewritten_query, prompt), "
+            "final_query = COALESCE(final_query, prompt)"
         )
 
     def close(self) -> None:
@@ -197,6 +218,9 @@ class Store:
         execution_id: str | None = None,
         idempotency_key: str | None = None,
         owner: str | None = None,
+        original_query: str | None = None,
+        rewritten_query: str | None = None,
+        final_query: str | None = None,
     ) -> None:
         with self._lock:
             # Idempotency check (spec §12.1): if key exists, skip creation
@@ -209,8 +233,9 @@ class Store:
                     return  # Task already exists for this key
             self._conn.execute(
                 "INSERT INTO tasks (id, prompt, status, created_at, plan_json, "
-                "execution_id, idempotency_key, owner) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "execution_id, idempotency_key, owner, original_query, "
+                "rewritten_query, final_query) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     task_id,
                     prompt,
@@ -220,6 +245,9 @@ class Store:
                     execution_id or task_id,
                     idempotency_key,
                     owner,
+                    original_query or prompt,
+                    rewritten_query or final_query or prompt,
+                    final_query or prompt,
                 ),
             )
             self._conn.commit()
@@ -692,6 +720,9 @@ def _task_to_dict(
     return {
         "id": task_row["id"],
         "prompt": task_row["prompt"],
+        "original_query": task_row["original_query"] or task_row["prompt"],
+        "rewritten_query": task_row["rewritten_query"] or task_row["prompt"],
+        "final_query": task_row["final_query"] or task_row["prompt"],
         "status": task_row["status"],
         "created_at": task_row["created_at"],
         "plan": _loads(task_row["plan_json"]),

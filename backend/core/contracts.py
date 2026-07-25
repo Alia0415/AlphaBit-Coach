@@ -502,6 +502,9 @@ class TaskDetail(BaseModel):
 
     id: str
     prompt: str
+    original_query: str
+    rewritten_query: str
+    final_query: str
     status: str
     created_at: str
     plan: ExecutionPlan | None = None

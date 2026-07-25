@@ -21,10 +21,31 @@ def test_create_task_and_get_task_roundtrip(tmp_path) -> None:
     task = store.get_task("t1")
     assert task is not None
     assert task["prompt"] == "分析 000001.SZ"
+    assert task["original_query"] == "分析 000001.SZ"
+    assert task["rewritten_query"] == "分析 000001.SZ"
+    assert task["final_query"] == "分析 000001.SZ"
     assert task["status"] == "planned"
     assert task["plan"] == {"goal": "分析"}
     assert task["events"] == []
     assert store.get_task("missing") is None
+
+
+def test_query_versions_roundtrip_with_user_final_text(tmp_path) -> None:
+    store = _store(tmp_path)
+    store.create_task(
+        task_id="refined",
+        prompt="用户最终编辑",
+        status="planned",
+        original_query="口语原问题",
+        rewritten_query="专业改写",
+        final_query="用户最终编辑",
+    )
+
+    task = store.get_task("refined")
+    assert task["original_query"] == "口语原问题"
+    assert task["rewritten_query"] == "专业改写"
+    assert task["final_query"] == "用户最终编辑"
+    assert task["prompt"] == task["final_query"]
 
 
 def test_append_event_assigns_incrementing_sequence(tmp_path) -> None:

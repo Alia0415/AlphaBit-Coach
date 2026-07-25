@@ -83,6 +83,11 @@ from backend.services.glossary_extractor import (
     GlossaryExtractor,
 )
 from backend.services.ark_client import ArkClient, ArkClientError
+from backend.services.research_query_refiner import (
+    ResearchQueryRefinement,
+    ResearchQueryRefiner,
+    ResearchQueryRefinerError,
+)
 from backend.skills.runtime_bootstrap import ensure_bundled_instruction_skills
 from backend.skills.skill_registry import SkillRegistry
 
@@ -142,6 +147,7 @@ result_policy_checker = ResultPolicyChecker()
 manager = ManagerAgent(registry=build_registry(store))
 workflow_executor = WorkflowExecutor(registry=build_registry(store))
 glossary_extractor = GlossaryExtractor()
+query_refiner = ResearchQueryRefiner()
 
 
 def _rebuild_experts() -> None:
@@ -167,6 +173,38 @@ class RouteRequest(BaseModel):
         if not prompt:
             raise ValueError("prompt 不能为空")
         return prompt
+
+
+class SessionRequest(RouteRequest):
+    original_query: str | None = Field(default=None, max_length=20_000)
+    rewritten_query: str | None = Field(default=None, max_length=20_000)
+    final_query: str | None = Field(default=None, max_length=20_000)
+
+    @field_validator("original_query", "rewritten_query", "final_query")
+    @classmethod
+    def normalize_optional_query(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    def query_versions(self) -> tuple[str, str, str]:
+        final_query = self.final_query or self.prompt
+        original_query = self.original_query or self.prompt
+        rewritten_query = self.rewritten_query or final_query
+        return original_query, rewritten_query, final_query
+
+
+class ResearchQueryRewriteRequest(BaseModel):
+    original_query: str = Field(min_length=1, max_length=2_000)
+
+    @field_validator("original_query")
+    @classmethod
+    def normalize_original_query(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if not normalized:
+            raise ValueError("original_query 不能为空")
+        return normalized
 
 
 class ExpertToggleRequest(BaseModel):
@@ -539,30 +577,51 @@ async def set_expert_enabled(
 # -- planning session / clarify / stream -------------------------------------
 
 
+@app.post(
+    "/api/research-query/rewrite",
+    response_model=ResearchQueryRefinement,
+)
+async def rewrite_research_query(
+    request: ResearchQueryRewriteRequest,
+) -> ResearchQueryRefinement:
+    try:
+        return await run_in_threadpool(
+            query_refiner.refine,
+            request.original_query,
+        )
+    except ResearchQueryRefinerError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.post("/api/tasks/sessions", response_model=SessionResponse)
-async def create_session(request: RouteRequest) -> SessionResponse:
+async def create_session(request: SessionRequest) -> SessionResponse:
     task_id = uuid.uuid4().hex
-    policy = policy_gate.evaluate(request.prompt)
+    original_query, rewritten_query, final_query = request.query_versions()
+    policy = policy_gate.evaluate(final_query)
     if not policy.allowed:
         raise HTTPException(status_code=422, detail=policy.safe_response)
-    task_spec = await run_in_threadpool(task_interpreter.interpret, request.prompt, policy)
+    task_spec = await run_in_threadpool(task_interpreter.interpret, final_query, policy)
     profile_summary: dict[str, Any] | None = None
     if task_spec.task_type == "personal_investment_decision":
         profile = _profile_service().get()
         if profile is None or not profile.onboarding_completed:
             return _create_profile_action_session(
                 task_id,
-                request.prompt,
+                final_query,
                 "profile_onboarding_required",
                 list(PERSONAL_DECISION_REQUIRED_FIELDS),
+                original_query=original_query,
+                rewritten_query=rewritten_query,
             )
         missing = profile.missing_fields(PERSONAL_DECISION_REQUIRED_FIELDS)
         if missing:
             return _create_profile_action_session(
                 task_id,
-                request.prompt,
+                final_query,
                 "profile_update_required",
                 missing,
+                original_query=original_query,
+                rewritten_query=rewritten_query,
             )
         profile_summary = profile.risk_summary()
     try:
@@ -570,7 +629,7 @@ async def create_session(request: RouteRequest) -> SessionResponse:
             plan = await run_in_threadpool(
                 manager.create_plan,
                 task_spec,
-                request.prompt,
+                final_query,
             )
         else:
             task_spec = task_spec.model_copy(
@@ -583,7 +642,7 @@ async def create_session(request: RouteRequest) -> SessionResponse:
             plan = await run_in_threadpool(
                 manager.create_plan,
                 task_spec,
-                request.prompt,
+                final_query,
                 profile_summary,
             )
             plan = _attach_profile_to_risk(plan, profile_summary)
@@ -592,9 +651,12 @@ async def create_session(request: RouteRequest) -> SessionResponse:
     status = "needs_clarification" if plan.needs_clarification else "planned"
     store.create_task(
         task_id=task_id,
-        prompt=request.prompt,
+        prompt=final_query,
         status=status,
         plan=plan.model_dump(mode="json"),
+        original_query=original_query,
+        rewritten_query=rewritten_query,
+        final_query=final_query,
     )
     store.append_event(
         task_id,
@@ -1953,6 +2015,9 @@ def _create_profile_action_session(
         "profile_update_required",
     ],
     missing_fields: list[str],
+    *,
+    original_query: str | None = None,
+    rewritten_query: str | None = None,
 ) -> SessionResponse:
     message = (
         "请先完成首次用户画像建档；唯一必答项为投资知识水平，其余问题可跳过。"
@@ -1964,6 +2029,9 @@ def _create_profile_action_session(
         prompt=prompt,
         status=action,
         plan=None,
+        original_query=original_query,
+        rewritten_query=rewritten_query,
+        final_query=prompt,
     )
     store.append_event(
         task_id,
