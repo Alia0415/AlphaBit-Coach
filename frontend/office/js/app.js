@@ -22,7 +22,7 @@ import {
   HISTORY_TASKS,
   DEMO_COMPANION,
 } from "./mock.js?v=20260725-p07";
-import { companionAdapter, renderCompanionCard } from "./companion.js?v=20260725-p01";
+import { companionAdapter, renderCompanionCard } from "./companion.js?v=20260725-p04";
 import {
   isLive,
   connectivity,
