@@ -14,6 +14,7 @@ SYMBOL_PATTERN = re.compile(r"^\d{6}\.(?:SH|SZ)$")
 QUARTER_PATTERN = re.compile(r"^(\d{4})q([1-4])$", re.IGNORECASE)
 DATE_PATTERN = re.compile(r"^\d{8}$")
 PANDADATA_SERVICE_HOST = "pandadata.pandaaiquant.com"
+CHART_INDEX_SYMBOLS = frozenset({"000300.SH", "000001.SH"})
 
 MACRO_DATASETS: dict[str, tuple[str, str]] = {
     "NA": ("get_macro_na", "国民经济核算"),
@@ -467,6 +468,57 @@ class PandaDataClient:
             fields=["trade_date", "symbol", "close", "volume"],
             indicator="000300",
             st=True,
+        )
+
+    def get_stock_chart_daily(
+        self,
+        *,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+    ) -> Any:
+        """Return OHLCV rows for the stock-chart read-only surface."""
+
+        symbol = _validate_symbol(symbol)
+        start_date, end_date = _validate_date_range(start_date, end_date)
+        fields = ["trade_date", "symbol", "open", "high", "low", "close", "volume"]
+        if symbol in CHART_INDEX_SYMBOLS:
+            return self._call(
+                "get_index_daily",
+                symbol=[symbol],
+                start_date=start_date,
+                end_date=end_date,
+                fields=fields,
+            )
+        return self._call(
+            "get_stock_daily",
+            symbol=[symbol],
+            start_date=start_date,
+            end_date=end_date,
+            fields=fields,
+            indicator="000300",
+            st=True,
+        )
+
+    def get_stock_chart_intraday(
+        self,
+        *,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+    ) -> Any:
+        """Return one-minute rows through the existing authenticated SDK."""
+
+        symbol = _validate_symbol(symbol)
+        start_date, end_date = _validate_date_range(start_date, end_date)
+        return self._call(
+            "get_market_min_data",
+            symbol=[symbol],
+            start_date=start_date,
+            end_date=end_date,
+            symbol_type="index" if symbol in CHART_INDEX_SYMBOLS else "stock",
+            fields=["trade_time", "symbol", "close", "volume"],
+            frequency="1m",
         )
 
     def get_lhb_list(

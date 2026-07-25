@@ -11,7 +11,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Literal
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -70,6 +70,13 @@ from backend.services.pandadata_client import (
     PandaDataClient,
     PandaDataConfigurationError,
 )
+from backend.services.stock_chart_service import (
+    ChartRequest,
+    StockChartError,
+    StockChartService,
+    StockDataUnavailableError,
+    StockNotFoundError,
+)
 from backend.services.glossary_extractor import (
     GlossaryExtractionError,
     GlossaryExtractionResult,
@@ -99,6 +106,7 @@ app.mount(
     name="pixel-sprites",
 )
 pandadata = PandaDataClient()
+stock_charts = StockChartService(pandadata)
 router = RouterAgent()
 store = get_store()
 ensure_bundled_instruction_skills()
@@ -329,6 +337,43 @@ async def a2a_rest_task_get(
 @app.get("/api/pandadata/status")
 async def pandadata_status() -> dict[str, object]:
     return pandadata.status()
+
+
+@app.get("/api/stocks")
+async def list_stocks() -> dict[str, list[dict[str, str]]]:
+    return {"stocks": stock_charts.list_stocks()}
+
+
+@app.get("/api/stocks/search")
+async def search_stocks(
+    q: str = Query(default="", max_length=100),
+) -> dict[str, Any]:
+    return {"query": q.strip(), "stocks": stock_charts.search(q)}
+
+
+@app.get("/api/stocks/{symbol}/chart")
+async def stock_chart(
+    symbol: str,
+    period: str = Query(default="1d"),
+    range_name: str = Query(default="1y", alias="range"),
+    demo: bool = Query(default=False),
+) -> dict[str, Any]:
+    try:
+        return await run_in_threadpool(
+            stock_charts.chart,
+            ChartRequest(
+                symbol=symbol,
+                period=period,
+                range_name=range_name,
+                force_demo=demo,
+            ),
+        )
+    except StockNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except StockDataUnavailableError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except StockChartError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/user-profile", response_model=UserProfileEnvelope)
