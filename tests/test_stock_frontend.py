@@ -61,8 +61,10 @@ def test_office_separates_stock_library_and_chart_without_removing_research_rout
     assert "stock-research-button" not in workspace
     assert "stock-analysis-button" in workspace
     assert "buildStockResearchPrompt" in workspace
+    assert "buildStockWorkflowContext" in workspace
     assert "onAnalyzeStock" in source
-    assert "beginLiveResearch(buildStockResearchPrompt(stock))" in source
+    assert "buildStockWorkflowContext(stock)" in source
+    assert 'workflowMode: "stock_analysis"' in workspace
     assert '{ value: "1m"' not in workspace
     assert ".stock-market-workspace" in styles
     assert ".stock-chart-state[hidden]" in styles

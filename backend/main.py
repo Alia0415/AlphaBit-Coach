@@ -45,6 +45,7 @@ from backend.core.contracts import (
     TaskSummary,
 )
 from backend.core.evidence_validator import EvidenceValidator
+from backend.core.fixed_stock_workflow import build_fixed_stock_workflow
 from backend.core.coach_service import (
     MAX_NARRATIONS_PER_TASK,
     CoachService,
@@ -187,8 +188,19 @@ class SessionRequest(RouteRequest):
     original_query: str | None = Field(default=None, max_length=20_000)
     rewritten_query: str | None = Field(default=None, max_length=20_000)
     final_query: str | None = Field(default=None, max_length=20_000)
+    workflow_mode: Literal["dynamic", "stock_analysis"] = "dynamic"
+    stock_symbol: str | None = Field(default=None, max_length=20)
+    stock_name: str | None = Field(default=None, max_length=100)
+    stock_board: str | None = Field(default=None, max_length=100)
 
-    @field_validator("original_query", "rewritten_query", "final_query")
+    @field_validator(
+        "original_query",
+        "rewritten_query",
+        "final_query",
+        "stock_symbol",
+        "stock_name",
+        "stock_board",
+    )
     @classmethod
     def normalize_optional_query(cls, value: str | None) -> str | None:
         if value is None:
@@ -608,11 +620,12 @@ async def rewrite_research_query(
     status_code=202,
 )
 async def create_research_run(request: SessionRequest) -> ResearchRunCreated:
-    """Start observable planning and return before Manager work completes."""
+    """Start observable planning and return before workflow planning completes."""
 
     run_id = uuid.uuid4().hex
     initial = ResearchRunState(
         run_id=run_id,
+        workflow_mode=request.workflow_mode,
         status="running",
         current_stage="received",
         progress=STAGE_PROGRESS["received"],
@@ -620,7 +633,10 @@ async def create_research_run(request: SessionRequest) -> ResearchRunCreated:
         selected_agents=[],
         dag=None,
         elapsed_ms=0,
-        estimated_remaining_ms=store.estimate_research_run_remaining(0),
+        estimated_remaining_ms=store.estimate_research_run_remaining(
+            0,
+            workflow_mode=request.workflow_mode,
+        ),
         error=None,
         failed_stage=None,
         message="研究请求已由后端接收。",
@@ -2207,6 +2223,7 @@ def _record_research_run_stage(
     )
     next_state = ResearchRunState(
         run_id=run_id,
+        workflow_mode=current.get("workflow_mode", "dynamic"),
         status=next_status,
         current_stage=stage,
         progress=progress,
@@ -2221,7 +2238,10 @@ def _record_research_run_stage(
         estimated_remaining_ms=(
             None
             if next_status != "running"
-            else store.estimate_research_run_remaining(elapsed_ms)
+            else store.estimate_research_run_remaining(
+                elapsed_ms,
+                workflow_mode=current.get("workflow_mode", "dynamic"),
+            )
         ),
         error=error,
         failed_stage=failed_stage,
@@ -2253,29 +2273,47 @@ def _research_run_failure_message(
 
 
 async def _execute_research_run(run_id: str, request: SessionRequest) -> None:
-    """Run the existing dynamic Manager workflow with observable checkpoints."""
+    """Plan a research run through the requested observable workflow."""
 
     failed_stage: ResearchRunStage = "received"
     try:
         original_query, rewritten_query, final_query = request.query_versions()
         failed_stage = "interpreting"
+        fixed_stock = request.workflow_mode == "stock_analysis"
         _record_research_run_stage(
             run_id,
             "interpreting",
-            "正在解释研究目标与证据边界。",
+            (
+                "正在校验股票信息与固定研究范围。"
+                if fixed_stock
+                else "正在解释研究目标与证据边界。"
+            ),
         )
         policy = policy_gate.evaluate(final_query)
         if not policy.allowed:
             raise ValueError(policy.safe_response)
-        task_spec = await run_in_threadpool(
-            task_interpreter.interpret,
-            final_query,
-            policy,
-        )
+        if fixed_stock:
+            task_spec, plan = build_fixed_stock_workflow(
+                symbol=request.stock_symbol or "",
+                name=request.stock_name or "",
+                board=request.stock_board or "",
+                research_goal=final_query,
+                registry=build_registry(store),
+            )
+        else:
+            task_spec = await run_in_threadpool(
+                task_interpreter.interpret,
+                final_query,
+                policy,
+            )
         _record_research_run_stage(
             run_id,
             "interpreted",
-            "研究目标已完成解释，准备交给研究经理。",
+            (
+                "股票与研究边界已确认，采用固定 Agent 预设。"
+                if fixed_stock
+                else "研究目标已完成解释，准备交给研究经理。"
+            ),
         )
 
         profile_summary: dict[str, Any] | None = None
@@ -2296,9 +2334,15 @@ async def _execute_research_run(run_id: str, request: SessionRequest) -> None:
         _record_research_run_stage(
             run_id,
             "selecting_agents",
-            "研究经理正在动态选择完成本次任务所需的最小专家集合。",
+            (
+                "正在装配固定的 Research、Quant、Macro 与 Risk 专家组。"
+                if fixed_stock
+                else "研究经理正在动态选择完成本次任务所需的最小专家集合。"
+            ),
         )
-        if profile_summary is None:
+        if fixed_stock:
+            pass
+        elif profile_summary is None:
             plan = await run_in_threadpool(
                 manager.create_plan,
                 task_spec,
@@ -2324,21 +2368,33 @@ async def _execute_research_run(run_id: str, request: SessionRequest) -> None:
         _record_research_run_stage(
             run_id,
             "agents_selected",
-            "研究经理已完成专家选择与选择理由确认。",
+            (
+                "固定专家组已就绪，无需模型动态选人。"
+                if fixed_stock
+                else "研究经理已完成专家选择与选择理由确认。"
+            ),
             selected_agents=selected_agents,
         )
         failed_stage = "building_dag"
         _record_research_run_stage(
             run_id,
             "building_dag",
-            "正在整理研究经理生成的专家任务依赖关系。",
+            (
+                "正在生成先并行取证、后风险复核的固定两阶段任务图。"
+                if fixed_stock
+                else "正在整理研究经理生成的专家任务依赖关系。"
+            ),
             selected_agents=selected_agents,
         )
         failed_stage = "validating_dag"
         _record_research_run_stage(
             run_id,
             "validating_dag",
-            "正在确认任务图只包含已选专家、合法依赖且不存在环。",
+            (
+                "正在确认固定任务图的输入契约、专家状态与依赖关系。"
+                if fixed_stock
+                else "正在确认任务图只包含已选专家、合法依赖且不存在环。"
+            ),
             selected_agents=selected_agents,
         )
 
@@ -2349,6 +2405,7 @@ async def _execute_research_run(run_id: str, request: SessionRequest) -> None:
             prompt=final_query,
             status=status,
             plan=plan_payload,
+            task_spec=task_spec.model_dump(mode="json"),
             original_query=original_query,
             rewritten_query=rewritten_query,
             final_query=final_query,
@@ -2356,7 +2413,11 @@ async def _execute_research_run(run_id: str, request: SessionRequest) -> None:
         store.append_event(
             run_id,
             type="plan_created",
-            message="Manager Agent 已创建并验证动态任务图。",
+            message=(
+                "固定股票 Agent 工作流已创建并通过校验。"
+                if fixed_stock
+                else "Manager Agent 已创建并验证动态任务图。"
+            ),
             metadata={
                 "step_count": len(plan.steps),
                 "selected_agents": [
@@ -2380,7 +2441,11 @@ async def _execute_research_run(run_id: str, request: SessionRequest) -> None:
         _record_research_run_stage(
             run_id,
             "plan_ready",
-            "动态专家选择和任务依赖图均已通过后端校验。",
+            (
+                "固定 Agent 工作流已就绪，可直接开始并行研究。"
+                if fixed_stock
+                else "动态专家选择和任务依赖图均已通过后端校验。"
+            ),
             status="plan_ready",
             selected_agents=selected_agents,
             dag=plan_payload,

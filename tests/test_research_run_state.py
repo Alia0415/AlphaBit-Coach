@@ -131,11 +131,53 @@ def test_research_run_failure_preserves_real_failed_stage() -> None:
     assert terminal["dag"] is None
 
 
+def test_fixed_stock_run_skips_interpreter_and_manager(isolated_store) -> None:
+    class ForbiddenInterpreter:
+        def interpret(self, *args: object) -> None:
+            raise AssertionError("fixed stock workflow must skip Task Interpreter")
+
+    class ForbiddenManager:
+        def create_plan(self, *args: object) -> None:
+            raise AssertionError("fixed stock workflow must skip Manager")
+
+    with (
+        TestClient(main_module.app) as client,
+        patch.object(main_module, "task_interpreter", ForbiddenInterpreter()),
+        patch.object(main_module, "manager", ForbiddenManager()),
+    ):
+        created = client.post(
+            "/api/research/runs",
+            json={
+                "prompt": "全面分析贵州茅台（600519.SH）。",
+                "workflow_mode": "stock_analysis",
+                "stock_symbol": "600519.SH",
+                "stock_name": "贵州茅台",
+                "stock_board": "沪市主板",
+            },
+        )
+        assert created.status_code == 202
+        terminal = _wait_for_terminal(client, created.json()["run_id"])
+
+    assert terminal["status"] == "plan_ready"
+    assert terminal["workflow_mode"] == "stock_analysis"
+    assert terminal["dag"]["intent"].startswith("使用固定股票研究预设")
+    assert [
+        selection["agent"]
+        for selection in terminal["dag"]["selected_agents"]
+    ] == ["research", "quant", "macro", "risk"]
+    assert "固定 Agent 工作流已就绪" in terminal["message"]
+
+
 def test_remaining_estimate_requires_three_real_plan_samples(isolated_store) -> None:
-    def add_sample(index: int, elapsed_ms: int) -> None:
+    def add_sample(
+        index: int,
+        elapsed_ms: int,
+        workflow_mode: str = "dynamic",
+    ) -> None:
         run_id = f"history-{index}"
         state = {
             "run_id": run_id,
+            "workflow_mode": workflow_mode,
             "status": "running",
             "current_stage": "received",
             "progress": 2,
@@ -165,3 +207,15 @@ def test_remaining_estimate_requires_three_real_plan_samples(isolated_store) -> 
     assert isolated_store.estimate_research_run_remaining(500) is None
     add_sample(3, 3000)
     assert isolated_store.estimate_research_run_remaining(500) == 1500
+
+    add_sample(4, 100, "stock_analysis")
+    add_sample(5, 200, "stock_analysis")
+    add_sample(6, 300, "stock_analysis")
+    assert isolated_store.estimate_research_run_remaining(500) == 1500
+    assert (
+        isolated_store.estimate_research_run_remaining(
+            50,
+            workflow_mode="stock_analysis",
+        )
+        == 150
+    )

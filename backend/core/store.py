@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS coach_narrations (
 );
 CREATE TABLE IF NOT EXISTS research_runs (
     run_id TEXT PRIMARY KEY,
+    workflow_mode TEXT NOT NULL DEFAULT 'dynamic',
     status TEXT NOT NULL,
     current_stage TEXT NOT NULL,
     progress INTEGER NOT NULL,
@@ -229,6 +230,17 @@ class Store:
             "rewritten_query = COALESCE(rewritten_query, prompt), "
             "final_query = COALESCE(final_query, prompt)"
         )
+        research_run_cols = {
+            row["name"]
+            for row in self._conn.execute(
+                "PRAGMA table_info(research_runs)"
+            ).fetchall()
+        }
+        if "workflow_mode" not in research_run_cols:
+            self._conn.execute(
+                "ALTER TABLE research_runs ADD COLUMN "
+                "workflow_mode TEXT NOT NULL DEFAULT 'dynamic'"
+            )
 
     def close(self) -> None:
         with self._lock:
@@ -445,13 +457,14 @@ class Store:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO research_runs ("
-                "run_id, status, current_stage, progress, started_at, "
+                "run_id, workflow_mode, status, current_stage, progress, started_at, "
                 "selected_agents_json, dag_json, elapsed_ms, "
                 "estimated_remaining_ms, error, failed_stage, message, "
                 "plan_ready_ms, updated_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     payload["run_id"],
+                    payload.get("workflow_mode", "dynamic"),
                     payload["status"],
                     payload["current_stage"],
                     payload["progress"],
@@ -492,12 +505,13 @@ class Store:
                 raise KeyError(payload["run_id"])
             self._conn.execute(
                 "UPDATE research_runs SET "
-                "status = ?, current_stage = ?, progress = ?, "
+                "workflow_mode = ?, status = ?, current_stage = ?, progress = ?, "
                 "selected_agents_json = ?, dag_json = ?, elapsed_ms = ?, "
                 "estimated_remaining_ms = ?, error = ?, failed_stage = ?, "
                 "message = ?, plan_ready_ms = COALESCE(?, plan_ready_ms), "
                 "updated_at = ? WHERE run_id = ?",
                 (
+                    payload.get("workflow_mode", "dynamic"),
                     payload["status"],
                     payload["current_stage"],
                     payload["progress"],
@@ -541,7 +555,8 @@ class Store:
             now = datetime.now(timezone.utc)
             state["elapsed_ms"] = max(0, int((now - started).total_seconds() * 1000))
             state["estimated_remaining_ms"] = self.estimate_research_run_remaining(
-                state["elapsed_ms"]
+                state["elapsed_ms"],
+                workflow_mode=state["workflow_mode"],
             )
         return state
 
@@ -567,7 +582,12 @@ class Store:
             for row in rows
         ]
 
-    def estimate_research_run_remaining(self, elapsed_ms: int) -> int | None:
+    def estimate_research_run_remaining(
+        self,
+        elapsed_ms: int,
+        *,
+        workflow_mode: str = "dynamic",
+    ) -> int | None:
         """Estimate from real completed planning runs only.
 
         Three samples are required before the estimate is considered reliable.
@@ -576,8 +596,9 @@ class Store:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT plan_ready_ms FROM research_runs "
-                "WHERE plan_ready_ms IS NOT NULL "
-                "ORDER BY updated_at DESC LIMIT 20"
+                "WHERE plan_ready_ms IS NOT NULL AND workflow_mode = ? "
+                "ORDER BY updated_at DESC LIMIT 20",
+                (workflow_mode,),
             ).fetchall()
         samples = [int(row["plan_ready_ms"]) for row in rows]
         if len(samples) < 3:
@@ -936,6 +957,7 @@ def _event_to_dict(row: sqlite3.Row) -> dict[str, Any]:
 def _research_run_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "run_id": row["run_id"],
+        "workflow_mode": row["workflow_mode"],
         "status": row["status"],
         "current_stage": row["current_stage"],
         "progress": int(row["progress"]),

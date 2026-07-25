@@ -1,4 +1,4 @@
-"""Observable state contract for Manager research planning runs."""
+"""Observable state contract for research planning runs."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ ResearchRunStage = Literal[
     "failed",
 ]
 ResearchRunStatus = Literal["running", "plan_ready", "executing", "failed"]
+ResearchWorkflowMode = Literal["dynamic", "stock_analysis"]
 
 
 STAGE_PROGRESS: dict[ResearchRunStage, int] = {
@@ -41,6 +42,7 @@ class ResearchRunState(BaseModel):
     """The persisted, backend-owned truth for one planning run."""
 
     run_id: str
+    workflow_mode: ResearchWorkflowMode = "dynamic"
     status: ResearchRunStatus
     current_stage: ResearchRunStage
     progress: int = Field(ge=0, le=100)
