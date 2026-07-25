@@ -65,6 +65,7 @@ from backend.services.glossary_extractor import (
     GlossaryExtractionResult,
     GlossaryExtractor,
 )
+from backend.services.ark_client import ArkClient, ArkClientError
 from backend.skills.skill_registry import SkillRegistry
 
 
@@ -88,7 +89,18 @@ store = get_store()
 skill_registry = SkillRegistry()
 result_aggregator = ResultAggregator()
 policy_gate = PolicyGate()
-task_interpreter = TaskInterpreter()
+
+
+def _build_task_interpreter(
+    client_factory: Any = ArkClient,
+) -> TaskInterpreter:
+    try:
+        return TaskInterpreter(ark_client=client_factory())
+    except ArkClientError:
+        return TaskInterpreter()
+
+
+task_interpreter = _build_task_interpreter()
 evidence_validator = EvidenceValidator()
 result_policy_checker = ResultPolicyChecker()
 manager = ManagerAgent(registry=build_registry(store))
@@ -407,7 +419,11 @@ async def create_session(request: RouteRequest) -> SessionResponse:
         profile_summary = profile.risk_summary()
     try:
         if profile_summary is None:
-            plan = await run_in_threadpool(manager.create_plan, request.prompt)
+            plan = await run_in_threadpool(
+                manager.create_plan,
+                task_spec,
+                request.prompt,
+            )
         else:
             task_spec = task_spec.model_copy(
                 update={

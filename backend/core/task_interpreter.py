@@ -426,7 +426,17 @@ _FOCUSED_FUNDAMENTALS = (
     "财务", "财报", "现金流", "盈利质量", "审计意见", "基本面", "利润", "营收",
 )
 _FOCUSED_INDUSTRY = ("行业", "竞争格局", "竞品", "产业链", "同业")
-_FOCUSED_RISK = ("事件风险", "风险扫描", "风险预警", "质押", "解禁")
+_FOCUSED_RISK = (
+    "事件风险",
+    "风险扫描",
+    "风险预警",
+    "主要风险",
+    "投资风险",
+    "风险评估",
+    "评估风险",
+    "质押",
+    "解禁",
+)
 _FOCUSED_MACRO = ("宏观", "经济周期", "利率", "流动性", "政策")
 _FOCUSED_REPORT = ("正式报告", "研究报告", "备忘录", "研报")
 
@@ -458,6 +468,26 @@ def _deterministic_dimensions(
 
     # Check for explicit comprehensive triggers
     is_comprehensive_trigger = any(t in lowered for t in _COMPREHENSIVE_TRIGGERS)
+    has_stock_target = _SYMBOL.search(lowered) is not None
+
+    explicit_dimensions: list[ResearchDimension] = []
+    for dimension, markers in (
+        ("company_fundamentals", _FOCUSED_FUNDAMENTALS),
+        ("industry_competition", _FOCUSED_INDUSTRY),
+        ("macro_environment", _FOCUSED_MACRO),
+        ("quantitative_cross_check", _FOCUSED_QUANTITATIVE),
+        ("risk_assessment", _FOCUSED_RISK),
+    ):
+        if any(marker in lowered for marker in markers):
+            explicit_dimensions.append(dimension)
+
+    # Broad stock requests and requests naming multiple research dimensions
+    # must not collapse to whichever focused keyword happens to be checked first.
+    if (
+        is_comprehensive_trigger
+        and (has_stock_target or subject_type == "company")
+    ) or len(explicit_dimensions) >= 2:
+        return "comprehensive", list(_COMPREHENSIVE_DEFAULTS)
 
     # Company research with broad/vague phrasing → comprehensive
     if subject_type == "company" and task_type == "company_research":
@@ -490,16 +520,8 @@ def _deterministic_dimensions(
         return "focused", ["risk_assessment"]
 
     # Focused dimension detection by markers
-    if any(m in lowered for m in _FOCUSED_FUNDAMENTALS):
-        return "focused", ["company_fundamentals"]
-    if any(m in lowered for m in _FOCUSED_INDUSTRY):
-        return "focused", ["industry_competition"]
-    if any(m in lowered for m in _FOCUSED_MACRO):
-        return "focused", ["macro_environment"]
-    if any(m in lowered for m in _FOCUSED_RISK):
-        return "focused", ["risk_assessment"]
-    if any(m in lowered for m in _FOCUSED_QUANTITATIVE):
-        return "focused", ["quantitative_cross_check"]
+    if explicit_dimensions:
+        return "focused", [explicit_dimensions[0]]
 
     # Market research with company subject → comprehensive
     if subject_type == "company" and is_comprehensive_trigger:
