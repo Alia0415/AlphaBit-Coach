@@ -253,6 +253,14 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
   现金利润质量、异常趋势和证据缺口。
   Risk 必须把 Research 财务步骤声明为 required 依赖；
   不得为此自动增加 Quant、Macro 或 Report；
+- 单公司同时要求成长性与估值时，必须选择 Research、Quant 和 Risk，并覆盖
+  company_fundamentals、industry_competition、quantitative_cross_check 与
+  risk_assessment。公司基本面 Research 分析成长事实，行业 Research 在独立步骤中
+  分析同业和竞争背景；Quant 使用 thesis_validation 对上游观点做历史市场行为
+  交叉验证；Risk 等待相关上游步骤终态后审查成长持续性、估值假设与证据缺口。
+  市场行为交叉验证不能替代估值指标，不得把价格表现表述为估值高低。若实际证据
+  不包含 PE、PB、EV、可比估值或历史分位，必须明确标记估值证据不足，不得编造
+  估值数字或结论。不得为此自动增加 Macro 或 Report；
 - 行业 Research 使用 industry、time_range、research_goal 和可选 focus。
   单公司行业竞争时应同时提供单数 symbol，以便查询公司行业分类和可比公司；
   不得提供 symbols 或财报 scope，也不要求市场 Research 的日期和 fields；
@@ -367,6 +375,10 @@ Agent 输入契约：
   start_date、end_date；不得为此自动增加 Research 或财务 scope；
 - 财务质量或盈利质量请求必须同时选择 Research 和 Risk；Risk 必须把 Research
   财务步骤声明为 required 依赖，不得把该审查改成独立事件风险扫描；
+- 单公司成长性与估值复合请求必须选择 Research、Quant 和 Risk，分别覆盖公司
+  基本面、行业竞争、量化交叉验证和风险评估；公司与行业 Research 必须拆成符合
+  各自输入契约的步骤。市场行为交叉验证不能替代估值指标，不得把价格表现表述为
+  估值高低；缺少 PE、PB、EV、可比估值或历史分位时必须明确标记证据不足；
 - Report 必须声明至少一个上游 depends_on；
 - 不要为了修复契约而增加不需要的专家或改成固定流程。
 """.strip()
