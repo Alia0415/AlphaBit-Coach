@@ -260,6 +260,20 @@ def test_narrate_milestone_returns_draft_with_event_context() -> None:
     assert "研究步骤完成" in prompt
 
 
+def test_narrate_milestone_layers_prompt_by_profile() -> None:
+    draft = CoachNarrationDraft(
+        narration="研究专家刚完成了行情分析。",
+        teaching_point="真实投研中先确认数据再下结论。",
+    )
+    ark = FakeArkClient(draft)
+    service = CoachService(ark_client=ark)
+    profile = UserInvestmentProfile(investment_experience="experienced")
+
+    service.narrate_milestone("分析 000001.SZ", [], "plan_created", profile)
+
+    assert "投资经验丰富" in ark.requests[0].prompt
+
+
 def test_narrate_milestone_rejects_unknown_milestone() -> None:
     service = CoachService(ark_client=FakeArkClient())
 
