@@ -41,8 +41,8 @@ new runtime installation and governance work is not justified yet.
 3. Quant selects at most three existing bounded thesis claims.
 4. Quant extracts:
    - allowlisted `derived_metrics` from Research `skill_result.data`;
-   - at most five unique peer symbols from `competitor_candidates`, excluding
-     the target.
+   - at most twelve unique peer candidates from `competitor_candidates`,
+     excluding the target.
 5. Quant requests target and peer OHLCV rows in one existing PandaData call.
 6. Deterministic code produces:
    - `fundamental_metric_alignment` evidence from relevant metric direction or
@@ -72,7 +72,8 @@ thesis.
 ## Peer Rules
 
 - Peers must come from completed Research dependency evidence.
-- Use at most five unique valid symbols and exclude the target.
+- Scan at most twelve unique candidate symbols in one market-data request,
+  exclude the target, and retain at most five peers with valid observations.
 - Fetch target and peers together with the existing controlled market API.
 - Compare period returns only when target and at least two peers have valid
   observations.
