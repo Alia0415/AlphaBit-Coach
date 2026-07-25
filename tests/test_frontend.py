@@ -23,7 +23,7 @@ def test_office_entrypoint_is_served() -> None:
     response = client.get("/office")
 
     assert response.status_code == 200
-    assert "<title>AlphaOS · AI 投资研究操作系统</title>" in response.text
+    assert "<title>AlphaBit Coach · AI 投资研究操作系统</title>" in response.text
     assert '<link rel="icon" href="data:," />' in response.text
     assert 'href="/static/office/css/office.css?v=' in response.text
     assert 'src="/static/office/js/app.js?v=' in response.text
