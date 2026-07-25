@@ -1,25 +1,43 @@
-# AlphaOS Agent Guide
+# AlphaBit Coach (codebase: AlphaOS) Agent Guide
 
 ## Project goal
 
-Build an autonomous multi-agent AI quant research organization in which specialized financial agents collaborate on research tasks.
+Build AlphaBit Coach: a visible AI investment-research team plus an AI
+financial coach. Specialized financial agents collaborate on research tasks,
+the frontend renders the collaboration as an observable pixel office, and a
+coach layer helps users learn how to research (explanation, guided
+questioning, error correction, and review) instead of only receiving answers.
 
-AlphaOS is a dynamic AI organization, not a fixed Agent pipeline. The task
-graph generated for the current user request is the sole source of execution
-truth.
+The product has two first-class pillars:
+
+1. Visible multi-agent research — pixel office, dynamic task DAG, agent
+   state animation, SSE execution log, and Skill-call visualization. The
+   frontend is a collaboration observation window, not a result renderer.
+2. AI financial coach — personalized explanation by user knowledge level,
+   guided follow-up questions, research error correction, and post-task
+   research review. Report follow-up Q&A, glossary, plain-language answers,
+   and the expert/simple view toggle exist today; the standalone coach layer
+   (guided questioning, correction, review) is planned and not yet
+   implemented. Do not document it as shipped.
+
+AlphaBit Coach is a dynamic AI organization, not a fixed Agent pipeline. The
+task graph generated for the current user request is the sole source of
+execution truth.
 
 ## Locked product architecture
 
-AlphaOS uses this architecture:
+AlphaBit Coach uses this architecture:
 
 ```text
 User
+  → (planned) AI Financial Coach layer
   → Manager Agent
   → Dynamic Expert Selection
   → Task Graph Planning
   → Expert Pool Execution
   → Result Aggregator
-  → User-facing Result
+  → User-facing Result (visualized collaboration + evidence blocks)
+  → (planned) Coach explanation, guided questioning, and research review
 ```
 
 The Manager Agent is the sole planner. For every request it dynamically decides
@@ -34,7 +52,7 @@ perform their authorized analysis and choose only their own authorized Skills.
 experts or Skills, alter the DAG, append missing agents, or invent facts. The
 frontend renders this contract and does not generate research conclusions.
 
-The expert pool is exactly:
+The runtime expert pool is exactly:
 
 - `research`
 - `quant`

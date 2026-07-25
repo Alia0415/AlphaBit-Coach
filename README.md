@@ -1,6 +1,25 @@
-# AlphaOS v0.3 + Skill Runtime
+# AlphaBit Coach (AlphaOS runtime) v0.3 + Skill Runtime
 
-AlphaOS is a dynamic AI research organization, not a fixed Agent or Skill
+> 一支看得见的 AI 投研团队，一位真正帮助你成长的金融教练。
+
+AlphaBit Coach is an AI financial research and learning platform built on the
+AlphaOS multi-agent runtime. It has two first-class pillars:
+
+1. **Visible multi-agent research** — a dynamic AI research organization
+   whose collaboration is rendered live in the frontend: pixel office, task
+   DAG, agent state animation, SSE execution log, and Skill-call
+   visualization. The frontend is a collaboration observation window, not
+   just a result renderer.
+2. **AI financial coach** — the product direction upgrades AlphaBit from
+   "trusted answers" to "learning how to research": personalized explanation
+   by knowledge level, guided follow-up questioning, research error
+   correction, and post-task research review. Today the codebase ships
+   report follow-up Q&A, glossary extraction, plain-language answers, user
+   profiles, and the expert/simple view toggle; the standalone coach layer
+   (guided questioning, correction, review) is planned and not yet
+   implemented.
+
+The runtime is a dynamic AI research organization, not a fixed Agent or Skill
 pipeline. The outer task graph remains the sole source of truth for expert
 execution; each expert owns any internal capability selection.
 
@@ -359,6 +378,16 @@ Currently supported:
 - Quant factor idea generation
 - Quant R020 factor computation
 - Macro environment, policy, cycle, rate, and liquidity analysis
+- Report follow-up Q&A, glossary extraction, plain-language answers, and the
+  expert/simple result views (the shipped part of the coach experience)
+
+Planned but not yet implemented (coach layer):
+
+- Standalone AI financial coach layer between the user and Manager
+- Guided follow-up questioning initiated by the coach
+- Research error correction (evidence gaps, causal misreads, extrapolation)
+- Generated post-task research reviews
+- Knowledge-level–tiered explanations driven by the user profile
 
 Not currently supported:
 
