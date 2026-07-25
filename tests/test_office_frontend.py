@@ -109,6 +109,9 @@ def test_office_wires_the_coach_layer_into_reports_and_war_room() -> None:
     assert '"研究复盘"' in coach_script
     assert '"对话记录"' in coach_script
     assert '"提问区"' in coach_script
+    # sidebar sections fold into tab-style bars so the panel never feels cramped
+    assert "coach-fold-toggle" in coach_script
+    assert 'makeFold("guide", "研究复盘", guideSlot, { open: false })' in coach_script
     # transports: live hits the coach endpoints, demo replays labeled samples
     assert "coachAsk" in api_script
     assert "coachGuide" in api_script
@@ -122,6 +125,8 @@ def test_office_wires_the_coach_layer_into_reports_and_war_room() -> None:
     assert ".coach-guide-slot" in styles
     assert "max-height: 30%;" in styles
     assert ".coach-chat-section" in styles
+    assert ".coach-fold-toggle" in styles
+    assert ".coach-guide-slot.folded { display: none; }" in styles
     assert ".coach-compose" in styles
     assert ".classroom-panel" in styles
 

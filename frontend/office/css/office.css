@@ -2028,6 +2028,36 @@ button.task-item:hover { border-color: var(--cyan-dim); }
   background: var(--cyan);
 }
 
+/* 分区标题即折叠开关：收起不常看的分区，把空间让给对话流 */
+button.coach-fold-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 4px 2px;
+  margin: 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 7px;
+  transition: background 0.15s;
+}
+button.coach-fold-toggle:hover { background: rgba(17,17,17,.05); }
+.coach-fold-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coach-fold-arrow { flex: 0 0 auto; color: var(--text-3); font-size: 10px; }
+.coach-reading-slot.folded,
+.coach-guide-slot.folded { display: none; }
+.coach-chat-section.folded { flex: 0 0 auto; }
+.coach-chat-section.folded .coach-scroll { display: none; }
+/* 对话流收起时，展开着的复盘/导读区可占用剩余高度 */
+.coach-panel:has(.coach-chat-section.folded) .coach-guide-slot:not(.folded),
+.coach-panel:has(.coach-chat-section.folded) .coach-reading-slot:not(.folded) {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
 /* 复盘 + 思考题：作为顶部摘要区，不和对话流混在一起 */
 .coach-guide-slot {
   flex: 0 0 auto;

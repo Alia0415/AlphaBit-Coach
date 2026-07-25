@@ -50,7 +50,7 @@ import {
   attachSelectionQuoting,
   buildCoachSidebar,
   createClassroomPanel,
-} from "./coach.js?v=20260725-report-dynamic";
+} from "./coach.js?v=20260726-coach-fold";
 import {
   buildOfficeGlossaryPage,
   highlightGlossaryScope,
