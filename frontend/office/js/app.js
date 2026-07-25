@@ -1111,62 +1111,6 @@ function buildDemoResearchReport(report) {
     },
   };
 }
-function demoAgentSummary(agent, report, profile) {
-  const contribution = (report.contributions?.[agent] || []).join("；");
-  const byAgent = {
-    macro: `宏观环境以流动性和政策支持为主线，对本次主题形成中性偏正面的背景约束。${contribution}`,
-    research: `${profile.evidence[0] || report.summary} ${contribution}`,
-    quant: `已把核心指标转化为可展示的量化证据：${profile.metrics.slice(0, 2).map((m) => `${m.label}${m.display_value}`).join("，")}。`,
-    risk: `已识别主要反向证据：${profile.risks.slice(0, 2).join("；")}。`,
-    report: `已整合各专家示例证据，保留支持、反对、局限和下一步验证问题。`,
-  };
-  return byAgent[agent] || contribution || "已完成本次专业研究。";
-}
-
-function demoAgentAssumptions(agent) {
-  const byAgent = {
-    macro: ["政策与利率情景采用中性基准，不假设额外刺激超预期。"],
-    research: ["演示样本口径保持可比，财务和行业指标按同一期间阅读。"],
-    quant: ["估值和分位测算采用本地演示样本，不代表实时市场价格。"],
-    risk: ["压力情景用于展示风险识别流程，不作为真实回撤预测。"],
-    report: ["报告只汇总已给出的示例证据，不补造未返回的信息。"],
-  };
-  return byAgent[agent] || [];
-}
-
-function demoAgentLimitations(agent, profile) {
-  const shared = "当前为本地示例数据，不代表实际研究结论。";
-  const byAgent = {
-    macro: [profile.limitations[0], shared],
-    research: [profile.limitations[1] || profile.limitations[0], shared],
-    quant: [profile.limitations[2] || profile.limitations[0], shared],
-    risk: profile.limitations,
-    report: [shared, "真实研究需要重新调用模型和数据源生成可验证证据。"],
-  };
-  return (byAgent[agent] || [shared]).filter(Boolean);
-}
-
-function demoAgentRecommendations(agent, profile) {
-  const byAgent = {
-    macro: [profile.next[0]],
-    research: [profile.next[0], profile.next[1]],
-    quant: [profile.next[1]],
-    risk: [profile.next[2] || profile.next[1]],
-    report: profile.next,
-  };
-  return (byAgent[agent] || profile.next.slice(0, 1)).filter(Boolean);
-}
-
-function demoAgentSources(agent, sources) {
-  const byAgent = {
-    macro: [sources[0]],
-    research: [sources[0], sources[1]],
-    quant: [sources[2] || sources[0]],
-    risk: [sources[2] || sources[0], sources[1]],
-    report: sources,
-  };
-  return (byAgent[agent] || sources.slice(0, 1)).filter(Boolean);
-}
 
 function buildReportMain(report) {
   const col = el("div", "glossary-scope");
@@ -1368,6 +1312,213 @@ function drawOfficeScene(canvas, agents) {
     if (!e.ready) e.waiters.push(paint);
   });
   paint();
+}
+
+function createOfficeStageController(canvas, agents) {
+  const dpr = window.devicePixelRatio || 1;
+  const W = WAR_W, H = WAR_H;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = "100%";
+  const ctx = canvas.getContext("2d");
+  loadImage(BG_URL);
+  loadImage(CHAIR_URL);
+
+  const roster = agents
+    .filter((a) => a && SPRITE_MAP[a.id] && WAR_HOMES[a.id])
+    .map((a) => {
+      const home = WAR_HOMES[a.id];
+      const sheet = SPRITE_MAP[a.id];
+      loadSprite(sheet);
+      return {
+        id: a.id,
+        name: a.name || a.id,
+        sheet,
+        home,
+        x: home.x,
+        y: home.y,
+        tx: home.x,
+        ty: home.y,
+        mvx: 0,
+        mvy: 1,
+        walking: false,
+        seated: true,
+        pauseT: Math.random() * 0.8,
+        frameT: 0,
+        frameIdx: 0,
+        status: a.status || "idle",
+      };
+    });
+  const byId = (id) => roster.find((a) => a.id === id);
+
+  function pickTarget(ag) {
+    const busy = ag.status === "working" || ag.status === "running";
+    if (busy) {
+      ag.tx = ag.home.x;
+      ag.ty = ag.home.y;
+      ag.pauseT = 1.8 + Math.random() * 1.8;
+      return;
+    }
+    ag.tx = clamp(W * (0.3 + Math.random() * 0.4), 40, W - 40);
+    ag.ty = clamp(H * (0.38 + Math.random() * 0.5), 90, H - 24);
+    ag.pauseT = 0.8 + Math.random() * 1.8;
+  }
+
+  function stepAgent(ag, dt) {
+    // 硬规则：工作中的专家目标点永远锁定工位，闲逛目标立即失效
+    const busy = ag.status === "working" || ag.status === "running";
+    if (busy && (ag.tx !== ag.home.x || ag.ty !== ag.home.y)) {
+      ag.tx = ag.home.x;
+      ag.ty = ag.home.y;
+    }
+    const dx = ag.tx - ag.x, dy = ag.ty - ag.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 3) {
+      ag.walking = false;
+      ag.seated = ag.tx === ag.home.x && ag.ty === ag.home.y;
+      ag.pauseT -= dt;
+      if (ag.pauseT <= 0) pickTarget(ag);
+      return;
+    }
+    ag.walking = true;
+    ag.seated = false;
+    const sp = 52 * dt;
+    ag.x += (dx / dist) * sp;
+    ag.y += (dy / dist) * sp;
+    ag.mvx = dx / dist;
+    ag.mvy = dy / dist;
+    ag.frameT += dt;
+    if (ag.frameT > 0.13) {
+      ag.frameT = 0;
+      ag.frameIdx++;
+    }
+  }
+
+  const SPRITE_SIZE = W * 0.088;
+  function drawAgent(ag) {
+    const entry = spriteCache.get(ag.sheet);
+    let headTop;
+    if (ag.seated) {
+      drawSeated(ctx, ag.sheet, ag.x, ag.y, W, ag.home.chair);
+      headTop = ag.y - W * CHAIR_W_FRAC * 1.95;
+    } else {
+      ctx.fillStyle = "rgba(0,0,0,0.26)";
+      ctx.beginPath();
+      ctx.ellipse(ag.x, ag.y, SPRITE_SIZE * 0.26, SPRITE_SIZE * 0.075, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const f = facingFrom(ag.mvx, ag.mvy);
+      const col = ag.walking ? WALK_COLS[ag.frameIdx % WALK_COLS.length] : IDLE_COLS[0];
+      if (entry && entry.ready) drawSpriteCell(ctx, entry, col, f.row, f.flip, ag.x, ag.y, SPRITE_SIZE);
+      else {
+        ctx.fillStyle = "#13263f";
+        ctx.fillRect(ag.x - SPRITE_SIZE / 2, ag.y - SPRITE_SIZE * CELL_FEET, SPRITE_SIZE, SPRITE_SIZE * CELL_FEET);
+      }
+      headTop = ag.y - SPRITE_SIZE * CELL_FEET;
+    }
+    const dot = { working: "#60a5fa", running: "#60a5fa", done: "#34d399", idle: "#5a6b80" }[ag.status] || "#5a6b80";
+    ctx.fillStyle = dot;
+    ctx.beginPath();
+    ctx.arc(ag.x + 15, headTop + 4, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(10,22,40,0.82)";
+    ctx.beginPath();
+    ctx.roundRect(ag.x - 28, ag.y + 5, 56, 14, 4);
+    ctx.fill();
+    ctx.fillStyle = "#cfe0f2";
+    ctx.font = "10px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(ag.name, ag.x, ag.y + 15);
+  }
+
+  function render() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    drawBackground(ctx, W, H);
+    roster.forEach((ag) => {
+      if (!ag.seated) drawSeatChair(ctx, ag.home.chair, ag.home.x, ag.home.y, W);
+    });
+    [...roster].sort((a, b) => a.y - b.y).forEach(drawAgent);
+  }
+
+  let raf = 0;
+  let last = performance.now();
+  function tick(ts) {
+    const dt = Math.min(0.05, (ts - last) / 1000);
+    last = ts;
+    roster.forEach((ag) => stepAgent(ag, dt));
+    render();
+    raf = requestAnimationFrame(tick);
+  }
+  raf = requestAnimationFrame(tick);
+
+  return {
+    setAgentStatus(id, status) {
+      const ag = byId(id);
+      if (!ag) return;
+      ag.status = status === "done" || status === "failed" ? "done" : status || "idle";
+      pickTarget(ag);
+    },
+    stop() {
+      cancelAnimationFrame(raf);
+    },
+  };
+}
+
+function demoAgentSummary(agent, report, profile) {
+  const contribution = (report.contributions?.[agent] || []).join("；");
+  const byAgent = {
+    macro: `宏观环境以流动性和政策支持为主线，对本次主题形成中性偏正面的背景约束。${contribution}`,
+    research: `${profile.evidence[0] || report.summary} ${contribution}`,
+    quant: `已把核心指标转化为可展示的量化证据：${profile.metrics.slice(0, 2).map((m) => `${m.label}${m.display_value}`).join("，")}。`,
+    risk: `已识别主要反向证据：${profile.risks.slice(0, 2).join("；")}。`,
+    report: `已整合各专家示例证据，保留支持、反对、局限和下一步验证问题。`,
+  };
+  return byAgent[agent] || contribution || "已完成本次专业研究。";
+}
+
+function demoAgentAssumptions(agent) {
+  const byAgent = {
+    macro: ["政策与利率情景采用中性基准，不假设额外刺激超预期。"],
+    research: ["演示样本口径保持可比，财务和行业指标按同一期间阅读。"],
+    quant: ["估值和分位测算采用本地演示样本，不代表实时市场价格。"],
+    risk: ["压力情景用于展示风险识别流程，不作为真实回撤预测。"],
+    report: ["报告只汇总已给出的示例证据，不补造未返回的信息。"],
+  };
+  return byAgent[agent] || [];
+}
+
+function demoAgentLimitations(agent, profile) {
+  const shared = "当前为本地示例数据，不代表实际研究结论。";
+  const byAgent = {
+    macro: [profile.limitations[0], shared],
+    research: [profile.limitations[1] || profile.limitations[0], shared],
+    quant: [profile.limitations[2] || profile.limitations[0], shared],
+    risk: profile.limitations,
+    report: [shared, "真实研究需要重新调用模型和数据源生成可验证证据。"],
+  };
+  return (byAgent[agent] || [shared]).filter(Boolean);
+}
+
+function demoAgentRecommendations(agent, profile) {
+  const byAgent = {
+    macro: [profile.next[0]],
+    research: [profile.next[0], profile.next[1]],
+    quant: [profile.next[1]],
+    risk: [profile.next[2] || profile.next[1]],
+    report: profile.next,
+  };
+  return (byAgent[agent] || profile.next.slice(0, 1)).filter(Boolean);
+}
+
+function demoAgentSources(agent, sources) {
+  const byAgent = {
+    macro: [sources[0]],
+    research: [sources[0], sources[1]],
+    quant: [sources[2] || sources[0]],
+    risk: [sources[2] || sources[0], sources[1]],
+    report: sources,
+  };
+  return (byAgent[agent] || sources.slice(0, 1)).filter(Boolean);
 }
 
 // ---------------------------------------------------------------------------
@@ -1675,18 +1826,21 @@ const WAR_W = 760, WAR_H = Math.round(WAR_W / BG_RATIO);
 const WAR_HOMES = Object.fromEntries(
   Object.entries(SEATS).map(([id, s]) => [id, { x: s.fx * WAR_W, y: s.fy * WAR_H, chair: s.chair }]),
 );
-const DAG_POS = {
-  manager: [50, 12], macro: [20, 40], research: [50, 40],
-  quant: [80, 40], risk: [34, 73], report: [67, 73],
-};
+const DAG_LAYERS = [
+  ["manager"],
+  ["macro", "research", "quant"],
+  ["risk"],
+  ["report"],
+];
 const DAG_EDGES = [
   ["manager", "macro"], ["manager", "research"], ["manager", "quant"],
   ["macro", "risk"], ["research", "risk"], ["quant", "risk"], ["risk", "report"],
 ];
+const DAG_NODE_IDS = DAG_LAYERS.flat();
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 function pageWarRoom() {
-  const wrap = el("div");
+  const wrap = el("div", "war-room-page");
 
   // ---- head ----
   const head = el("div", "war-head");
@@ -1702,44 +1856,35 @@ function pageWarRoom() {
   const grid = el("div", "war-grid");
 
   // ================= LEFT: task-graph DAG =================
-  const leftCol = el("div", "panel");
+  const leftCol = el("div", "panel war-left-col");
   leftCol.appendChild(el("div", "panel-title", "任务执行流"));
-  const dag = el("div", "dag-wrap");
-  const svgNS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("viewBox", "0 0 100 100");
-  svg.setAttribute("preserveAspectRatio", "none");
+  const dag = el("div", "dag-wrap dag-stack");
   const edgeEls = {};
-  DAG_EDGES.forEach(([a, b]) => {
-    const [x1, y1] = DAG_POS[a], [x2, y2] = DAG_POS[b];
-    const line = document.createElementNS(svgNS, "line");
-    line.setAttribute("x1", x1); line.setAttribute("y1", y1);
-    line.setAttribute("x2", x2); line.setAttribute("y2", y2);
-    line.setAttribute("stroke", "#1d3a5c");
-    line.setAttribute("stroke-width", "0.5");
-    svg.appendChild(line);
-    edgeEls[`${a}-${b}`] = line;
-  });
-  dag.appendChild(svg);
   const dagNodes = {};
-  Object.entries(DAG_POS).forEach(([id, [x, y]]) => {
-    const a = agentById(id);
-    const node = el("button", "dag-node st-idle");
-    node.style.left = `${x}%`;
-    node.style.top = `${y}%`;
-    node.appendChild(avatar(id, 34, "dn-ava"));
-    node.appendChild(el("strong", "", esc(a.name)));
-    node.appendChild(el("small", "", esc(a.role)));
-    node.appendChild(el("span", "badge off dn-badge", '<span class="dot"></span>待命'));
-    node.addEventListener("click", () => navigate("experts"));
-    dagNodes[id] = node;
-    dag.appendChild(node);
+  DAG_LAYERS.forEach((ids, layerIndex) => {
+    if (layerIndex > 0) dag.appendChild(el("div", "dag-layer-join", "↓"));
+    const layer = el("div", `dag-layer${ids.length === 1 ? " single" : " multi"}`);
+    layer.style.setProperty("--dag-cols", String(ids.length));
+    ids.forEach((id) => {
+      const a = agentById(id);
+      const node = el("button", "dag-node st-idle");
+      node.appendChild(avatar(id, 34, "dn-ava"));
+      node.appendChild(el("strong", "", esc(a.name)));
+      node.appendChild(el("small", "", esc(a.role)));
+      const deps = DAG_EDGES.filter(([, to]) => to === id).map(([from]) => agentById(from)?.name || from);
+      if (deps.length) node.appendChild(el("span", "dag-deps", `依赖 ${esc(deps.join(" / "))}`));
+      node.appendChild(el("span", "badge off dn-badge", '<span class="dot"></span>待命'));
+      node.addEventListener("click", () => navigate("experts"));
+      dagNodes[id] = node;
+      layer.appendChild(node);
+    });
+    dag.appendChild(layer);
   });
   leftCol.appendChild(dag);
   grid.appendChild(leftCol);
 
   // ================= CENTER: live stage + progress + timeline =================
-  const centerCol = el("div");
+  const centerCol = el("div", "war-center-col");
   const stagePanel = el("div", "panel");
   stagePanel.appendChild(el("div", "panel-title", "作战室演示画面 <span class='title-extra'>展示专家协作和任务流转</span>"));
   const stage = el("div", "office-stage");
@@ -1822,7 +1967,7 @@ function pageWarRoom() {
 
   // ================= RIGHT: interpretation + classroom + logs =================
   // （任务摘要与专业分析方法挪到左栏 DAG 下方，右栏集中放动态信息流）
-  const rightCol = el("div");
+  const rightCol = el("div", "war-right-col");
   const sumPanel = el("div", "panel");
   sumPanel.style.marginTop = "14px";
   sumPanel.appendChild(el("div", "panel-title", "任务摘要"));
@@ -1881,14 +2026,13 @@ function pageWarRoom() {
 
   const state = { clock: 0, speed: 1, playing: true, ptr: 0, logs: 0, lastPct: -1 };
 
-  // Idle agents occasionally stroll around the floor; working experts and a
-  // random share of the rest return to (or stay at) their desk seats.
+  // Working experts return to their desk seats; everyone else keeps strolling.
   function pickWander(ag) {
     const busy = ag.status === "working" || ag.status === "running";
-    if (busy || Math.random() < 0.55) {
+    if (busy) {
       ag.tx = ag.home.x;
       ag.ty = ag.home.y;
-      ag.pauseT = busy ? 2.5 + Math.random() * 3 : 1.2 + Math.random() * 2.2;
+      ag.pauseT = 2.5 + Math.random() * 3;
     } else {
       // stroll target: central walkable floor area away from the desks
       ag.tx = clamp(WAR_W * (0.3 + Math.random() * 0.4), 40, WAR_W - 40);
@@ -1897,10 +2041,12 @@ function pageWarRoom() {
     }
   }
   function gather(ids) {
+    // 只有非工作状态的专家才会离开工位去圆桌；工作中的专家留在工位发言
     const cx = TABLE_CENTER.fx * WAR_W, cy = TABLE_CENTER.fy * WAR_H, n = ids.length;
     ids.forEach((id, i) => {
       const ag = agentById2(id);
       if (!ag) return;
+      if (ag.status === "working" || ag.status === "running") return;
       const ang = -Math.PI / 2 + (i * 2 * Math.PI) / Math.max(n, 1);
       ag.tx = clamp(cx + Math.cos(ang) * WAR_W * 0.11, 40, WAR_W - 40);
       ag.ty = clamp(cy + Math.sin(ang) * WAR_H * 0.13, 90, WAR_H - 24);
@@ -1953,7 +2099,7 @@ function pageWarRoom() {
     const cs = ev.clock || clockStr();
     switch (ev.type) {
       case "log": appendLog(ev.agent, ev.text, ev.color, cs); break;
-      case "work": setDag(ev.agent, "working"); { const a = agentById2(ev.agent); if (a) a.status = "working"; } break;
+      case "work": setDag(ev.agent, "working"); { const a = agentById2(ev.agent); if (a) { a.status = "working"; pickWander(a); } } break;
       case "dag": setDag(ev.agent, ev.status); break;
       case "say": say(ev.agent, ev.text, ev.dur); break;
       case "done": setDag(ev.agent, "done"); { const a = agentById2(ev.agent); if (a) a.status = "done"; }
@@ -1987,6 +2133,13 @@ function pageWarRoom() {
   }
 
   function stepAgent(ag, dt) {
+    // 硬规则：工作中的专家目标点永远锁定工位（gather/闲逛目标立即失效），
+    // 讨论台词仍以气泡形式显示在工位上方
+    const busy = ag.status === "working" || ag.status === "running";
+    if (busy && (ag.tx !== ag.home.x || ag.ty !== ag.home.y)) {
+      ag.tx = ag.home.x;
+      ag.ty = ag.home.y;
+    }
     const dx = ag.tx - ag.x, dy = ag.ty - ag.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 3) {
@@ -2100,8 +2253,13 @@ function pageWarRoom() {
     logEl.innerHTML = "";
     Object.keys(skillCounts).forEach((n) => { skillCounts[n] = 0; skillRows[n].querySelector(".sk-count").textContent = "0"; });
     agents.forEach((a) => { a.status = "idle"; a.say = null; if (a.bubbleEl) { a.bubbleEl.remove(); a.bubbleEl = null; } });
-    Object.keys(DAG_POS).forEach((id) => setDag(id, "idle"));
-    DAG_EDGES.forEach(([a, b]) => { const ln = edgeEls[`${a}-${b}`]; ln.setAttribute("stroke", "#1d3a5c"); ln.setAttribute("stroke-width", "0.5"); });
+    DAG_NODE_IDS.forEach((id) => setDag(id, "idle"));
+    DAG_EDGES.forEach(([a, b]) => {
+      const ln = edgeEls[`${a}-${b}`];
+      if (!ln) return;
+      ln.setAttribute("stroke", "#1d3a5c");
+      ln.setAttribute("stroke-width", "0.5");
+    });
     badge.className = "badge running";
     badge.innerHTML = '<span class="dot"></span>执行中';
     state.playing = true;
@@ -2710,6 +2868,7 @@ function buildReportMainLive(report) {
   if (vm.disclaimer) col.appendChild(el("div", "op-note research-disclaimer", esc(vm.disclaimer)));
   return col;
 }
+
 function connectReportKnowledge(metrics) {
   const glossary = globalThis.AlphaGlossary;
   if (!glossary?.setResearchEntries) return 0;
@@ -3707,7 +3866,7 @@ function pageClarifyLive() {
 // live: war room — consume real SSE execution stream (界面 03 · 实时)
 // ---------------------------------------------------------------------------
 function pageManagerPlanningLive(session) {
-  const wrap = el("div");
+  const wrap = el("div", "war-room-page war-room-page-planning");
   const head = el("div", "war-head");
   head.appendChild(el("h1", "", "研究作战室"));
   head.appendChild(el("span", "sub", "正在拆解研究问题"));
@@ -3763,7 +3922,7 @@ function pageWarRoomLive() {
     if (session.phase === "planning" && session.prompt) {
       return pageManagerPlanningLive(session);
     }
-    const wrap = el("div", "panel");
+    const wrap = el("div", "panel war-room-page");
     wrap.appendChild(el("div", "panel-title", "研究作战室"));
     const failed = session.phase === "failed";
     const box = stateBox(
@@ -3783,7 +3942,7 @@ function pageWarRoomLive() {
 
   const plan = session.plan;
   const steps = (plan && plan.steps) || [];
-  const wrap = el("div");
+  const wrap = el("div", "war-room-page");
 
   // ---- head ----
   const head = el("div", "war-head");
@@ -3832,9 +3991,9 @@ function pageWarRoomLive() {
   const grid = el("div", "war-grid");
 
   // ---- LEFT: real DAG built from plan.steps (layered by dependency depth) ----
-  const leftCol = el("div", "panel");
+  const leftCol = el("div", "panel war-left-col");
   leftCol.appendChild(el("div", "panel-title", "任务执行流"));
-  const dag = el("div", "dag-wrap");
+  const dag = el("div", "dag-wrap dag-stack");
   const byId = {};
   steps.forEach((s) => { byId[s.id] = s; });
   const depth = {};
@@ -3850,56 +4009,41 @@ function pageWarRoomLive() {
   const layers = {};
   steps.forEach((s) => { (layers[depth[s.id]] = layers[depth[s.id]] || []).push(s); });
   const layerKeys = Object.keys(layers).map(Number).sort((a, b) => a - b);
-  const maxDepth = layerKeys.length ? layerKeys[layerKeys.length - 1] : 0;
-
-  const svgNS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("viewBox", "0 0 100 100");
-  svg.setAttribute("preserveAspectRatio", "none");
-  const pos = {};
-  layerKeys.forEach((d) => {
-    const row = layers[d];
-    const y = maxDepth === 0 ? 50 : 12 + (d / maxDepth) * 76;
-    row.forEach((s, i) => { pos[s.id] = [((i + 1) / (row.length + 1)) * 100, y]; });
-  });
   const edgeEls = {};
-  steps.forEach((s) => {
-    s.dependsOn.forEach((p) => {
-      if (!pos[p] || !pos[s.id]) return;
-      const line = document.createElementNS(svgNS, "line");
-      line.setAttribute("x1", pos[p][0]); line.setAttribute("y1", pos[p][1]);
-      line.setAttribute("x2", pos[s.id][0]); line.setAttribute("y2", pos[s.id][1]);
-      line.setAttribute("stroke", "#1d3a5c");
-      line.setAttribute("stroke-width", "0.5");
-      svg.appendChild(line);
-      edgeEls[`${p}-${s.id}`] = line;
-    });
-  });
-  dag.appendChild(svg);
   const nodeEls = {};
-  steps.forEach((s) => {
-    const [x, y] = pos[s.id] || [50, 50];
-    const node = el("button", "dag-node st-idle");
-    node.style.left = `${x}%`;
-    node.style.top = `${y}%`;
-    node.appendChild(avatar(s.agent, 34, "dn-ava"));
-    const publicAgent = researchPresentation
-      ? researchPresentation.agentInfo(s.agent)
-      : { name: s.role || "AI 投研专家", role: s.role || "" };
-    node.appendChild(el("strong", "", esc(publicAgent.name)));
-    node.appendChild(el("small", "", esc(s.objective || publicAgent.role)));
-    node.appendChild(el("span", "badge off dn-badge", '<span class="dot"></span>待命'));
-    node.title = s.objective || "";
-    node.addEventListener("click", () => navigate("experts"));
-    nodeEls[s.id] = node;
-    dag.appendChild(node);
+  layerKeys.forEach((d, layerIndex) => {
+    if (layerIndex > 0) dag.appendChild(el("div", "dag-layer-join", "↓"));
+    const layer = el("div", `dag-layer${layers[d].length === 1 ? " single" : " multi"}`);
+    layer.style.setProperty("--dag-cols", String(layers[d].length));
+    layers[d].forEach((s) => {
+      const node = el("button", "dag-node st-idle");
+      node.appendChild(avatar(s.agent, 34, "dn-ava"));
+      const publicAgent = researchPresentation
+        ? researchPresentation.agentInfo(s.agent)
+        : { name: s.role || "AI 投研专家", role: s.role || "" };
+      node.appendChild(el("strong", "", esc(publicAgent.name)));
+      node.appendChild(el("small", "", esc(s.objective || publicAgent.role)));
+      if (s.dependsOn.length) {
+        node.appendChild(el(
+          "span",
+          "dag-deps",
+          `依赖 ${esc(s.dependsOn.map((id) => byId[id]?.agent || id).join(" / "))}`,
+        ));
+      }
+      node.appendChild(el("span", "badge off dn-badge", '<span class="dot"></span>待命'));
+      node.title = s.objective || "";
+      node.addEventListener("click", () => navigate("experts"));
+      nodeEls[s.id] = node;
+      layer.appendChild(node);
+    });
+    dag.appendChild(layer);
   });
   if (!steps.length) dag.appendChild(stateBox("empty", "该计划无可执行步骤"));
   leftCol.appendChild(dag);
   grid.appendChild(leftCol);
 
   // ---- CENTER: live stage + progress ----
-  const centerCol = el("div");
+  const centerCol = el("div", "war-center-col");
   const stagePanel = el("div", "panel");
   stagePanel.appendChild(el("div", "panel-title", "专家协作 <span class='title-extra'>研究执行中</span>"));
   const stage = el("div", "office-stage");
@@ -3942,11 +4086,11 @@ function pageWarRoomLive() {
   grid.appendChild(centerCol);
 
   // ---- RIGHT: interpretation + classroom + logs（研究方法挪到左栏 DAG 下方）----
-  const rightCol = el("div");
+  const rightCol = el("div", "war-right-col");
   const skillPanel = el("div", "panel");
   skillPanel.style.marginTop = "14px";
   skillPanel.appendChild(el("div", "panel-title", "专业研究方法"));
-  const skillList = el("div");
+  const skillList = el("div", "skill-list");
   skillPanel.appendChild(skillList);
   const skillEmpty = el("div", "op-note", "专家尚未开始专业分析步骤");
   skillPanel.appendChild(skillEmpty);
@@ -3967,9 +4111,14 @@ function pageWarRoomLive() {
 
   // office scene from plan agents (only those with a pixel sprite sheet)
   const planAgents = (plan && plan.agents && plan.agents.length)
-    ? plan.agents.filter((a) => SPRITE_MAP[a.id]).map((a) => ({ id: a.id, name: a.name, status: "working" }))
+    ? plan.agents.filter((a) => SPRITE_MAP[a.id]).map((a) => {
+        const publicAgent = researchPresentation
+          ? researchPresentation.agentInfo(a.id)
+          : { name: a.name || a.id };
+        return { id: a.id, name: publicAgent.name || a.name || a.id, status: "idle" };
+      })
     : [];
-  requestAnimationFrame(() => drawOfficeScene(canvas, planAgents));
+  const stageController = createOfficeStageController(canvas, planAgents);
 
   // ---- engine state ----
   const startedAt = Date.now();
@@ -4092,11 +4241,13 @@ function pageWarRoomLive() {
       case "step_started":
         if (stepId) { stepStatus[stepId] = "running"; setNode(stepId, "running"); }
         if (agent) setAgentFlow(agent);
+        if (agent) stageController.setAgentStatus(agent, "working");
         pushLog(publicAgent, publicMessage, "run");
         break;
       case "step_completed":
         if (stepId) { stepStatus[stepId] = "done"; setNode(stepId, "done"); }
         if (agent) setAgentFlow(agent);
+        if (agent) stageController.setAgentStatus(agent, "done");
         pushLog(publicAgent, publicMessage, "done");
         (() => {
           try {
@@ -4108,6 +4259,7 @@ function pageWarRoomLive() {
       case "step_failed":
         if (stepId) { stepStatus[stepId] = "failed"; setNode(stepId, "failed"); }
         if (agent) setAgentFlow(agent);
+        if (agent) stageController.setAgentStatus(agent, "failed");
         pushLog(publicAgent, publicMessage, "fail");
         break;
       case "skill_plan_created":
@@ -4130,6 +4282,7 @@ function pageWarRoomLive() {
         pushLog("研究整合专家", publicMessage, "run");
         break;
       case "task_completed":
+        planAgents.forEach((a) => stageController.setAgentStatus(a.id, "idle"));
         pushLog("研究团队", publicMessage, "done");
         break;
       default:
@@ -4193,7 +4346,11 @@ function pageWarRoomLive() {
     },
   });
 
-  registerTeardown(() => { clearInterval(elapsedTimer); try { src.close(); } catch (_) {} });
+  registerTeardown(() => {
+    clearInterval(elapsedTimer);
+    stageController.stop();
+    try { src.close(); } catch (_) {}
+  });
 
   return wrap;
 }
