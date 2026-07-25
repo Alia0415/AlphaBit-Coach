@@ -3,7 +3,7 @@
 // enabled, capabilities, tools, skills, counts, statuses) come from the API;
 // only cosmetic fields (sprite / role label / specialty) are overlaid from the
 // static presentation map. It never invents research facts.
-import { api } from "./api.js";
+import { api } from "./api.js?v=20260725-p12";
 import { store } from "./store.js";
 
 export const isLive = () => store.state.mode === "live";
@@ -123,6 +123,11 @@ export async function fetchReports() {
 
 export async function fetchReport(id) {
   return api.report(id);
+}
+
+export async function extractReportGlossary(id) {
+  const result = await api.reportGlossary(id);
+  return Array.isArray(result?.terms) ? result.terms : [];
 }
 
 export async function setExpertEnabled(id, enabled) {

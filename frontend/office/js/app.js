@@ -30,18 +30,20 @@ import {
   fetchTasks,
   fetchReports,
   fetchReport,
+  extractReportGlossary,
   setExpertEnabled as liveSetExpertEnabled,
   submitReportFollowup,
   createSession as liveCreateSession,
   clarifySession as liveClarifySession,
   openTaskStream,
   roleFor as liveRoleFor,
-} from "./live.js";
+} from "./live.js?v=20260725-p12";
 import {
   highlightGlossaryScope,
   initOfficeGlossary,
   openOfficeGlossary,
-} from "./glossary-ui.js?v=20260725-p09";
+  registerGlossaryTerms,
+} from "./glossary-ui.js?v=20260725-p12";
 
 // Live planning session shared across hall → clarify → war room. The planning
 // phase is explicit so the war room can open immediately without inventing a
@@ -2214,6 +2216,9 @@ function pageReportDetailLive(reportId) {
     const layout = el("div", "report-layout");
     layout.appendChild(buildReportMainLive(report));
     layout.appendChild(buildFollowPanelLive(report));
+    extractReportGlossary(report.id)
+      .then((terms) => registerGlossaryTerms(terms, layout))
+      .catch(() => {});
     return layout;
   });
 }
