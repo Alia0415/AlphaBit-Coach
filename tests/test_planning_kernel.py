@@ -211,6 +211,41 @@ def test_quant_cross_check_plan_requires_explicit_analysis_mode() -> None:
     assert "analysis_mode=historical_cross_check" in client.prompts[1]
 
 
+def test_quant_thesis_validation_requires_upstream_dependency() -> None:
+    payload = _plan_payload(["quant"])
+    payload["steps"][0]["inputs"] = {
+        "analysis_mode": "thesis_validation",
+        "symbols": ["002594.SZ"],
+        "start_date": "20240101",
+        "end_date": "20241231",
+        "fields": [],
+    }
+    payload["steps"][0]["covers_dimensions"] = ["quantitative_cross_check"]
+    plan = ExecutionPlan.model_validate(payload)
+
+    with pytest.raises(PlanValidationError, match="dependency"):
+        validate_execution_plan(plan, AgentRegistry())
+
+
+def test_manager_accepts_dependent_quant_thesis_validation() -> None:
+    payload = _plan_payload(["research", "quant"])
+    payload["steps"][1]["inputs"] = {
+        "analysis_mode": "thesis_validation",
+        "symbols": ["002594.SZ"],
+        "start_date": "20240101",
+        "end_date": "20241231",
+        "fields": [],
+    }
+    payload["steps"][1]["covers_dimensions"] = ["quantitative_cross_check"]
+
+    plan = ManagerAgent(
+        client=MockArkClient(json.dumps(payload, ensure_ascii=False))
+    ).create_plan("综合研究并用量化证据校验观点")
+
+    assert plan.steps[1].inputs["analysis_mode"] == "thesis_validation"
+    assert plan.steps[1].depends_on == ["research_1"]
+
+
 def test_manager_prompt_uses_registry_and_minimal_sufficient_principle() -> None:
     client = MockArkClient(json.dumps(_plan_payload(["research"])))
 

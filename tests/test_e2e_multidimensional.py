@@ -8,8 +8,6 @@ All external services (Ark, PandaData) are mocked.
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 
 from backend.core.agent_registry import AgentRegistry
@@ -26,11 +24,11 @@ from backend.core.evidence_bundle import build_evidence_bundle
 from backend.core.plan_validator import validate_execution_plan, validate_plan_dimensions
 from backend.core.policy_contracts import PolicyDecision
 from backend.core.result_aggregator import ResultAggregator
-from backend.core.store import SessionState, Store, reset_store_for_tests
+from backend.core.store import SessionState, reset_store_for_tests
 from backend.core.task_interpreter import TaskInterpreter, _deterministic_dimensions
-from backend.core.task_spec import TaskSpec, _COMPREHENSIVE_DEFAULTS
+from backend.core.task_spec import _COMPREHENSIVE_DEFAULTS
 from backend.core.workflow_executor import WorkflowExecutor
-from backend.core.evidence_validator import EvidenceValidationResult
+from backend.core.evidence_validator import EvidenceValidator
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +92,7 @@ def _comprehensive_plan() -> ExecutionPlan:
                 agent=AgentId.QUANT,
                 objective="量化交叉验证",
                 inputs={
-                    "analysis_mode": "historical_cross_check",
+                    "analysis_mode": "thesis_validation",
                     "symbols": ["002594.SZ"],
                     "start_date": "20240101",
                     "end_date": "20241231",
@@ -126,15 +124,32 @@ def _comprehensive_plan() -> ExecutionPlan:
 
 def _mock_expert_result(task: ExpertTask) -> ExpertResult:
     """Generate a mock completed result for any expert."""
+    evidence = [
+        {"type": "mock_evidence", "step": task.task_id, "data": "sample"},
+        {"type": "mock_metric", "step": task.task_id, "value": 0.15},
+    ]
+    if task.agent == AgentId.QUANT:
+        evidence.append(
+            {
+                "type": "quant_thesis_validation",
+                "claim_id": "step-fundamentals:summary",
+                "claim_source_step": "step-fundamentals",
+                "claim_text": "基本面分析完成。",
+                "claim_direction": "positive",
+                "assessment": "mixed",
+                "assessment_scope": "historical_market_alignment",
+                "metric_ids": ["period_return", "return_20d"],
+                "reason": "不同历史窗口方向不一致。",
+                "text": "历史市场表现对基本面观点提供混合证据。",
+                "validation_status": "historical_computation",
+            }
+        )
     return ExpertResult(
         task_id=task.task_id,
         agent=task.agent,
         status="completed",
         summary=f"{task.agent.value} 分析完成: {task.objective}",
-        evidence=[
-            {"type": "mock_evidence", "step": task.task_id, "data": "sample"},
-            {"type": "mock_metric", "step": task.task_id, "value": 0.15},
-        ],
+        evidence=evidence,
         tool_calls=[{"tool": "mock_tool", "status": "completed"}],
     )
 
@@ -250,6 +265,16 @@ class TestE2EComprehensiveFlow:
 
         # 5. Evidence IDs are generated
         assert len(bundle.all_evidence_ids) >= 10  # 5 steps × 2 items
+
+        validation = EvidenceValidator().validate(spec, validated, results)
+        aggregation = ResultAggregator().aggregate(spec, validated, validation)
+        quant_block = next(
+            block
+            for block in aggregation.content_blocks
+            if block.title == "量化决策校验"
+        )
+        assert quant_block.type == "finding_cards"
+        assert quant_block.source_steps == ["step-quant"]
 
     def test_partial_failure_still_returns_results(self) -> None:
         """One expert fails → other dimensions still available."""
