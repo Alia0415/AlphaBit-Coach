@@ -2953,30 +2953,103 @@ function buildReportMainLive(report) {
     ));
     return col;
   }
-  col.reportNavigation = vm.navigation || [];
+  col.reportNavigation = compactReportNavigation(vm);
   col.appendChild(renderReportNavigation(col.reportNavigation));
   const hero = renderResearchHero(report, vm);
   hero.id = "report-overview";
   hero.dataset.reportSection = "report-overview";
-  hero.appendChild(renderResearchTrace(vm));
   col.appendChild(hero);
   connectReportKnowledge(vm.metrics);
-  (vm.chapters || []).forEach((chapter) => {
-    col.appendChild(renderDynamicAgentChapter(chapter));
-  });
+  if (vm.finalSummary.evidence.length) {
+    col.appendChild(withReportSection(renderFinalEvidence(vm.finalSummary.evidence), "report-key-evidence"));
+  }
+  col.appendChild(withReportSection(renderMetricOverview(vm.metrics), "report-key-metrics"));
+  col.appendChild(withReportSection(renderSignals(vm), "report-synthesis"));
   if (vm.learningSummary.evidenceBoundary.length) {
     col.appendChild(renderDynamicEvidenceBoundary(vm));
   }
+  col.appendChild(renderCompactLearningQuiz(vm.learningSummary));
+  col.appendChild(renderEvidenceTraceDrawer(vm));
+  if (vm.disclaimer) col.appendChild(el("div", "op-note research-disclaimer", esc(vm.disclaimer)));
+  return col;
+}
+
+function compactReportNavigation(vm) {
+  const items = [
+    { id: "report-overview", label: "结论" },
+    vm.finalSummary.evidence.length ? { id: "report-key-evidence", label: "证据" } : null,
+    { id: "report-key-metrics", label: "指标" },
+    { id: "report-synthesis", label: "风险" },
+    vm.learningSummary.evidenceBoundary.length ? { id: "report-evidence-boundary", label: "边界" } : null,
+    { id: "report-learning-quiz", label: "学习检查" },
+    { id: "report-evidence-trace", label: "追溯" },
+  ].filter(Boolean);
+  const seen = new Set();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function withReportSection(node, id) {
+  node.id = id;
+  node.dataset.reportSection = id;
+  return node;
+}
+
+function renderCompactLearningQuiz(summary) {
+  const panel = researchPanel(
+    "LEARNING CHECK",
+    "做一道题，确认你真的看懂了",
+    "用本次报告里的指标和证据边界做一次快速检查。",
+    "compact-learning-check",
+  );
+  panel.id = "report-learning-quiz";
+  panel.dataset.reportSection = panel.id;
+  if (summary.quiz) panel.appendChild(renderLearningQuiz(summary.quiz));
+  return panel;
+}
+
+function renderEvidenceTraceDrawer(vm) {
+  const panel = researchPanel(
+    "TRACE",
+    "研究过程与证据追溯",
+    "默认收起。需要审计结论、复盘专家分工或查看数据覆盖时再展开。",
+    "evidence-trace-section",
+  );
+  panel.id = "report-evidence-trace";
+  panel.dataset.reportSection = panel.id;
+  const details = el("details", "research-details trace-drawer");
+  const summary = el("summary", "");
+  summary.appendChild(el("strong", "", "展开完整追溯内容"));
+  summary.appendChild(el("span", "", "专家、研究框架、证据链、工作台、数据覆盖与学习总结"));
+  details.appendChild(summary);
+  const body = el("div", "trace-drawer-body");
+  body.appendChild(renderResearchTrace(vm));
+  (vm.chapters || []).forEach((chapter) => body.appendChild(renderDynamicAgentChapter(chapter)));
+  body.appendChild(renderParticipants(vm));
+  body.appendChild(renderResearchPlan(vm.researchPlan));
+  body.appendChild(renderEvidenceChains(vm.evidenceChains));
+  body.appendChild(renderAgentWorkbenches(vm.agents));
+  body.appendChild(renderCoverage(vm.coverage));
   if (
     vm.learningSummary.framework.length
     || vm.learningSummary.terms.length
-    || vm.learningSummary.evidenceBoundary.length
     || vm.learningSummary.professionalQuestions.length
   ) {
-    col.appendChild(renderDynamicLearningSummary(vm.learningSummary));
+    body.appendChild(renderDynamicLearningSummary(vm.learningSummary, { includeQuiz: false }));
   }
-  if (vm.disclaimer) col.appendChild(el("div", "op-note research-disclaimer", esc(vm.disclaimer)));
-  return col;
+  isolateTraceDrawerSections(body);
+  details.appendChild(body);
+  panel.appendChild(details);
+  return panel;
+}
+
+function isolateTraceDrawerSections(root) {
+  root.querySelectorAll("[data-report-section]").forEach((section) => {
+    section.removeAttribute("data-report-section");
+  });
 }
 
 function renderReportNavigation(items) {
@@ -3147,7 +3220,8 @@ function renderDynamicEvidenceBoundary(vm) {
   return panel;
 }
 
-function renderDynamicLearningSummary(summary) {
+function renderDynamicLearningSummary(summary, options = {}) {
+  const includeQuiz = options.includeQuiz !== false;
   const panel = researchPanel(
     "学习总结",
     "把这次研究方法带到下一次",
@@ -3179,6 +3253,9 @@ function renderDynamicLearningSummary(summary) {
     ));
   }
   panel.appendChild(grid);
+  if (includeQuiz && summary.quiz) {
+    panel.appendChild(renderLearningQuiz(summary.quiz));
+  }
   return panel;
 }
 
