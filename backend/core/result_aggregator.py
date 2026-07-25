@@ -21,7 +21,7 @@ from backend.core.contracts import (
     ValidationStatus,
     ValidationSummary,
 )
-from backend.core.evidence_bundle import build_evidence_bundle, EvidenceBundle
+from backend.core.evidence_bundle import build_evidence_bundle
 from backend.core.evidence_validator import (
     EvidenceValidationResult,
     VALIDATION_DETAILS,
@@ -125,6 +125,7 @@ class EvidenceProfile:
     factor_shortlist: list[str] = field(default_factory=list)
     reports: list[tuple[str, str]] = field(default_factory=list)
     summaries: list[dict[str, str]] = field(default_factory=list)
+    quant_validations: list[dict[str, Any]] = field(default_factory=list)
     risks: list[dict[str, str]] = field(default_factory=list)
     actions: list[dict[str, str]] = field(default_factory=list)
     limitations: list[dict[str, str]] = field(default_factory=list)
@@ -415,6 +416,7 @@ class ResultAggregator:
         profile.metrics = _unique_dicts(profile.metrics)
         profile.factor_candidates = _unique_dicts(profile.factor_candidates)
         profile.factor_shortlist = list(dict.fromkeys(profile.factor_shortlist))
+        profile.quant_validations = _unique_dicts(profile.quant_validations)
         profile.risks = _unique_text_items(profile.risks)
         profile.actions = _unique_text_items(profile.actions)
         profile.limitations = _unique_text_items(profile.limitations)
@@ -550,6 +552,17 @@ class ResultAggregator:
                         "validation_status": status,
                         "plain_status": validation_label(status),
                     },
+                    "primary",
+                )
+            )
+        if profile.quant_validations:
+            blocks.append(
+                _block(
+                    "quant-thesis-validation",
+                    "finding_cards",
+                    "量化决策校验",
+                    _source_steps(profile.quant_validations),
+                    {"items": profile.quant_validations},
                     "primary",
                 )
             )
@@ -706,6 +719,17 @@ class ResultAggregator:
                         "plain_status": validation.label,
                     },
                     "secondary",
+                )
+            )
+        if profile.quant_validations:
+            evidence_blocks.append(
+                _block(
+                    "quant-thesis-validation",
+                    "finding_cards",
+                    "量化决策校验",
+                    _source_steps(profile.quant_validations),
+                    {"items": profile.quant_validations},
+                    "primary",
                 )
             )
         if len(profile.comparisons) > 1:
@@ -1013,6 +1037,18 @@ class ResultAggregator:
         profile: EvidenceProfile,
         metric_keys: set[tuple[str, str, str]],
     ) -> None:
+        if evidence.get("type") == "quant_thesis_validation":
+            profile.quant_validations.append(
+                {
+                    "source_step": step_id,
+                    **evidence,
+                    "text": plain_text(
+                        evidence.get("text")
+                        or evidence.get("reason")
+                        or "历史市场一致性证据不足。"
+                    ),
+                }
+            )
         data = evidence.get("data")
         containers = [evidence]
         if isinstance(data, dict):
