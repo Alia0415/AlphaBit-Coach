@@ -37,6 +37,8 @@ def test_research_run_sse_recovers_through_status_endpoint() -> None:
     assert "/events" in API
     assert "new EventSource(api.researchRunEventsUrl(runId))" in LIVE
     assert "await api.researchRunStatus(runId)" in LIVE
+    assert 'workflow_mode: queryContext.workflowMode || "dynamic"' in API
+    assert 'workflowMode: state.workflow_mode || "dynamic"' in LIVE
 
 
 def test_live_planning_no_longer_waits_for_blocking_session_response() -> None:
@@ -47,3 +49,10 @@ def test_live_planning_no_longer_waits_for_blocking_session_response() -> None:
     assert "openResearchRunStream(runId" in source
     assert "liveCreateSession" not in source
     assert '"重新尝试"' in APP
+
+
+def test_fixed_stock_planning_is_labeled_as_a_preset() -> None:
+    source = _planning_page_source()
+    assert 'state?.workflowMode === "stock_analysis"' in source
+    assert "固定 Agent 工作流 · 效率优先" in source
+    assert "固定研究编排器" in source

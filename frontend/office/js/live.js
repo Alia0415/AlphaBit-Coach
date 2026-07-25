@@ -221,6 +221,7 @@ export function mapResearchRunState(value) {
   const state = value && typeof value === "object" ? value : {};
   return {
     runId: state.run_id || "",
+    workflowMode: state.workflow_mode || "dynamic",
     status: state.status || "running",
     currentStage: state.current_stage || "received",
     progress: Number.isFinite(state.progress) ? state.progress : 0,

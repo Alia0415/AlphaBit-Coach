@@ -61,6 +61,7 @@ import {
 } from "./glossary-ui.js?v=20260726-full-page";
 import {
   buildStockResearchPrompt,
+  buildStockWorkflowContext,
   mountStockChartPage,
   mountStockLibraryPage,
 } from "../../stock-workspace.js?v=20260726-backend-search2";
@@ -161,6 +162,10 @@ let liveSession = {
   originalQuery: "",
   rewrittenQuery: "",
   finalQuery: "",
+  workflowMode: "dynamic",
+  stockSymbol: "",
+  stockName: "",
+  stockBoard: "",
 };
 let livePlanningSource = null;
 function setLiveSession(next) { liveSession = { ...liveSession, ...next }; }
@@ -181,6 +186,10 @@ function resetLiveSession() {
     originalQuery: "",
     rewrittenQuery: "",
     finalQuery: "",
+    workflowMode: "dynamic",
+    stockSymbol: "",
+    stockName: "",
+    stockBoard: "",
   };
 }
 
@@ -194,11 +203,17 @@ function beginLiveResearch(prompt, queryContext = {}) {
   if (switchedToLive) store.set({ mode: "live" });
   resetLiveSession();
   rememberCurrentReport(null);
-  const versions = buildQueryContext(
-    queryContext.originalQuery,
-    queryContext.rewrittenQuery,
-    normalizedPrompt,
-  );
+  const versions = {
+    ...buildQueryContext(
+      queryContext.originalQuery,
+      queryContext.rewrittenQuery,
+      normalizedPrompt,
+    ),
+    workflowMode: queryContext.workflowMode || "dynamic",
+    stockSymbol: queryContext.stockSymbol || "",
+    stockName: queryContext.stockName || "",
+    stockBoard: queryContext.stockBoard || "",
+  };
   setLiveSession({
     prompt: normalizedPrompt,
     phase: "planning",
@@ -925,7 +940,10 @@ function renderPage() {
           notify: toast,
           onChooseStock: () => navigate("stock-library"),
           onAnalyzeStock: (stock) =>
-            beginLiveResearch(buildStockResearchPrompt(stock)),
+            beginLiveResearch(
+              buildStockResearchPrompt(stock),
+              buildStockWorkflowContext(stock),
+            ),
         }),
       );
       break;
@@ -4535,14 +4553,15 @@ function pageClarifyLive() {
 // ---------------------------------------------------------------------------
 function pageManagerPlanningLive(session) {
   const state = session.researchState;
+  const fixedStockWorkflow = state?.workflowMode === "stock_analysis";
   const stageLabels = {
     received: "请求已接收",
-    interpreting: "正在理解用户目标",
-    interpreted: "目标解释完成",
-    selecting_agents: "正在动态选择专家",
-    agents_selected: "专家选择完成",
-    building_dag: "正在生成依赖 DAG",
-    validating_dag: "正在校验依赖 DAG",
+    interpreting: fixedStockWorkflow ? "正在校验股票信息" : "正在理解用户目标",
+    interpreted: fixedStockWorkflow ? "固定研究范围已确认" : "目标解释完成",
+    selecting_agents: fixedStockWorkflow ? "正在装配固定专家组" : "正在动态选择专家",
+    agents_selected: fixedStockWorkflow ? "固定专家组已就绪" : "专家选择完成",
+    building_dag: fixedStockWorkflow ? "正在生成固定任务图" : "正在生成依赖 DAG",
+    validating_dag: fixedStockWorkflow ? "正在校验固定任务图" : "正在校验依赖 DAG",
     plan_ready: "研究计划已就绪",
   };
   const stageOrder = [
@@ -4568,7 +4587,11 @@ function pageManagerPlanningLive(session) {
   const wrap = el("div", "war-room-page war-room-page-planning");
   const head = el("div", "war-head");
   head.appendChild(el("h1", "", "研究作战室"));
-  head.appendChild(el("span", "sub", "后端真实规划状态"));
+  head.appendChild(el(
+    "span",
+    "sub",
+    fixedStockWorkflow ? "固定 Agent 工作流 · 效率优先" : "后端真实规划状态",
+  ));
   const task = el("div", "war-task");
   task.appendChild(el("span", "wt-name", esc(session.prompt)));
   task.appendChild(el(
@@ -4597,8 +4620,8 @@ function pageManagerPlanningLive(session) {
   const flow = el("div", "manager-planning-flow");
   const manager = el("div", "manager-core is-planning");
   manager.innerHTML = `
-    <span class="manager-core-icon">🧠</span>
-    <strong>研究经理</strong>
+    <span class="manager-core-icon">${fixedStockWorkflow ? "⚡" : "🧠"}</span>
+    <strong>${fixedStockWorkflow ? "固定研究编排器" : "研究经理"}</strong>
     <small>${esc(state?.message || "等待后端开始解释研究目标")}</small>
     <span class="badge running"><span class="dot"></span>${esc(state ? stageLabels[state.currentStage] || "研究规划进行中" : "正在连接")}</span>
   `;
@@ -4609,7 +4632,13 @@ function pageManagerPlanningLive(session) {
   flow.appendChild(arrow);
 
   const pending = el("div", "manager-pending");
-  pending.appendChild(el("strong", "", selectedAgents.length ? "本次动态专家" : "动态专家池"));
+  pending.appendChild(el(
+    "strong",
+    "",
+    selectedAgents.length
+      ? fixedStockWorkflow ? "固定专家组" : "本次动态专家"
+      : fixedStockWorkflow ? "固定专家预设" : "动态专家池",
+  ));
   if (selectedAgents.length) {
     const list = el("div", "manager-selected-list");
     selectedAgents.forEach((selection) => {
@@ -4619,24 +4648,32 @@ function pageManagerPlanningLive(session) {
       const item = el("div", "manager-selected-item");
       item.innerHTML = `
         <span>${esc(info.name || selection.agent)}</span>
-        <small>${esc(selection.reason || "由研究经理按任务需要选择")}</small>
+        <small>${esc(selection.reason || (fixedStockWorkflow ? "由股票分析预设固定加入" : "由研究经理按任务需要选择"))}</small>
       `;
       list.appendChild(item);
     });
     pending.appendChild(list);
-    pending.appendChild(el("small", "", "以上结果来自研究经理的真实返回"));
+    pending.appendChild(el(
+      "small",
+      "",
+      fixedStockWorkflow ? "以上专家来自股票分析固定预设" : "以上结果来自研究经理的真实返回",
+    ));
   } else {
     pending.appendChild(el("span", "", "尚未返回选择结果"));
-    pending.appendChild(el("small", "", "研究经理完成选择前不会预设任何专家"));
+    pending.appendChild(el(
+      "small",
+      "",
+      fixedStockWorkflow ? "正在校验固定专家是否可用" : "研究经理完成选择前不会预设任何专家",
+    ));
   }
   flow.appendChild(pending);
   panel.appendChild(flow);
 
   const stages = el("div", "manager-planning-stages");
   [
-    ["01", "理解用户目标", 1, 2],
-    ["02", "选择最小充分专家集合", 3, 4],
-    ["03", "生成并验证依赖 DAG", 5, 7],
+    ["01", fixedStockWorkflow ? "校验股票与研究范围" : "理解用户目标", 1, 2],
+    ["02", fixedStockWorkflow ? "装配固定专家组" : "选择最小充分专家集合", 3, 4],
+    ["03", fixedStockWorkflow ? "生成并验证固定 DAG" : "生成并验证依赖 DAG", 5, 7],
   ].forEach(([num, label, startRank, endRank]) => {
     const visualState = stageRank >= endRank
       ? "is-done"
@@ -4668,9 +4705,15 @@ function pageWarRoomLive() {
     const wrap = el("div", "panel war-room-page");
     wrap.appendChild(el("div", "panel-title", "研究作战室"));
     const failed = session.phase === "failed";
+    const fixedWorkflow = (
+      session.researchState?.workflowMode === "stock_analysis"
+      || session.workflowMode === "stock_analysis"
+    );
     const box = stateBox(
       failed ? "error" : "empty",
-      failed ? "Manager 规划失败" : "尚无进行中的任务",
+      failed
+        ? fixedWorkflow ? "固定工作流启动失败" : "Manager 规划失败"
+        : "尚无进行中的任务",
       failed
         ? `${session.researchState?.failedStage ? `失败阶段：${session.researchState.failedStage}。` : ""}${session.error || "研究服务未能完成任务规划。"}`
         : "请先在投研大厅提交研究请求。",
@@ -4680,11 +4723,17 @@ function pageWarRoomLive() {
       retry.style.marginTop = "10px";
       retry.addEventListener("click", () => beginLiveResearch(
         session.prompt,
-        buildQueryContext(
-          session.originalQuery,
-          session.rewrittenQuery,
-          session.finalQuery || session.prompt,
-        ),
+        {
+          ...buildQueryContext(
+            session.originalQuery,
+            session.rewrittenQuery,
+            session.finalQuery || session.prompt,
+          ),
+          workflowMode: session.workflowMode || "dynamic",
+          stockSymbol: session.stockSymbol || "",
+          stockName: session.stockName || "",
+          stockBoard: session.stockBoard || "",
+        },
       ));
       box.appendChild(retry);
     }

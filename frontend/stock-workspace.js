@@ -66,6 +66,17 @@ export function buildStockResearchPrompt(stock) {
   ].join("");
 }
 
+export function buildStockWorkflowContext(stock) {
+  const normalized = normalizeSelectedStock(stock);
+  if (!normalized) return {};
+  return {
+    workflowMode: "stock_analysis",
+    stockSymbol: normalized.symbol,
+    stockName: normalized.name,
+    stockBoard: normalized.board || "",
+  };
+}
+
 function readSelectedStock() {
   try {
     return (
@@ -270,7 +281,7 @@ export function mountStockChartPage(
     element(
       "p",
       "stock-analysis-copy",
-      "进入多 Agent 作战室，综合分析走势、基本面、事件、行业与风险。",
+      "进入固定 Agent 工作流，并行分析走势、基本面、事件、行业与风险。",
     ),
   );
   coachPanel.appendChild(analysisAction);
