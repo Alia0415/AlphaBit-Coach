@@ -61,6 +61,8 @@ def test_office_versions_the_demo_data_module_import() -> None:
 
     assert response.status_code == 200
     assert 'from "./mock.js?v=' in response.text
+    assert 'from "./live.js?v=' in response.text
+    assert 'from "./api.js?v=' in client.get("/static/office/js/live.js").text
 
 
 def test_office_loads_shared_glossary_and_office_controller() -> None:
@@ -80,13 +82,20 @@ def test_office_loads_shared_glossary_and_office_controller() -> None:
 def test_office_glossary_is_functional_and_scoped_to_research_content() -> None:
     script = client.get("/static/office/js/app.js").text
     controller = client.get("/static/office/js/glossary-ui.js").text
+    api_script = client.get("/static/office/js/api.js").text
+    live_script = client.get("/static/office/js/live.js").text
 
     assert 'id = "glossaryToggle"' in script
     assert '"glossary-scope"' in script
     assert "highlightGlossaryScope" in script
+    assert "extractReportGlossary" in script
+    assert "registerGlossaryTerms" in script
     assert 'closest(".glossary-scope")' in controller
     assert "AlphaGlossary.addKnowledge" in controller
     assert "AlphaGlossary.removeKnowledge" in controller
+    assert "registerGlossaryTerms" in controller
+    assert "reportGlossary" in api_script
+    assert "extractReportGlossary" in live_script
 
 
 def test_glossary_matches_terms_inside_chinese_sentences() -> None:

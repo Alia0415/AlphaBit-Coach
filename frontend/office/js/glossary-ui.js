@@ -177,6 +177,14 @@ export function highlightGlossaryScope(root) {
   scopes.forEach((scope) => glossary.highlightInDOM(scope));
 }
 
+export function registerGlossaryTerms(items, root) {
+  const glossary = api();
+  if (!glossary) return 0;
+  const added = glossary.registerTerms(items);
+  if (added && root) highlightGlossaryScope(root);
+  return added;
+}
+
 export function openOfficeGlossary() {
   hideTooltip();
   const panel = ensureGlossaryShell();

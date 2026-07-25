@@ -60,6 +60,11 @@ from backend.services.pandadata_client import (
     PandaDataClient,
     PandaDataConfigurationError,
 )
+from backend.services.glossary_extractor import (
+    GlossaryExtractionError,
+    GlossaryExtractionResult,
+    GlossaryExtractor,
+)
 from backend.skills.skill_registry import SkillRegistry
 
 
@@ -88,6 +93,7 @@ evidence_validator = EvidenceValidator()
 result_policy_checker = ResultPolicyChecker()
 manager = ManagerAgent(registry=build_registry(store))
 workflow_executor = WorkflowExecutor(registry=build_registry(store))
+glossary_extractor = GlossaryExtractor()
 
 
 def _rebuild_experts() -> None:
@@ -312,6 +318,29 @@ async def get_report(report_id: str) -> ReportDetail:
     if report is None:
         raise HTTPException(status_code=404, detail="报告不存在")
     return ReportDetail(**report)
+
+
+@app.post(
+    "/api/reports/{report_id}/glossary",
+    response_model=GlossaryExtractionResult,
+)
+async def extract_report_glossary(report_id: str) -> GlossaryExtractionResult:
+    report = store.get_report(report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    fragments = _aggregation_fragments(report.get("aggregation"))
+    source = "\n".join(
+        fragment["text"]
+        for fragment in fragments
+        if isinstance(fragment.get("text"), str)
+    )
+    if not source:
+        return GlossaryExtractionResult(status="extracted", terms=[])
+    try:
+        terms = await run_in_threadpool(glossary_extractor.extract, source)
+    except GlossaryExtractionError:
+        return GlossaryExtractionResult(status="unavailable", terms=[])
+    return GlossaryExtractionResult(status="extracted", terms=terms)
 
 
 # -- expert enable/disable ---------------------------------------------------

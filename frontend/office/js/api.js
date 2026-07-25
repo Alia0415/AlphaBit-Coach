@@ -63,6 +63,10 @@ export const api = {
   task: (id) => getJSON(`/api/tasks/${encodeURIComponent(id)}`),
   reports: () => getJSON("/api/reports"),
   report: (id) => getJSON(`/api/reports/${encodeURIComponent(id)}`),
+  reportGlossary: (id) =>
+    postJSON(`/api/reports/${encodeURIComponent(id)}/glossary`, undefined, {
+      timeoutMs: 90000,
+    }),
 
   // task and read-only-surface actions
   plan: (prompt) =>
