@@ -655,6 +655,7 @@ async def create_session(request: SessionRequest) -> SessionResponse:
         prompt=final_query,
         status=status,
         plan=plan.model_dump(mode="json"),
+        task_spec=task_spec.model_dump(mode="json"),
         original_query=original_query,
         rewritten_query=rewritten_query,
         final_query=final_query,
@@ -707,7 +708,30 @@ async def clarify_session(task_id: str, request: ClarifyRequest) -> SessionRespo
     except ManagerAgentError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     status = "needs_clarification" if plan.needs_clarification else "planned"
-    store.update_task_plan(task_id, status=status, plan=plan.model_dump(mode="json"))
+    stored_task_spec = task.get("task_spec")
+    updated_task_spec: dict[str, Any] | None = None
+    if stored_task_spec:
+        task_spec = TaskSpec.model_validate(stored_task_spec)
+        task_spec = task_spec.model_copy(
+            update={
+                "execution_decision": (
+                    "clarify" if plan.needs_clarification else "execute_with_defaults"
+                ),
+                "missing_fields": (
+                    task_spec.missing_fields if plan.needs_clarification else []
+                ),
+                "clarification_question": (
+                    plan.clarification_question if plan.needs_clarification else None
+                ),
+            }
+        )
+        updated_task_spec = task_spec.model_dump(mode="json")
+    store.update_task_plan(
+        task_id,
+        status=status,
+        plan=plan.model_dump(mode="json"),
+        task_spec=updated_task_spec,
+    )
     store.append_event(
         task_id,
         type="plan_created",
@@ -743,6 +767,7 @@ async def stream_task(task_id: str) -> StreamingResponse:
         raise HTTPException(status_code=409, detail="任务尚未生成计划")
     plan = ExecutionPlan.model_validate(task["plan"])
     prompt = task["prompt"]
+    stored_task_spec = task.get("task_spec")
     already_executed = task["status"] not in {"planned"}
     persisted_events = task["events"]
     profile = _profile_service().get()
@@ -859,8 +884,32 @@ async def stream_task(task_id: str) -> StreamingResponse:
         _persist_event(task_id, synthesis)
         yield _sse(_event_to_dict(synthesis))
 
+        if stored_task_spec:
+            task_spec = TaskSpec.model_validate(stored_task_spec)
+            evidence_validation = await run_in_threadpool(
+                evidence_validator.validate,
+                task_spec,
+                plan,
+                results,
+            )
+            aggregation = await run_in_threadpool(
+                result_aggregator.aggregate,
+                task_spec,
+                plan,
+                evidence_validation,
+            )
+        else:
+            # Reports created before task_spec_json was introduced remain readable
+            # and executable through the compatibility aggregation contract.
+            aggregation = await run_in_threadpool(
+                result_aggregator.aggregate,
+                prompt,
+                plan,
+                results,
+            )
         aggregation = await run_in_threadpool(
-            result_aggregator.aggregate, prompt, plan, results
+            result_policy_checker.check,
+            aggregation,
         )
         completed = ExecutionEvent(
             type="task_completed",

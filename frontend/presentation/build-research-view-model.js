@@ -1140,7 +1140,7 @@
         return text;
       }
     }
-    return "当前证据不足以形成明确判断";
+    return "";
   }
 
   function expertSummaries(results) {
@@ -1221,14 +1221,22 @@
       .slice(0, 3);
   }
 
-  function buildFinalSummary(aggregation, results) {
+  function buildFinalSummary(aggregation, results, metrics) {
     const direct = object(aggregation.direct_answer);
     const findings = resultItems(aggregation, "key_findings", "judgment");
+    const evidence = finalEvidence(aggregation);
     const headline = firstValidHeadline([
       direct.headline,
       findings[0] && findings[0].text,
       ...expertSummaries(results),
-    ]);
+      oneLineConclusion(direct, metrics),
+      direct.explanation,
+      ...evidence.map((item) => item.title),
+    ]) || (
+      evidence.length || metrics.length
+        ? "本次研究已获得可核验数据，但尚未形成完整综合判断"
+        : "当前没有足以支持结论的有效证据"
+    );
     const explanation = finalText(direct.explanation);
     return {
       conclusion: {
@@ -1237,7 +1245,7 @@
         stance: STANCE[direct.stance] || "证据状态待确认",
         confidence: CONFIDENCE[direct.confidence] || "暂无法判断",
       },
-      evidence: finalEvidence(aggregation),
+      evidence,
       uncertainties: unique([
         ...resultItems(aggregation, "risks", "risk"),
         ...resultItems(aggregation, "limitations", "limitation"),
@@ -1290,7 +1298,7 @@
       terms: agent.terms.map(({ key, sourceSteps, ...metric }) => metric),
     }));
     const { rawSteps, ...publicPlan } = plan;
-    const finalSummary = buildFinalSummary(aggregation, results);
+    const finalSummary = buildFinalSummary(aggregation, results, metrics);
     const evidenceBoundary = unique([
       ...limitations.map((item) => item.text),
       ...risks.map((item) => item.text),

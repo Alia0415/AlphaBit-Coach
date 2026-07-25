@@ -1186,7 +1186,7 @@ class ResultAggregator:
             ):
                 boundary = " 这些数值说明计算已经完成，但不能据此证明方法能够稳定获利。"
             return (
-                "已完成所需的数据计算",
+                _metric_evidence_headline(profile.metrics),
                 "；".join(examples) + "。" + boundary,
             )
         if profile.summaries:
@@ -1281,6 +1281,66 @@ def _confidence(
     if statuses & {"moderate_positive_evidence"}:
         return "high"
     return "medium"
+
+
+def _metric_evidence_headline(metrics: list[dict[str, Any]]) -> str:
+    """Create a factual headline from real metric cards without inventing claims."""
+
+    if not metrics:
+        return "当前没有可用于形成结论的有效指标"
+
+    grouped: dict[str, dict[str, dict[str, Any]]] = {}
+    subject_order: list[str] = []
+    for item in metrics:
+        subject = str(item.get("subject") or "").strip()
+        metric = str(item.get("metric") or "").strip()
+        if subject not in grouped:
+            grouped[subject] = {}
+            subject_order.append(subject)
+        if metric:
+            grouped[subject][metric] = item
+
+    for subject in reversed(subject_order):
+        items = grouped[subject]
+        revenue = items.get("revenue_yoy")
+        profit = items.get("operating_profit_yoy") or items.get("net_profit_yoy")
+        if not revenue or not profit:
+            continue
+        revenue_value = revenue.get("value")
+        profit_value = profit.get("value")
+        judgment = "收入与利润变化仍需结合现金流和风险证据验证"
+        if isinstance(revenue_value, (int, float)) and isinstance(
+            profit_value, (int, float)
+        ):
+            if revenue_value < 0 and profit_value < 0:
+                judgment = "收入与利润同步承压"
+            elif revenue_value < 0 <= profit_value:
+                judgment = "收入承压但利润改善"
+            elif revenue_value >= 0 and profit_value >= 0:
+                judgment = "收入与利润同步增长"
+            else:
+                judgment = "收入增长但利润承压"
+        prefix = f"{subject}：" if subject else ""
+        return (
+            f"{prefix}{revenue['label']}为 {revenue['display_value']}，"
+            f"{profit['label']}为 {profit['display_value']}；{judgment}"
+        )
+
+    first_subject = str(metrics[0].get("subject") or "").strip()
+    examples = [
+        f"{item.get('label', '指标')} {item.get('display_value', '')}".strip()
+        for item in metrics
+        if item.get("display_value") not in (None, "")
+        and str(item.get("subject") or "").strip() == first_subject
+    ][:3]
+    if not examples:
+        examples = [
+            f"{item.get('label', '指标')} {item.get('display_value', '')}".strip()
+            for item in metrics[:3]
+            if item.get("display_value") not in (None, "")
+        ]
+    prefix = f"{first_subject}：" if first_subject else ""
+    return f"{prefix}{'，'.join(examples)}"
 
 
 def _block(
@@ -1437,7 +1497,11 @@ def _task_direct_answer(
             )
             headline = "已完成因子研究范围内的证据整理"
     elif task_spec.task_type == "company_research":
-        headline = "已完成公司事实与主要风险整理"
+        headline = (
+            _metric_evidence_headline(profile.metrics)
+            if profile.metrics
+            else "已完成公司事实与主要风险整理"
+        )
         explanation = (
             (profile.summaries[0]["text"] + " ") if profile.summaries else ""
         ) + "结论仅覆盖已声明的数据范围，不构成买卖、持有或估值交易建议。"
@@ -1461,12 +1525,20 @@ def _task_direct_answer(
             "比较结果只说明声明样本中的差异，不能直接外推为未来表现或证券推荐。"
         )
     elif task_spec.task_type == "historical_analysis":
-        headline = "已完成指定范围的历史分析"
+        headline = (
+            _metric_evidence_headline(profile.metrics)
+            if profile.metrics
+            else "已完成指定范围的历史分析"
+        )
         explanation = (
             "所展示数值是历史样本计算结果，不代表未来收益；未真实完成的回测指标不会展示。"
         )
     else:
-        headline = "已完成市场研究范围内的证据整理"
+        headline = (
+            _metric_evidence_headline(profile.metrics)
+            if profile.metrics
+            else "已完成市场研究范围内的证据整理"
+        )
         explanation = (
             (profile.summaries[0]["text"] + " ") if profile.summaries else ""
         ) + "历史事实与研究判断已区分展示，未知项保留为限制。"
