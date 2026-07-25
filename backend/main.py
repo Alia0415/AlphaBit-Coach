@@ -500,7 +500,7 @@ async def create_session(request: RouteRequest) -> SessionResponse:
     policy = policy_gate.evaluate(request.prompt)
     if not policy.allowed:
         raise HTTPException(status_code=422, detail=policy.safe_response)
-    task_spec = task_interpreter.interpret(request.prompt, policy)
+    task_spec = await run_in_threadpool(task_interpreter.interpret, request.prompt, policy)
     profile_summary: dict[str, Any] | None = None
     if task_spec.task_type == "personal_investment_decision":
         profile = _profile_service().get()
@@ -1003,7 +1003,7 @@ async def execute_task(request: RouteRequest) -> TaskExecutionResponse:
                 disclaimer=RESEARCH_DISCLAIMER,
             )
 
-        task_spec = task_interpreter.interpret(request.prompt, policy)
+        task_spec = await run_in_threadpool(task_interpreter.interpret, request.prompt, policy)
         profile: UserInvestmentProfile | None = None
         profile_summary: dict[str, Any] | None = None
         if task_spec.task_type == "personal_investment_decision":
@@ -1412,7 +1412,7 @@ async def _execute_a2a_prompt(
                 disclaimer=RESEARCH_DISCLAIMER,
             )
 
-        task_spec = task_interpreter.interpret(prompt, policy)
+        task_spec = await run_in_threadpool(task_interpreter.interpret, prompt, policy)
         profile_summary: dict[str, Any] | None = None
         if task_spec.task_type == "personal_investment_decision":
             profile = _profile_service().get()
