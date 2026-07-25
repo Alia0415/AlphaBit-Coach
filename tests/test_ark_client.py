@@ -14,13 +14,15 @@ from backend.services.ark_client import ArkClient, ArkClientError, ArkTextReques
 def test_ark_client_ignores_environment_proxy_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ARK_API_KEY", "test-key")
-    monkeypatch.setenv("ARK_MODEL", "test-model")
-    monkeypatch.delenv("ARK_TIMEOUT_SECONDS", raising=False)
-    monkeypatch.delenv("ARK_MAX_RETRIES", raising=False)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "test-model")
+    monkeypatch.delenv("DEEPSEEK_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("DEEPSEEK_MAX_RETRIES", raising=False)
     http_client = object()
     http_factory = Mock(return_value=http_client)
-    openai_client = SimpleNamespace(responses=SimpleNamespace(create=Mock()))
+    openai_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=Mock()))
+    )
     openai_factory = Mock(return_value=openai_client)
     monkeypatch.setattr(ark_client, "DefaultHttpxClient", http_factory)
     monkeypatch.setattr(ark_client, "OpenAI", openai_factory)
@@ -29,13 +31,13 @@ def test_ark_client_ignores_environment_proxy_configuration(
 
     http_factory.assert_called_once_with(
         trust_env=False,
-        timeout=ark_client.DEFAULT_ARK_TIMEOUT_SECONDS,
+        timeout=ark_client.DEFAULT_DEEPSEEK_TIMEOUT_SECONDS,
     )
     openai_factory.assert_called_once_with(
-        base_url=ark_client.ARK_BASE_URL,
+        base_url=ark_client.DEEPSEEK_BASE_URL,
         api_key="test-key",
         http_client=http_client,
-        max_retries=ark_client.DEFAULT_ARK_MAX_RETRIES,
+        max_retries=ark_client.DEFAULT_DEEPSEEK_MAX_RETRIES,
     )
     assert client._model == "test-model"
 
@@ -43,12 +45,14 @@ def test_ark_client_ignores_environment_proxy_configuration(
 def test_ark_client_accepts_only_bounded_timeout_and_retry_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ARK_API_KEY", "test-key")
-    monkeypatch.setenv("ARK_TIMEOUT_SECONDS", "45")
-    monkeypatch.setenv("ARK_MAX_RETRIES", "2")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setenv("DEEPSEEK_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("DEEPSEEK_MAX_RETRIES", "2")
     http_factory = Mock(return_value=object())
     openai_factory = Mock(
-        return_value=SimpleNamespace(responses=SimpleNamespace(create=Mock()))
+        return_value=SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=Mock()))
+        )
     )
     monkeypatch.setattr(ark_client, "DefaultHttpxClient", http_factory)
     monkeypatch.setattr(ark_client, "OpenAI", openai_factory)
@@ -58,8 +62,8 @@ def test_ark_client_accepts_only_bounded_timeout_and_retry_configuration(
     http_factory.assert_called_once_with(trust_env=False, timeout=45.0)
     assert openai_factory.call_args.kwargs["max_retries"] == 2
 
-    monkeypatch.setenv("ARK_TIMEOUT_SECONDS", "3600")
-    monkeypatch.setenv("ARK_MAX_RETRIES", "99")
+    monkeypatch.setenv("DEEPSEEK_TIMEOUT_SECONDS", "3600")
+    monkeypatch.setenv("DEEPSEEK_MAX_RETRIES", "99")
     http_factory.reset_mock()
     openai_factory.reset_mock()
 
@@ -67,22 +71,22 @@ def test_ark_client_accepts_only_bounded_timeout_and_retry_configuration(
 
     http_factory.assert_called_once_with(
         trust_env=False,
-        timeout=ark_client.DEFAULT_ARK_TIMEOUT_SECONDS,
+        timeout=ark_client.DEFAULT_DEEPSEEK_TIMEOUT_SECONDS,
     )
     assert (
         openai_factory.call_args.kwargs["max_retries"]
-        == ark_client.DEFAULT_ARK_MAX_RETRIES
+        == ark_client.DEFAULT_DEEPSEEK_MAX_RETRIES
     )
 
 
 def test_chat_reports_connection_error_type_without_sensitive_details(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ARK_API_KEY", "test-key")
-    request = httpx.Request("POST", ark_client.ARK_BASE_URL)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    request = httpx.Request("POST", ark_client.DEEPSEEK_BASE_URL)
     connection_error = APIConnectionError(request=request)
     connection_error.__cause__ = OSError("secret transport detail")
-    responses = SimpleNamespace(create=Mock(side_effect=connection_error))
+    completions = SimpleNamespace(create=Mock(side_effect=connection_error))
     monkeypatch.setattr(
         ark_client,
         "DefaultHttpxClient",
@@ -91,7 +95,7 @@ def test_chat_reports_connection_error_type_without_sensitive_details(
     monkeypatch.setattr(
         ark_client,
         "OpenAI",
-        Mock(return_value=SimpleNamespace(responses=responses)),
+        Mock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=completions))),
     )
 
     with pytest.raises(ArkClientError, match=r"连接失败（OSError）") as exc_info:
@@ -103,8 +107,8 @@ def test_chat_reports_connection_error_type_without_sensitive_details(
 def test_chat_reports_http_status_without_response_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ARK_API_KEY", "test-key")
-    request = httpx.Request("POST", ark_client.ARK_BASE_URL)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    request = httpx.Request("POST", ark_client.DEEPSEEK_BASE_URL)
     response = httpx.Response(
         429,
         request=request,
@@ -115,7 +119,7 @@ def test_chat_reports_http_status_without_response_body(
         response=response,
         body=response.json(),
     )
-    responses = SimpleNamespace(create=Mock(side_effect=status_error))
+    completions = SimpleNamespace(create=Mock(side_effect=status_error))
     monkeypatch.setattr(
         ark_client,
         "DefaultHttpxClient",
@@ -124,7 +128,7 @@ def test_chat_reports_http_status_without_response_body(
     monkeypatch.setattr(
         ark_client,
         "OpenAI",
-        Mock(return_value=SimpleNamespace(responses=responses)),
+        Mock(return_value=SimpleNamespace(chat=SimpleNamespace(completions=completions))),
     )
 
     with pytest.raises(ArkClientError, match=r"HTTP 429") as exc_info:
@@ -136,8 +140,12 @@ def test_chat_reports_http_status_without_response_body(
 def test_chat_text_applies_request_timeout_and_output_token_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ARK_API_KEY", "test-key")
-    create = Mock(return_value=SimpleNamespace(output_text="ok"))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    create = Mock(
+        return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]
+        )
+    )
     monkeypatch.setattr(
         ark_client,
         "DefaultHttpxClient",
@@ -148,7 +156,7 @@ def test_chat_text_applies_request_timeout_and_output_token_limit(
         "OpenAI",
         Mock(
             return_value=SimpleNamespace(
-                responses=SimpleNamespace(create=create)
+                chat=SimpleNamespace(completions=SimpleNamespace(create=create))
             )
         ),
     )
@@ -163,9 +171,9 @@ def test_chat_text_applies_request_timeout_and_output_token_limit(
 
     assert response.text == "ok"
     create.assert_called_once_with(
-        model=ark_client.DEFAULT_ARK_MODEL,
-        input="bounded request",
+        model=ark_client.DEFAULT_DEEPSEEK_MODEL,
+        messages=[{"role": "user", "content": "bounded request"}],
         temperature=0.0,
         timeout=37.0,
-        max_output_tokens=1234,
+        max_tokens=1234,
     )

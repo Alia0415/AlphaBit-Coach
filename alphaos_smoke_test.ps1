@@ -366,7 +366,7 @@ try {
 
     $script:CurrentStage = "validate real credential configuration"
     $credentialNames = @(
-        "ARK_API_KEY",
+        "DEEPSEEK_API_KEY",
         "PANDADATA_USERNAME",
         "PANDADATA_PASSWORD"
     )

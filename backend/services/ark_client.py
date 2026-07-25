@@ -1,4 +1,7 @@
-"""Reusable Volcano Ark model client with structured requests and retry."""
+"""Reusable DeepSeek model client with structured requests and retry.
+
+The public ``ArkClient`` name is retained to avoid a broad internal migration.
+"""
 
 from __future__ import annotations
 
@@ -15,10 +18,10 @@ from dotenv import load_dotenv
 from openai import APIConnectionError, APIStatusError, DefaultHttpxClient, OpenAI
 from pydantic import BaseModel, Field, ValidationError
 
-ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
-DEFAULT_ARK_MODEL = "ep-20260708162855-pcf9x"
-DEFAULT_ARK_TIMEOUT_SECONDS = 90.0
-DEFAULT_ARK_MAX_RETRIES = 0
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
+DEFAULT_DEEPSEEK_TIMEOUT_SECONDS = 90.0
+DEFAULT_DEEPSEEK_MAX_RETRIES = 0
 ALPHAOS_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 logger = logging.getLogger(__name__)
@@ -45,7 +48,7 @@ class ArkErrorKind(str, Enum):
 
 
 class ArkClientError(RuntimeError):
-    """Raised when an Ark model request cannot be completed."""
+    """Raised when a DeepSeek model request cannot be completed."""
 
     def __init__(self, message: str, kind: ArkErrorKind | None = None) -> None:
         super().__init__(message)
@@ -87,7 +90,7 @@ class ArkJsonRequest(BaseModel, Generic[T]):
     execution_id: str | None = None
     step_id: str | None = None
     attempt: int = 1
-    allow_repair: bool = False
+    allow_repair: bool = True
 
     class Config:
         arbitrary_types_allowed = True
@@ -133,32 +136,37 @@ def _backoff_seconds(attempt: int) -> float:
 
 
 class ArkClient:
-    """Volcano Ark adapter with structured requests, error taxonomy, and retry."""
+    """DeepSeek adapter with structured requests, error taxonomy, and retry."""
 
     def __init__(self) -> None:
         load_dotenv(dotenv_path=ALPHAOS_ENV_FILE)
-        api_key = os.getenv("ARK_API_KEY", "").strip()
+        api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
         if not api_key:
             raise ArkClientError(
-                "未找到 ARK_API_KEY，请先配置环境变量或本地 .env 文件。",
+                "未找到 DEEPSEEK_API_KEY，请先配置环境变量或本地 .env 文件。",
                 kind=ArkErrorKind.CONFIGURATION,
             )
 
-        self._model = os.getenv("ARK_MODEL", "").strip() or DEFAULT_ARK_MODEL
+        self._model = (
+            os.getenv("DEEPSEEK_MODEL", "").strip() or DEFAULT_DEEPSEEK_MODEL
+        )
+        base_url = (
+            os.getenv("DEEPSEEK_BASE_URL", "").strip() or DEEPSEEK_BASE_URL
+        )
         timeout = _bounded_float_env(
-            "ARK_TIMEOUT_SECONDS",
-            DEFAULT_ARK_TIMEOUT_SECONDS,
+            "DEEPSEEK_TIMEOUT_SECONDS",
+            DEFAULT_DEEPSEEK_TIMEOUT_SECONDS,
             minimum=5.0,
             maximum=180.0,
         )
         max_retries = _bounded_int_env(
-            "ARK_MAX_RETRIES",
-            DEFAULT_ARK_MAX_RETRIES,
+            "DEEPSEEK_MAX_RETRIES",
+            DEFAULT_DEEPSEEK_MAX_RETRIES,
             minimum=0,
             maximum=2,
         )
         self._client = OpenAI(
-            base_url=ARK_BASE_URL,
+            base_url=base_url,
             api_key=api_key,
             http_client=DefaultHttpxClient(
                 trust_env=False,
@@ -209,10 +217,12 @@ class ArkClient:
                     **request_options,
                 )
                 duration_ms = int((time.monotonic() - start_time) * 1000)
-                output_text = response.choices[0].message.content or ""
+                output_text = (
+                    response.choices[0].message.content if response.choices else None
+                )
                 if not output_text or not output_text.strip():
                     raise ArkClientError(
-                        "Volcano Ark API 返回了空响应。",
+                        "DeepSeek API 返回了空响应。",
                         kind=ArkErrorKind.CONTENT_EMPTY,
                     )
                 return ArkResponse(
@@ -228,7 +238,7 @@ class ArkClient:
                 if attempt > _MAX_TRANSPORT_RETRIES:
                     raise
                 logger.warning(
-                    "Ark transport retry %d/%d: %s",
+                    "DeepSeek transport retry %d/%d: %s",
                     attempt,
                     _MAX_TRANSPORT_RETRIES,
                     exc.kind.value,
@@ -241,20 +251,22 @@ class ArkClient:
                     type(cause).__name__ if cause is not None else type(exc).__name__
                 )
                 last_error = ArkClientError(
-                    f"Volcano Ark API 连接失败（{cause_name}）。",
+                    f"DeepSeek API 连接失败（{cause_name}）。",
                     kind=ArkErrorKind.CONNECTION,
                 )
                 if attempt > _MAX_TRANSPORT_RETRIES:
                     raise last_error from None
                 logger.warning(
-                    "Ark connection retry %d/%d", attempt, _MAX_TRANSPORT_RETRIES
+                    "DeepSeek connection retry %d/%d",
+                    attempt,
+                    _MAX_TRANSPORT_RETRIES,
                 )
                 time.sleep(_backoff_seconds(attempt))
             except APIStatusError as exc:
                 duration_ms = int((time.monotonic() - start_time) * 1000)
                 kind = _classify_status_error(exc.status_code)
                 last_error = ArkClientError(
-                    f"Volcano Ark API 返回 HTTP {exc.status_code}。",
+                    f"DeepSeek API 返回 HTTP {exc.status_code}。",
                     kind=kind,
                 )
                 if not _should_transport_retry(kind):
@@ -262,7 +274,7 @@ class ArkClient:
                 if attempt > _MAX_TRANSPORT_RETRIES:
                     raise last_error from None
                 logger.warning(
-                    "Ark status retry %d/%d: HTTP %d",
+                    "DeepSeek status retry %d/%d: HTTP %d",
                     attempt,
                     _MAX_TRANSPORT_RETRIES,
                     exc.status_code,
@@ -270,13 +282,13 @@ class ArkClient:
                 time.sleep(_backoff_seconds(attempt))
             except Exception:
                 raise ArkClientError(
-                    "Volcano Ark API 请求失败。",
+                    "DeepSeek API 请求失败。",
                     kind=ArkErrorKind.INVALID_RESPONSE,
                 ) from None
 
         # Should not reach here, but satisfy type checker
         raise last_error or ArkClientError(
-            "Ark 请求失败。", kind=ArkErrorKind.INVALID_RESPONSE
+            "DeepSeek 请求失败。", kind=ArkErrorKind.INVALID_RESPONSE
         )
 
     def chat_json(
@@ -322,7 +334,9 @@ class ArkClient:
                     kind=ArkErrorKind.SCHEMA_VALIDATION,
                 ) from None
             # One repair attempt allowed (spec §11)
-            logger.warning("Ark JSON first parse failed: %s", str(first_error)[:200])
+            logger.warning(
+                "DeepSeek JSON first parse failed: %s", str(first_error)[:200]
+            )
             repair_prompt = (
                 f"{request.prompt}\n\n"
                 f"你上次的 JSON 输出有错误:\n{str(first_error)[:500]}\n\n"

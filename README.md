@@ -167,8 +167,9 @@ pip install -r requirements.txt
 # Optional setup/refresh path for all six fixed, pinned repositories.
 python scripts\install_selected_skills.py
 
-$env:ARK_API_KEY = "your-volcano-ark-key"
-$env:ARK_MODEL = "your-endpoint-id" # optional
+$env:DEEPSEEK_API_KEY = "your-deepseek-key"
+$env:DEEPSEEK_BASE_URL = "https://api.deepseek.com" # optional
+$env:DEEPSEEK_MODEL = "deepseek-v4-flash" # optional
 $env:PANDADATA_USERNAME = "8617777777777"
 $env:PANDADATA_PASSWORD = "your-pandaai-password"
 
@@ -184,7 +185,7 @@ http://127.0.0.1:8000/
 The frontend has no Node.js build step. Its default **Demo mode** uses clearly
 labelled local example responses so the orchestration UI can be presented
 without external credentials. **Live API mode** calls the existing
-`POST /api/tasks` endpoint and therefore requires Ark configuration; tasks
+`POST /api/tasks` endpoint and therefore requires DeepSeek configuration; tasks
 that fetch market data also require PandaData credentials. The interactive API
 documentation remains available at `http://127.0.0.1:8000/docs`.
 

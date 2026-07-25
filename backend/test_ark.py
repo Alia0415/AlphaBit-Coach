@@ -1,4 +1,4 @@
-"""Manual connectivity test for the Volcano Ark model service."""
+"""Manual connectivity test for the DeepSeek model service."""
 
 import sys
 

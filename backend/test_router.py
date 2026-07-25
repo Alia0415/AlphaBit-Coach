@@ -1,4 +1,4 @@
-"""Manual Router Agent test using the configured Volcano Ark model."""
+"""Manual Router Agent test using the configured DeepSeek model."""
 
 from backend.agents.router_agent import RouterAgent
 

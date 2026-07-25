@@ -934,7 +934,7 @@ function renderTechnicalSummary(response, plainResult) {
 
 function renderError(message) {
   const modelUnavailable =
-    /ARK_API_KEY|Volcano Ark|模型服务|研究分析服务/i.test(String(message));
+    /DEEPSEEK_API_KEY|DeepSeek|模型服务|研究分析服务/i.test(String(message));
   const userMessage = modelUnavailable
     ? "行情数据源已连接，但研究分析服务尚未配置。"
     : "本次真实研究未能完成，因此暂时无法形成结论。";

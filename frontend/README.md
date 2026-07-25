@@ -14,7 +14,7 @@ The console intentionally separates two execution paths:
 - **Demo mode** uses clearly labelled local example responses. It is suitable
   for a reliable product walkthrough and does not call Ark or PandaData.
 - **Live API mode** posts the current prompt to `/api/tasks`. It requires
-  `ARK_API_KEY`; market-data tasks also require PandaData credentials.
+  `DEEPSEEK_API_KEY`; market-data tasks also require PandaData credentials.
 
 Both modes pass the same `TaskExecutionResponse` through the presentation
 adapter in `frontend/presentation/`. The default **看得懂版** reads
