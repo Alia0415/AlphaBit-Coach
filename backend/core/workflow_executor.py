@@ -65,13 +65,14 @@ class WorkflowExecutor:
                 event_sink(event)
 
         while pending:
+            # Phase A: Block steps whose REQUIRED dependencies failed/blocked.
             blocked = [
                 step_by_id[step_id]
                 for step_id in pending
                 if any(
                     dependency in results
                     and results[dependency].status != "completed"
-                    for dependency in step_by_id[step_id].depends_on
+                    for dependency in step_by_id[step_id].required_dependency_ids()
                 )
             ]
             if blocked:
@@ -97,12 +98,14 @@ class WorkflowExecutor:
                 # Re-evaluate descendants so a newly blocked result cannot run.
                 continue
 
+            # Phase B: A step is ready when ALL its dependencies (required +
+            # optional) have reached a terminal state (present in results).
             ready = [
                 step_by_id[step_id]
                 for step_id in pending
                 if all(
                     dependency in results
-                    for dependency in step_by_id[step_id].depends_on
+                    for dependency in step_by_id[step_id].all_dependency_step_ids()
                 )
             ]
             if not ready:
@@ -113,6 +116,9 @@ class WorkflowExecutor:
             ready.sort(key=lambda item: item.id)
             tasks: list[ExpertTask] = []
             for step in ready:
+                # Pass ALL dependency results (required + optional, including
+                # failed optionals) so the expert can note missing evidence.
+                all_dep_ids = step.all_dependency_step_ids()
                 task = ExpertTask(
                     task_id=step.id,
                     agent=step.agent,
@@ -120,8 +126,9 @@ class WorkflowExecutor:
                     original_user_request=user_request,
                     inputs=step.inputs,
                     dependency_results={
-                        dependency: results[dependency]
-                        for dependency in step.depends_on
+                        dep_id: results[dep_id]
+                        for dep_id in all_dep_ids
+                        if dep_id in results
                     },
                 )
                 tasks.append(task)

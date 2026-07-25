@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from backend.core.task_spec import ResearchDimension
+
 
 RESEARCH_DISCLAIMER = (
     "本结果仅用于量化投资研究与技术演示，基于指定数据范围、方法和假设生成。"
@@ -47,6 +49,13 @@ class AgentSelection(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class DependencyRef(BaseModel):
+    """A typed dependency edge in the Manager DAG."""
+
+    step_id: str = Field(min_length=1)
+    requirement: Literal["required", "optional"] = "required"
+
+
 class PlanStep(BaseModel):
     """One node in a dependency-aware execution plan."""
 
@@ -55,6 +64,8 @@ class PlanStep(BaseModel):
     objective: str = Field(min_length=1)
     inputs: dict[str, Any] = Field(default_factory=dict)
     depends_on: list[str] = Field(default_factory=list, max_length=8)
+    dependencies: list[DependencyRef] = Field(default_factory=list, max_length=8)
+    covers_dimensions: list[ResearchDimension] = Field(default_factory=list)
     expected_output: str = Field(min_length=1)
 
     @field_validator("depends_on")
@@ -62,6 +73,16 @@ class PlanStep(BaseModel):
     def dependencies_must_be_unique(cls, values: list[str]) -> list[str]:
         if len(values) != len(set(values)):
             raise ValueError("depends_on cannot contain duplicate step IDs")
+        return values
+
+    @field_validator("dependencies")
+    @classmethod
+    def typed_dependencies_must_be_unique(
+        cls, values: list[DependencyRef]
+    ) -> list[DependencyRef]:
+        ids = [dep.step_id for dep in values]
+        if len(ids) != len(set(ids)):
+            raise ValueError("dependencies cannot contain duplicate step IDs")
         return values
 
     @field_validator("inputs")
@@ -84,6 +105,41 @@ class PlanStep(BaseModel):
         if contains_forbidden(values):
             raise ValueError("Manager plan inputs cannot select internal Skills")
         return values
+
+    def all_dependency_step_ids(self) -> list[str]:
+        """Return merged list of step IDs from both legacy and typed deps."""
+        typed_ids = [dep.step_id for dep in self.dependencies]
+        # Merge legacy depends_on with typed dependencies
+        all_ids = list(dict.fromkeys(self.depends_on + typed_ids))
+        return all_ids
+
+    def required_dependency_ids(self) -> list[str]:
+        """Step IDs of required dependencies (legacy depends_on = required)."""
+        required = set(self.depends_on)
+        for dep in self.dependencies:
+            if dep.requirement == "required":
+                required.add(dep.step_id)
+            elif dep.step_id in required:
+                # typed dep overrides legacy to optional
+                pass
+        # Actually: typed deps are authoritative when present
+        if self.dependencies:
+            return [
+                dep.step_id
+                for dep in self.dependencies
+                if dep.requirement == "required"
+            ]
+        return list(self.depends_on)
+
+    def optional_dependency_ids(self) -> list[str]:
+        """Step IDs of optional dependencies."""
+        if self.dependencies:
+            return [
+                dep.step_id
+                for dep in self.dependencies
+                if dep.requirement == "optional"
+            ]
+        return []
 
 
 class ClarificationGroup(BaseModel):
@@ -487,3 +543,96 @@ class ReportDetail(BaseModel):
     completeness: CompletenessMetric | None = None
     aggregation: AggregationResult | None = None
     followups: list[FollowupAnswer] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Multidimensional evidence contracts (spec §9)
+# ---------------------------------------------------------------------------
+
+EvidenceStatus = Literal[
+    "sufficient",
+    "partial",
+    "insufficient",
+    "unavailable",
+]
+
+
+class DataProvenance(BaseModel):
+    """Traceable origin of a single piece of financial evidence."""
+
+    endpoint: str
+    symbol: str | None = None
+    industry: str | None = None
+    window_start: str | None = None
+    window_end: str | None = None
+    fields: list[str] = Field(default_factory=list)
+    observation_count: int | None = None
+    method: str | None = None
+
+
+class EvidenceRecord(BaseModel):
+    """A single traceable evidence item produced by an expert (spec §9.2)."""
+
+    evidence_id: str = Field(min_length=1)
+    dimension: ResearchDimension
+    kind: Literal["fact", "metric", "comparison", "judgment", "risk", "limitation"]
+    statement: str = Field(min_length=1)
+    value: Any | None = None
+    unit: str | None = None
+    as_of: str | None = None
+    source: DataProvenance
+    method: str | None = None
+    validation_status: ValidationStatus = ValidationStatus.RESEARCH_DRAFT
+
+
+class EvidenceCoverage(BaseModel):
+    """Coverage summary for one research dimension (spec §9.1)."""
+
+    dimension: ResearchDimension
+    status: EvidenceStatus
+    expected_items: int = Field(ge=0)
+    available_items: int = Field(ge=0)
+    missing_items: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Structured synthesis contracts (spec §13)
+# ---------------------------------------------------------------------------
+
+
+class SynthesisClaim(BaseModel):
+    """One claim in the aggregated synthesis referencing evidence IDs."""
+
+    text: str = Field(min_length=1)
+    evidence_ids: list[str] = Field(default_factory=list)
+    claim_type: Literal["finding", "risk", "limitation", "uncertainty"]
+
+
+class DimensionSynthesis(BaseModel):
+    """Synthesis for one research dimension."""
+
+    dimension: ResearchDimension
+    conclusion: str = Field(min_length=1)
+    evidence_status: EvidenceStatus
+    claims: list[SynthesisClaim] = Field(default_factory=list)
+
+
+class SynthesisDraft(BaseModel):
+    """Structured model output for evidence-based aggregation (spec §13.2)."""
+
+    headline: str = Field(min_length=1)
+    overall_stance: Literal[
+        "positive",
+        "cautiously_positive",
+        "neutral",
+        "mixed",
+        "cautiously_negative",
+        "negative",
+        "insufficient_evidence",
+    ]
+    confidence: Literal["high", "medium", "low"]
+    thesis: str = Field(min_length=1)
+    dimensions: list[DimensionSynthesis] = Field(default_factory=list)
+    conflicts: list[SynthesisClaim] = Field(default_factory=list)
+    uncertainties: list[SynthesisClaim] = Field(default_factory=list)
+    next_research_steps: list[str] = Field(default_factory=list)

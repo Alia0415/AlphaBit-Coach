@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from backend.core.contracts import AgentId
+from backend.core.task_spec import ResearchDimension
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +20,7 @@ class AgentDefinition:
     tools: tuple[str, ...]
     accepted_inputs: tuple[str, ...]
     capabilities: tuple[str, ...]
+    covers_dimensions: tuple[ResearchDimension, ...] = ()
 
     def to_prompt_dict(self) -> dict[str, object]:
         return {
@@ -29,6 +31,7 @@ class AgentDefinition:
             "tools": list(self.tools),
             "accepted_inputs": list(self.accepted_inputs),
             "capabilities": list(self.capabilities),
+            "covers_dimensions": list(self.covers_dimensions),
         }
 
 
@@ -65,11 +68,12 @@ DEFAULT_EXPERTS = (
             "a_share_due_diligence",
             "financial_risk_screening",
         ),
+        covers_dimensions=("company_fundamentals", "industry_competition"),
     ),
     AgentDefinition(
         id=AgentId.QUANT,
         name="Quant Agent",
-        description="负责因子假设生成、因子计算和量化验证准备",
+        description="负责因子假设生成、因子计算、量化验证准备和量化交叉验证",
         enabled=True,
         tools=(
             "factor_idea_generation",
@@ -89,7 +93,9 @@ DEFAULT_EXPERTS = (
             "factor_ideation",
             "factor_computation",
             "quantitative_research",
+            "quantitative_cross_check",
         ),
+        covers_dimensions=("quantitative_cross_check",),
     ),
     AgentDefinition(
         id=AgentId.RISK,
@@ -113,6 +119,7 @@ DEFAULT_EXPERTS = (
             "event_risk_monitoring",
             "watchlist_risk_screening",
         ),
+        covers_dimensions=("risk_assessment",),
     ),
     AgentDefinition(
         id=AgentId.PORTFOLIO,
@@ -134,6 +141,7 @@ DEFAULT_EXPERTS = (
             "rebalancing",
             "liquidity_stress_testing",
         ),
+        covers_dimensions=(),
     ),
     AgentDefinition(
         id=AgentId.MACRO,
@@ -149,6 +157,7 @@ DEFAULT_EXPERTS = (
             "end_date",
         ),
         capabilities=("macro_analysis", "policy_analysis", "cycle_analysis"),
+        covers_dimensions=("macro_environment",),
     ),
     AgentDefinition(
         id=AgentId.REPORT,
@@ -158,6 +167,7 @@ DEFAULT_EXPERTS = (
         tools=(),
         accepted_inputs=("format", "audience"),
         capabilities=("report_writing", "evidence_synthesis", "result_presentation"),
+        covers_dimensions=("formal_report",),
     ),
 )
 
@@ -205,3 +215,18 @@ class AgentRegistry:
                 key=lambda item: item.value,
             )
         ]
+
+    def dimensions_for(self, agent_id: AgentId) -> tuple[ResearchDimension, ...]:
+        """Return the research dimensions an agent is authorized to cover."""
+        return self.get(agent_id).covers_dimensions
+
+    def agents_covering(
+        self, dimension: ResearchDimension, *, enabled_only: bool = True
+    ) -> frozenset[AgentId]:
+        """Return all agents capable of covering a given dimension."""
+        return frozenset(
+            agent_id
+            for agent_id, defn in self._agents.items()
+            if dimension in defn.covers_dimensions
+            and (defn.enabled or not enabled_only)
+        )

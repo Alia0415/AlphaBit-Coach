@@ -21,6 +21,7 @@ from backend.core.contracts import (
     ValidationStatus,
     ValidationSummary,
 )
+from backend.core.evidence_bundle import build_evidence_bundle, EvidenceBundle
 from backend.core.evidence_validator import (
     EvidenceValidationResult,
     VALIDATION_DETAILS,
@@ -289,6 +290,33 @@ class ResultAggregator:
             warnings=evidence.warnings,
             source_results=dict(results),
         )
+
+        # --- EvidenceBundle integration (spec §13.1) ---
+        metadata: dict[str, Any] = {"policy_rewrite": False}
+        if task_spec.required_dimensions:
+            bundle = build_evidence_bundle(task_spec, plan, dict(results))
+            coverage_list = bundle.coverage_list()
+            metadata["evidence_bundle"] = {
+                "completed_steps": bundle.completed_steps,
+                "failed_steps": bundle.failed_steps,
+                "blocked_steps": bundle.blocked_steps,
+                "missing_dimensions": bundle.missing_dimensions,
+                "dimension_coverage": [c.model_dump() for c in coverage_list],
+                "evidence_id_count": len(bundle.all_evidence_ids),
+            }
+            # Add missing dimensions to limitations
+            for dim in bundle.missing_dimensions:
+                dim_label = dim.replace("_", " ")
+                msg = f"研究维度 {dim_label} 的证据不可用"
+                if not any(msg in li.text for li in limitations):
+                    limitations.append(
+                        ResultItem(
+                            text=msg,
+                            source_steps=[],
+                            evidence_type="limitation",
+                        )
+                    )
+
         return AggregationResult(
             user_goal=task_spec.research_goal,
             completion_status=completion_status,
@@ -307,7 +335,7 @@ class ResultAggregator:
             content_blocks=blocks,
             execution_summary=self.build_execution_summary(plan, results),
             technical_evidence=technical,
-            metadata={"policy_rewrite": False},
+            metadata=metadata,
             disclaimer=RESEARCH_DISCLAIMER,
         )
 

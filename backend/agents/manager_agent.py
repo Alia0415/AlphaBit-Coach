@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from backend.core.agent_registry import AgentRegistry
 from backend.core.contracts import ExecutionPlan
-from backend.core.plan_validator import PlanValidationError, validate_execution_plan
+from backend.core.plan_validator import PlanValidationError, validate_execution_plan, validate_plan_dimensions
 from backend.core.policy_contracts import PolicyDecision
 from backend.core.task_interpreter import TaskInterpreter
 from backend.core.task_spec import TaskSpec
@@ -117,7 +117,11 @@ class ManagerAgent:
                 "task_summary": task_spec.research_goal,
             }
         )
-        return validate_execution_plan(plan, self.registry)
+        plan = validate_execution_plan(plan, self.registry)
+        # Dimension coverage validation (spec §6.3) — only when dimensions are specified
+        if task_spec.required_dimensions:
+            plan = validate_plan_dimensions(plan, task_spec, self.registry)
+        return plan
 
     def _planning_prompt(
         self,
@@ -162,6 +166,15 @@ TaskSpec 是经过前置边界检查与需求解释的唯一任务目标来源�
 复杂目标应按实际需要构建依赖图。depends_on 为空表示可立即并行执行。
 最多生成 8 个步骤。selected_agents 必须与 steps 中实际使用的专家完全一致。
 如果关键信息不足，将 needs_clarification 设为 true，并提供 clarification_question。
+
+维度覆盖要求（当 TaskSpec 包含 required_dimensions 时强制执行）：
+- 每个步骤必须在 covers_dimensions 中声明它覆盖的研究维度。
+- 声明的维度必须属于该专家在 Registry 中的 covers_dimensions 授权。
+- TaskSpec.required_dimensions 中的所有维度必须被至少一个步骤覆盖。
+- focused 请求不得添加与 required_dimensions 或 optional_dimensions 无关的维度步骤。
+- formal_report 不在 TaskSpec.required_dimensions 时，不得选择 Report。
+- 使用 dependencies 声明带 required/optional 的类型化依赖替代 depends_on。
+  例如：Risk 对上游 Research/Macro 通常声明 optional 依赖。
 当 needs_clarification 为 true 时，除自然语言 clarification_question 外，还应在
 clarification_options 中给出结构化选项组，便于用户快速选择：每组包含 key（英文短标识）、
 title（问题）、可选 hint、multi（是否可多选）、items（候选项文本列表）与可选 default。
