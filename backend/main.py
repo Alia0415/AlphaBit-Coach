@@ -990,13 +990,17 @@ def _profile_action_task_response(
     started_at: float,
 ) -> JSONResponse:
     onboarding = action == "profile_onboarding_required"
+    missing_labels = [
+        "投资知识水平" if field == "investment_experience" else field
+        for field in missing_fields
+    ]
     explanation = (
         "这是个人投资决策。请先进入“用户画像”完成一次建档；"
-        "建档会确认投资期限、应急资金、收入支出和最大亏损边界。"
+        "建档唯一必答项是投资知识水平，其余画像问题可以一次性跳过并保持为空。"
         "画像完成前不会创建专家任务图，也不会给出买卖或具体仓位建议。"
         if onboarding
         else "当前个人投资任务仍缺少必要画像字段："
-        + "、".join(missing_fields)
+        + "、".join(missing_labels)
         + "。请在“用户画像”页面补充这些字段，不会重新启动整套问卷。"
     )
     clarification = task_spec.model_copy(
@@ -1067,7 +1071,7 @@ def _create_profile_action_session(
     missing_fields: list[str],
 ) -> SessionResponse:
     message = (
-        "请先完成首次用户画像建档。"
+        "请先完成首次用户画像建档；唯一必答项为投资知识水平，其余问题可跳过。"
         if action == "profile_onboarding_required"
         else "请在用户画像页面补充当前任务所需字段。"
     )

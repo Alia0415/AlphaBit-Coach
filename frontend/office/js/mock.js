@@ -284,7 +284,7 @@ export const WAR_SCRIPT = [
   { t: 10, type: "dag", agent: "quant", status: "working" },
   { t: 11, type: "say", agent: "quant", text: "构建 DDM 估值模型与因子暴露…", dur: 4 },
   { t: 12, type: "skill", name: "财务分析", n: 5 },
-  { t: 12, type: "log", agent: "Research", text: "调用 Skill「财务分析」解析三表", color: "#34d399" },
+  { t: 12, type: "log", agent: "Research", text: "使用「财务分析」方法解析三表", color: "#34d399" },
   { t: 15, type: "visit", from: "quant", to: "macro", lines: [
     { agent: "quant", text: "需要美债利率与 PMI 的最新读数。" },
     { agent: "macro", text: "已发你，注意 6 月数据有下修。" },

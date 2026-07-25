@@ -122,7 +122,11 @@ export async function fetchReports() {
 }
 
 export async function fetchReport(id) {
-  return api.report(id);
+  const report = await api.report(id);
+  const task = report && report.task_id
+    ? await api.task(report.task_id)
+    : null;
+  return { ...report, task };
 }
 
 export async function extractReportGlossary(id) {

@@ -45,6 +45,88 @@ import {
   registerGlossaryTerms,
 } from "./glossary-ui.js?v=20260725-p12";
 
+const researchPresentation = globalThis.AlphaResearchPresentation;
+
+const PUBLIC_RESEARCH_METHODS = Object.freeze({
+  factor_idea_generation: {
+    name: "因子研究假设",
+    description: "把市场现象转化为可以检验的量化假设，并明确后续验证边界。",
+  },
+  r020_volume_expansion: {
+    name: "成交量扩张分析",
+    description: "观察成交活跃度变化，并结合收益、波动和样本范围判断其研究意义。",
+  },
+  a_share_stock_dossier: {
+    name: "A 股公司基本面尽调",
+    description: "综合已披露财务信息、审计意见和业绩线索，形成公司基本面证据档案。",
+  },
+  macro_monitor: {
+    name: "宏观环境监测",
+    description: "跟踪经济、利率、流动性与政策环境，解释它们向行业和公司的传导路径。",
+  },
+  event_risk_alert: {
+    name: "公司事件风险核查",
+    description: "核查可能影响研究结论的公司事件，并区分已发生风险与待验证信号。",
+  },
+  portfolio_liquidity_stress: {
+    name: "组合流动性压力测试",
+    description: "评估持仓集中度、变现能力和压力情景下的风险承受范围。",
+  },
+});
+
+const PUBLIC_AGENT_CAPABILITIES = Object.freeze({
+  research: ["财务报表阅读", "基本面分析", "盈利质量验证", "多期趋势比较"],
+  quant: ["量化研究假设", "样本与因子分析", "收益风险评估", "过拟合与成本检查"],
+  macro: ["经济周期判断", "利率与流动性分析", "政策传导研究", "行业景气观察"],
+  risk: ["反对证据核查", "缺失证据识别", "结论强度控制", "事件风险验证"],
+  portfolio: ["资产配置", "集中度分析", "流动性评估", "情景压力测试"],
+  report: ["多专家证据整合", "冲突观点处理", "结论措辞校准", "研究局限说明"],
+});
+
+function safePublicText(value, fallback = "") {
+  if (researchPresentation?.publicText) {
+    return researchPresentation.publicText(value, fallback);
+  }
+  const text = String(value ?? "")
+    .replace(
+      /PandaData|get_(?:fina|stock)_[A-Za-z0-9_]+|https?:\/\/\S+|\/api\/\S+|\b(?:DeepSeek|Volcano Ark|model|SSE)\b/gi,
+      "专业数据服务",
+    )
+    .replace(/\b[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+\b/g, "专业研究方法")
+    .replace(/\bskill\b/gi, "研究能力")
+    .trim();
+  return text || fallback;
+}
+
+function publicResearchMethod(value) {
+  const item = value && typeof value === "object" ? value : { id: value };
+  const key = String(item.id || value || "");
+  const known = PUBLIC_RESEARCH_METHODS[key];
+  if (known) return known;
+  return {
+    name: safePublicText(item.name, "专业研究方法"),
+    description: safePublicText(
+      item.description,
+      "用于完成本次研究中的一项专业分析，并保留证据边界。",
+    ),
+  };
+}
+
+function publicAgentCapabilities(agent) {
+  const known = PUBLIC_AGENT_CAPABILITIES[String(agent?.id || "")];
+  if (known) return known;
+  return (agent?.capabilities || [])
+    .map((item) => safePublicText(item))
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
+function publicAgentMethods(agent) {
+  return (agent?.skills || [])
+    .map((item) => publicResearchMethod(item))
+    .filter((item, index, all) => all.findIndex((other) => other.name === item.name) === index);
+}
+
 // Live planning session shared across hall → clarify → war room. The planning
 // phase is explicit so the war room can open immediately without inventing a
 // selected Agent or DAG before the real Manager response arrives.
@@ -107,7 +189,7 @@ function stateBox(kind, title, sub) {
 // error state (with the reason) if the backend is unreachable.
 function renderLive(host, loader, builder) {
   host.innerHTML = "";
-  host.appendChild(stateBox("loading", "正在从后端加载实时数据…"));
+  host.appendChild(stateBox("loading", "正在读取本次真实研究结果…", "页面只展示已经完成的研究与可验证证据。"));
   loader()
     .then((data) => {
       host.innerHTML = "";
@@ -118,12 +200,12 @@ function renderLive(host, loader, builder) {
       host.innerHTML = "";
       const box = stateBox(
         "error",
-        "无法连接后端 API",
-        "请确认后端已启动（uvicorn backend.main:app）。" + (err && err.message ? ` [${err.message}]` : ""),
+        "研究服务暂时不可用",
+        "当前无法读取真实研究结果。页面不会切换为模拟结论，请稍后重试。",
       );
       const retry = el("button", "btn btn-primary", "重试");
       retry.addEventListener("click", () => renderLive(host, loader, builder));
-      const back = el("button", "btn-ghost", "切回演示模式");
+      const back = el("button", "btn-ghost", "查看明确标注的产品示例");
       back.addEventListener("click", () => setMode("demo"));
       const row = el("div", "");
       row.style.cssText = "display:flex;gap:8px;justify-content:center;margin-top:10px";
@@ -372,7 +454,7 @@ const NAV = [
   { route: "experts", ico: "👥", label: "专家中心" },
   { route: "reports", ico: "📑", label: "研究报告" },
   { route: "profile", ico: "🪪", label: "用户画像" },
-  { route: "skills", ico: "🧩", label: "Skills" },
+  { route: "skills", ico: "🧩", label: "研究能力" },
 ];
 
 let currentRoute = "reports";
@@ -423,14 +505,14 @@ function renderTopbar() {
     const status = el(
       "span",
       "pill",
-      `<span class="dot ${ok ? "ok" : "warn"}"></span>后端 API：<strong style="color:var(--${ok ? "green" : "yellow"})">${ok ? "已连接" : "连接中/离线"}</strong>`,
+      `<span class="dot ${ok ? "ok" : "warn"}"></span>研究服务：<strong style="color:var(--${ok ? "green" : "yellow"})">${ok ? "已连接" : "连接中/离线"}</strong>`,
     );
     const pd = liveStatus.pandadata || {};
     const pdReady = pd.configured || pd.ready || pd.status === "ok";
     const data = el(
       "span",
       "pill",
-      `📡 PandaData：${pdReady ? '已配置 <span class="dot ok"></span>' : '未配置 <span class="dot warn"></span>'}`,
+      `专业数据服务：${pdReady ? '已就绪 <span class="dot ok"></span>' : '尚未就绪 <span class="dot warn"></span>'}`,
     );
     bar.append(status, data);
   } else {
@@ -445,7 +527,7 @@ function renderTopbar() {
   // demo / live mode toggle
   const live = isLive();
   const modeBtn = el("button", "pill", `${live ? "🟢 实时数据" : "🧪 演示模式"} · 点击切换`);
-  modeBtn.title = live ? "当前使用后端真实数据与工作流" : "当前使用本地演示数据";
+  modeBtn.title = live ? "当前使用真实数据与研究流程" : "当前使用明确标注的产品示例";
   modeBtn.addEventListener("click", () => setMode(live ? "demo" : "live"));
   bar.append(modeBtn);
 
@@ -453,7 +535,7 @@ function renderTopbar() {
   history.addEventListener("click", () => navigate("tasks"));
   bar.append(history);
 
-  const glossary = el("button", "pill glossary-toggle", "📚 术语库");
+  const glossary = el("button", "pill glossary-toggle", "📚 投研知识库");
   glossary.id = "glossaryToggle";
   glossary.title = "打开金融术语收藏";
   glossary.setAttribute("aria-controls", "glossaryPanel");
@@ -640,6 +722,9 @@ function drawRadar(canvas, radar, size = 220) {
 function navigate(route, param = null) {
   currentRoute = route;
   routeParam = param;
+  if (!(route === "reports" && param) && globalThis.AlphaGlossary?.setResearchEntries) {
+    globalThis.AlphaGlossary.setResearchEntries([]);
+  }
   renderSidebar();
   renderPage();
   $("#page").scrollTop = 0;
@@ -696,7 +781,7 @@ function pageReportList() {
     item.appendChild(el("span", "ri-ico", "📄"));
     item.appendChild(el("div", "", `
       <div style="font-weight:600">${esc(r.title)}</div>
-      <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(r.taskNo)} · ${esc(r.doneAt)} · ${esc(r.horizon)}</div>
+      <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(r.doneAt)} · ${esc(r.horizon)}</div>
     `));
     item.appendChild(el("div", "ri-score", `<strong>${r.score}</strong><span style="color:var(--text-2);font-size:11px">评分</span>`));
     item.addEventListener("click", () => navigate("reports", r.id));
@@ -712,10 +797,125 @@ function pageReportList() {
 // ---------------------------------------------------------------------------
 function pageReportDetail(reportId) {
   const report = REPORTS.find((r) => r.id === reportId) || REPORTS[0];
+  const researchReport = buildDemoResearchReport(report);
   const layout = el("div", "report-layout");
-  layout.appendChild(buildReportMain(report));
+  layout.appendChild(buildReportMainLive(researchReport));
   layout.appendChild(buildFollowPanel(report));
   return layout;
+}
+
+function buildDemoResearchReport(report) {
+  const selectedAgents = (report.team || []).filter((id) => id !== "manager");
+  const steps = selectedAgents.map((agent, index) => ({
+    id: `${agent}_demo_${index + 1}`,
+    agent,
+    objective: (report.contributions?.[agent] || []).join("；")
+      || "完成本次分配的专业研究问题",
+    expected_output: agent === "report"
+      ? "整合本次专家证据形成统一报告"
+      : "形成带证据边界的阶段性研究结果",
+    depends_on: agent === "report"
+      ? selectedAgents
+        .filter((id) => id !== "report")
+        .map((id) => `${id}_demo_${selectedAgents.indexOf(id) + 1}`)
+      : [],
+  }));
+  const sourceResults = Object.fromEntries(steps.map((step) => [
+    step.id,
+    {
+      agent: step.agent,
+      status: "completed",
+      summary: (report.contributions?.[step.agent] || []).join("；")
+        || "已完成本次专业研究。",
+      assumptions: [],
+      risks: step.agent === "risk"
+        ? ["演示结论仍需结合最新真实数据重新验证。"]
+        : [],
+      limitations: ["当前为产品演示数据，不代表实时研究结论。"],
+      recommendations: ["使用 Live 模式发起任务，以真实数据重新验证。"],
+      data_sources: [],
+    },
+  ]));
+  const metricSource = steps.find((step) => step.agent !== "report")?.id || "";
+  const findings = (report.body || []).map((item) => ({
+    text: `${item.h}：${item.p}`,
+    evidence_type: /风险/.test(item.h) ? "risk" : "judgment",
+    source_steps: metricSource ? [metricSource] : [],
+  }));
+  const reportText = (report.body || [])
+    .map((item) => `${item.h}\n${item.p}`)
+    .join("\n\n");
+  return {
+    title: report.title,
+    created_at: report.doneAt,
+    completeness: {
+      planned_steps: steps.length,
+      completed_steps: steps.length,
+      failed_steps: 0,
+      blocked_steps: 0,
+      completion_ratio: steps.length ? 1 : 0,
+    },
+    task: {
+      prompt: report.title,
+      plan: {
+        goal: report.title,
+        intent: report.kind,
+        selected_agents: selectedAgents.map((agent) => ({
+          agent,
+          reason: (report.contributions?.[agent] || []).join("；")
+            || "参与本次研究。",
+        })),
+        steps,
+      },
+    },
+    aggregation: {
+      user_goal: report.title,
+      completion_status: "completed",
+      direct_answer: {
+        headline: report.summary,
+        explanation: "以下内容使用与 Live 报告相同的学习化展示逻辑。",
+        confidence: "not_applicable",
+        stance: "not_applicable",
+      },
+      key_findings: findings.filter((item) => item.evidence_type !== "risk"),
+      evidence_summary: [],
+      risks: findings.filter((item) => item.evidence_type === "risk"),
+      limitations: [{
+        text: "当前为产品演示数据，不代表实时研究结论。",
+        evidence_type: "limitation",
+        source_steps: [],
+      }],
+      next_research_steps: [{
+        text: "切换至 Live 模式并发起真实任务，以最新数据验证结论。",
+        evidence_type: "research_action",
+        source_steps: [],
+      }],
+      content_blocks: [
+        {
+          type: "metric_cards",
+          source_steps: metricSource ? [metricSource] : [],
+          data: {
+            metrics: (report.kv || []).map((item, index) => ({
+              metric: `demo_metric_${index + 1}`,
+              label: item.label,
+              display_value: item.value,
+              explanation: item.sub,
+            })),
+          },
+        },
+        {
+          type: "report",
+          source_steps: steps.map((step) => step.id),
+          data: { content: reportText },
+        },
+      ],
+      technical_evidence: {
+        conflicts: [],
+        source_results: sourceResults,
+      },
+      disclaimer: "演示内容仅用于了解产品展示方式，不构成投资建议。",
+    },
+  };
 }
 
 function buildReportMain(report) {
@@ -1127,7 +1327,7 @@ function pageHall() {
   [
     { num: "3", label: "今日研究任务", sub: "含 1 个进行中", green: true },
     { num: `${online}/${AGENTS.length}`, label: "在线专家", sub: "多线协作中" },
-    { num: `${skillTotal}`, label: "已装 Skill", sub: "覆盖全研究链路" },
+    { num: `${skillTotal}`, label: "专业分析方法", sub: "覆盖全研究链路" },
     { num: `${REPORTS.length}`, label: "已完成报告", sub: "可追问 / 导出" },
     { num: "98%", label: "证据校验通过率", sub: "结论均可溯源", green: true },
     { num: "5", label: "本月新增策略", sub: "策略库沉淀" },
@@ -1309,7 +1509,7 @@ function renderClarifySummary(panel) {
   yc.innerHTML = `
     <div class="yc"><strong>~4<small>min</small></strong><span>预计耗时</span></div>
     <div class="yc"><strong>${CLARIFY_TASK.experts}</strong><span>参与专家</span></div>
-    <div class="yc"><strong>5</strong><span>涉及 Skill</span></div>`;
+    <div class="yc"><strong>5</strong><span>分析方法</span></div>`;
   panel.appendChild(yc);
 
   const go = el("button", "btn btn-primary", "🚀 确认并启动研究");
@@ -1476,7 +1676,7 @@ function pageWarRoom() {
 
   const skillPanel = el("div", "panel");
   skillPanel.style.marginTop = "14px";
-  skillPanel.appendChild(el("div", "panel-title", "Skill 调用"));
+  skillPanel.appendChild(el("div", "panel-title", "专业分析方法"));
   const skillCounts = {};
   const skillRows = {};
   Object.keys(SKILL_FINAL_COUNTS).forEach((name) => {
@@ -1831,7 +2031,7 @@ function renderExpertGrid(grid) {
     card.appendChild(el("strong", "", esc(a.name)));
     card.appendChild(el("div", "", `<span style="color:var(--text-2);font-size:11.5px">${esc(a.role)}</span> <span class="badge ${a.status}"><span class="dot"></span>${statusText(a.status)}</span>`));
     card.appendChild(el("div", "ec-spec", esc(a.specialty)));
-    card.appendChild(el("div", "ec-desc", `已安装技能 <b style="color:var(--cyan)">${a.skillCount}</b> 个`));
+    card.appendChild(el("div", "ec-desc", `分析方法 <b style="color:var(--cyan)">${a.skillCount}</b> 项`));
     card.appendChild(el("div", "ec-desc", esc(a.desc)));
     card.addEventListener("click", () => {
       expertSel = a.id; expertTab = "cap";
@@ -1868,7 +2068,7 @@ function renderExpertDetail(panel) {
   panel.appendChild(stats);
 
   const tabs = el("div", "tabs");
-  [["cap", "能力概览"], ["tasks", "近期任务"], ["contrib", "贡献表现"], ["skills", "技能列表"], ["config", "配置管理"]].forEach(([k, t]) => {
+  [["cap", "能力概览"], ["tasks", "近期任务"], ["contrib", "贡献表现"], ["skills", "分析方法"], ["config", "配置管理"]].forEach(([k, t]) => {
     const tab = el("button", `tab${expertTab === k ? " active" : ""}`, esc(t));
     tab.addEventListener("click", () => { expertTab = k; renderExpertDetail(panel); });
     tabs.appendChild(tab);
@@ -1919,7 +2119,7 @@ function renderExpertDetail(panel) {
     const trend = { title: "", labels: ["W1", "W2", "W3", "W4", "W5"], series: [{ name: "贡献值", color: "#34d399", data: [62, 70, 66, 82, 90] }] };
     requestAnimationFrame(() => drawLineChart(canvas, trend));
   } else if (expertTab === "skills") {
-    body.appendChild(el("div", "follow-sec-title", `已安装技能 · ${a.skillCount} 个`));
+    body.appendChild(el("div", "follow-sec-title", `专业分析方法 · ${a.skillCount} 项`));
     (a.skills || []).forEach((s) => {
       const row = el("div", "skill-row");
       row.innerHTML = `<span>🧩</span><span>${esc(s.name)}</span><span class="sk-count" style="color:var(--text-3)">${esc(s.type)}</span>`;
@@ -1928,7 +2128,7 @@ function renderExpertDetail(panel) {
   } else if (expertTab === "config") {
     const enabled = store.state.agentEnabled[a.id] !== false;
     const enable = el("div", "op-enable");
-    enable.innerHTML = `<div><strong>启用该专家</strong><div class="op-note">禁用后 Manager 将不会把该专家纳入任务编排。</div></div>`;
+    enable.innerHTML = `<div><strong>启用该专家</strong><div class="op-note">停用后，研究经理将不会把该专家纳入后续任务。</div></div>`;
     const sw = el("button", `switch${enabled ? " on" : ""}`);
     if (a.id === "manager") { sw.classList.add("disabled"); }
     sw.addEventListener("click", () => {
@@ -1962,19 +2162,20 @@ function pageTasks() {
 }
 
 // ---------------------------------------------------------------------------
-// page: demo skills (mirrors the backend-supported Registry view)
+// page: demo research capabilities
 // ---------------------------------------------------------------------------
 function pageSkills() {
   const wrap = el("div", "panel");
-  wrap.appendChild(screenTitle("07", "Skills · 演示", "演示数据只展示 AlphaOS 已支持的专家 Skill 授权关系。"));
+  wrap.appendChild(screenTitle("07", "研究能力 · 演示", "以用户语言说明专家团队可使用的专业分析方法。"));
   const list = el("div", "report-list");
   DEMO_SKILLS.forEach((skill) => {
+    const method = publicResearchMethod(skill);
     const item = el("div", "report-item");
     item.style.cursor = "default";
     item.appendChild(el("span", "ri-ico", "🧩"));
     item.appendChild(el("div", "", `
-      <div style="font-weight:600">${esc(skill.name)} <span class="badge online"><span class="dot ok"></span>DEMO</span></div>
-      <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(skill.id)} · ${esc(skill.mode)} · 归属 ${esc(skill.owner)}</div>
+      <div style="font-weight:600">${esc(method.name)} <span class="badge online"><span class="dot ok"></span>产品示例</span></div>
+      <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(method.description)}</div>
     `));
     list.appendChild(item);
   });
@@ -2001,7 +2202,7 @@ function buildExpertsLive(experts) {
   }
   const layout = el("div", "experts-layout");
   const left = el("div", "panel");
-  left.appendChild(screenTitle("04", "专家中心 · 实时", "以下为后端 Registry 的真实专家能力、工具与技能授权，启停状态实时生效于 Manager 编排。"));
+  left.appendChild(screenTitle("04", "专家中心 · 实时", "了解每位投研专家的专业分工、研究能力和当前可用状态。"));
 
   const toolbar = el("div", "experts-toolbar");
   const search = el("input");
@@ -2032,7 +2233,7 @@ function buildExpertsLive(experts) {
     experts
       .filter((e) => {
         if (!q) return true;
-        const hay = `${e.name} ${e.role} ${e.specialty} ${e.capabilities.join(" ")} ${e.skills.join(" ")}`;
+        const hay = `${e.name} ${e.role} ${e.specialty} ${publicAgentCapabilities(e).join(" ")} ${publicAgentMethods(e).map((item) => item.name).join(" ")}`;
         return hay.includes(q);
       })
       .forEach((e) => {
@@ -2041,8 +2242,8 @@ function buildExpertsLive(experts) {
         card.appendChild(el("strong", "", esc(e.name)));
         card.appendChild(el("div", "", `<span style="color:var(--text-2);font-size:11.5px">${esc(e.role)}</span> <span class="badge ${e.status}"><span class="dot"></span>${statusText(e.status)}</span>`));
         card.appendChild(el("div", "ec-spec", esc(e.specialty)));
-        card.appendChild(el("div", "ec-desc", `授权技能 <b style="color:var(--cyan)">${e.skills.length}</b> · 工具 <b style="color:var(--cyan)">${e.tools.length}</b>`));
-        card.appendChild(el("div", "ec-desc", esc(e.description)));
+        card.appendChild(el("div", "ec-desc", `研究能力 <b style="color:var(--cyan)">${publicAgentCapabilities(e).length}</b> 项 · 分析方法 <b style="color:var(--cyan)">${publicAgentMethods(e).length}</b> 项`));
+        card.appendChild(el("div", "ec-desc", esc(safePublicText(e.description, "负责本次研究中对应的专业分析与证据核查。"))));
         card.addEventListener("click", () => { liveExpertSel = e.id; liveExpertTab = "cap"; drawGrid(); drawDetail(); });
         grid.appendChild(card);
       });
@@ -2059,13 +2260,13 @@ function buildExpertsLive(experts) {
     const hinfo = el("div");
     hinfo.style.flex = "1";
     hinfo.innerHTML = `<div style="font-size:20px;font-weight:700">${esc(e.name)}</div>
-      <div style="color:var(--text-2);font-size:12.5px">${esc(e.role)} <span class="badge ${e.status}"><span class="dot"></span>${statusText(e.status)}</span> <span class="badge">${e.id}</span></div>`;
+      <div style="color:var(--text-2);font-size:12.5px">${esc(e.role)} <span class="badge ${e.status}"><span class="dot"></span>${statusText(e.status)}</span></div>`;
     head.appendChild(hinfo);
     panel.appendChild(head);
-    panel.appendChild(el("p", "", `<span style="color:var(--text-2);line-height:1.7">${esc(e.description)}</span>`));
+    panel.appendChild(el("p", "", `<span style="color:var(--text-2);line-height:1.7">${esc(safePublicText(e.description, "负责本次研究中对应的专业分析与证据核查。"))}</span>`));
 
     const tabs = el("div", "tabs");
-    [["cap", "能力"], ["tools", "工具"], ["skills", "授权技能"], ["config", "配置管理"]].forEach(([k, t]) => {
+    [["cap", "研究能力"], ["skills", "分析方法"], ["config", "配置管理"]].forEach(([k, t]) => {
       const tab = el("button", `tab${liveExpertTab === k ? " active" : ""}`, esc(t));
       tab.addEventListener("click", () => { liveExpertTab = k; drawDetail(); });
       tabs.appendChild(tab);
@@ -2076,32 +2277,26 @@ function buildExpertsLive(experts) {
     panel.appendChild(body);
 
     if (liveExpertTab === "cap") {
-      body.appendChild(el("div", "follow-sec-title", `能力标签 · ${e.capabilities.length} 项`));
-      if (e.capabilities.length) {
+      const capabilities = publicAgentCapabilities(e);
+      body.appendChild(el("div", "follow-sec-title", `研究能力 · ${capabilities.length} 项`));
+      if (capabilities.length) {
         const tagwrap = el("div"); tagwrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px";
-        e.capabilities.forEach((c) => tagwrap.appendChild(el("span", "badge", esc(c))));
+        capabilities.forEach((c) => tagwrap.appendChild(el("span", "badge", esc(c))));
         body.appendChild(tagwrap);
-      } else body.appendChild(el("div", "op-note", "该专家未声明能力标签。"));
-    } else if (liveExpertTab === "tools") {
-      body.appendChild(el("div", "follow-sec-title", `可用工具 · ${e.tools.length} 个`));
-      if (e.tools.length) e.tools.forEach((t) => {
-        const row = el("div", "skill-row");
-        row.innerHTML = `<span>🛠</span><span>${esc(t)}</span>`;
-        body.appendChild(row);
-      });
-      else body.appendChild(el("div", "op-note", "该专家未绑定外部工具。"));
+      } else body.appendChild(el("div", "op-note", "该专家的公开能力说明正在完善。"));
     } else if (liveExpertTab === "skills") {
-      body.appendChild(el("div", "follow-sec-title", `授权技能 · ${e.skills.length} 个`));
-      if (e.skills.length) e.skills.forEach((s) => {
+      const methods = publicAgentMethods(e);
+      body.appendChild(el("div", "follow-sec-title", `专业分析方法 · ${methods.length} 项`));
+      if (methods.length) methods.forEach((method) => {
         const row = el("div", "skill-row");
-        row.innerHTML = `<span>🧩</span><span>${esc(s)}</span>`;
+        row.innerHTML = `<span>🧩</span><span><strong>${esc(method.name)}</strong><small style="display:block;color:var(--text-2);margin-top:3px">${esc(method.description)}</small></span>`;
         body.appendChild(row);
       });
-      else body.appendChild(el("div", "op-note", "该专家未被授权任何 Skill。"));
+      else body.appendChild(el("div", "op-note", "该专家当前没有对外展示的分析方法。"));
     } else if (liveExpertTab === "config") {
       const isPortfolio = e.id === "portfolio";
       const enable = el("div", "op-enable");
-      enable.innerHTML = `<div><strong>启用该专家</strong><div class="op-note">${isPortfolio ? "Portfolio 暂无运行实现，后端不可启用。" : "禁用后 Manager 将不会把该专家纳入任务编排（实时生效）。"}</div></div>`;
+      enable.innerHTML = `<div><strong>启用该专家</strong><div class="op-note">${isPortfolio ? "Portfolio 专家当前产品阶段暂未开放。" : "停用后，研究经理将不再把该专家纳入后续任务。设置实时生效。"}</div></div>`;
       const sw = el("button", `switch${e.enabled ? " on" : ""}${isPortfolio ? " disabled" : ""}`);
       sw.addEventListener("click", () => {
         if (isPortfolio) { toast("Portfolio 专家暂不可启用"); return; }
@@ -2117,7 +2312,7 @@ function buildExpertsLive(experts) {
           })
           .catch((err) => {
             sw.classList.toggle("on", e.enabled);
-            toast(`操作失败：${err && err.message ? err.message : "后端拒绝"}`);
+            toast("操作未完成：研究服务暂时无法接受本次设置，请稍后重试。");
           });
       });
       enable.appendChild(sw);
@@ -2130,23 +2325,25 @@ function buildExpertsLive(experts) {
   return layout;
 }
 
-// ---- live: skills market --------------------------------------------------
+// ---- live: research capabilities ------------------------------------------
 function pageSkillsLive() {
   const host = el("div");
   return renderLive(host, fetchSkills, (skills) => {
     const wrap = el("div", "panel");
-    wrap.appendChild(screenTitle("07", "Skills · 实时", "以下为后端 skill_registry 托管的运行时 Skill 真实清单（来源与状态由后端统一管理）。"));
-    if (!skills.length) { wrap.appendChild(stateBox("empty", "暂无已注册的运行时 Skill")); return wrap; }
+    wrap.appendChild(screenTitle("07", "研究能力 · 实时", "了解专家团队当前可使用的专业研究方法，以及每种方法帮助用户回答什么问题。"));
+    if (!skills.length) {
+      wrap.appendChild(stateBox("empty", "暂无可展示的研究能力", "研究服务仍可保留已完成的报告，请稍后再查看能力清单。"));
+      return wrap;
+    }
     const list = el("div", "report-list");
     skills.forEach((s) => {
+      const method = publicResearchMethod(s);
       const item = el("div", "report-item");
       item.style.cursor = "default";
-      item.appendChild(el("span", "ri-ico", s.mode === "executable" ? "⚙" : "📘"));
-      const modeLabel = s.mode === "executable" ? "可执行" : s.mode === "instruction" ? "指令式" : s.mode;
+      item.appendChild(el("span", "ri-ico", "📘"));
       item.appendChild(el("div", "", `
-        <div style="font-weight:600">${esc(s.name)} <span class="badge ${s.enabled ? "online" : ""}"><span class="dot ${s.enabled ? "ok" : ""}"></span>${s.enabled ? "已启用" : "停用"}</span></div>
-        <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(s.description)}</div>
-        <div style="color:var(--text-3);font-size:11px;margin-top:4px">${esc(s.id)} · ${esc(modeLabel)} · 归属 ${esc(s.owner_agents.join(" / ") || "-")}${s.capabilities.length ? " · 能力 " + esc(s.capabilities.join(", ")) : ""}</div>
+        <div style="font-weight:600">${esc(method.name)} <span class="badge ${s.enabled ? "online" : ""}"><span class="dot ${s.enabled ? "ok" : ""}"></span>${s.enabled ? "当前可用" : "当前未开放"}</span></div>
+        <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(method.description)}</div>
       `));
       list.appendChild(item);
     });
@@ -2162,7 +2359,7 @@ function pageTasksLive() {
     const wrap = el("div", "panel");
     wrap.appendChild(el("div", "panel-title", "任务中心 <span class='title-extra'>实时任务记录</span>"));
     if (!tasks.length) {
-      wrap.appendChild(stateBox("empty", "暂无任务记录", "配置 ARK 凭证后，可从投研大厅提交研究请求。"));
+      wrap.appendChild(stateBox("empty", "暂无任务记录", "完成研究服务配置后，可从投研大厅提交研究请求。"));
       return wrap;
     }
     const list = el("div", "task-list");
@@ -2170,7 +2367,17 @@ function pageTasksLive() {
       const item = el("div", "task-item");
       item.appendChild(el("span", "ri-ico", "📄"));
       const dur = t.duration_ms != null ? ` · ${(t.duration_ms / 1000).toFixed(1)}s` : "";
-      item.appendChild(el("div", "", `<div class="ti-title">${esc(t.prompt.slice(0, 60) || t.id)}</div><div class="ti-sub">${esc(t.status)} · ${esc(t.created_at)}${esc(dur)}</div>`));
+      const status = {
+        completed: "已完成",
+        partially_completed: "部分完成",
+        failed: "无法完成",
+        running: "研究中",
+        needs_clarification: "等待补充信息",
+      }[t.status] || "等待研究";
+      const prompt = researchPresentation
+        ? researchPresentation.publicText(t.prompt)
+        : t.prompt;
+      item.appendChild(el("div", "", `<div class="ti-title">${esc(prompt.slice(0, 60) || "未命名研究任务")}</div><div class="ti-sub">${esc(status)} · ${esc(t.created_at)}${esc(dur)}</div>`));
       list.appendChild(item);
     });
     wrap.appendChild(list);
@@ -2192,12 +2399,15 @@ function pageReportListLive() {
     }
     const list = el("div", "report-list");
     reports.forEach((r) => {
+      const publicTitle = researchPresentation
+        ? researchPresentation.publicText(r.title, "未命名研究报告")
+        : r.title;
       const item = el("button", "report-item");
       item.appendChild(el("span", "ri-ico", "📄"));
       const ratio = r.completeness ? Math.round((r.completeness.completion_ratio || 0) * 100) : null;
       item.appendChild(el("div", "", `
-        <div style="font-weight:600">${esc(r.title)}</div>
-        <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(r.id)} · ${esc(r.created_at)}</div>
+        <div style="font-weight:600">${esc(publicTitle)}</div>
+        <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(r.created_at)} · 真实研究结果</div>
       `));
       if (ratio != null) item.appendChild(el("div", "ri-score", `<strong>${ratio}%</strong><span style="color:var(--text-2);font-size:11px">完成度</span>`));
       item.addEventListener("click", () => navigate("reports", r.id));
@@ -2224,49 +2434,622 @@ function pageReportDetailLive(reportId) {
 }
 
 function buildReportMainLive(report) {
-  const col = el("div", "glossary-scope");
+  const col = el("div", "glossary-scope research-report");
   const toolbar = el("div", "rpt-toolbar");
   const back = el("button", "btn-ghost", "‹ 返回报告列表");
   back.addEventListener("click", () => navigate("reports"));
   toolbar.appendChild(back);
+  toolbar.appendChild(el("span", "research-truth-label", "仅展示本次真实研究"));
   col.appendChild(toolbar);
 
-  const agg = report.aggregation || {};
-  const direct = agg.direct_answer || {};
-  const heroPanel = el("div", "panel");
-  heroPanel.appendChild(el("div", "panel-title", esc(report.title)));
-  heroPanel.appendChild(el("div", "op-note", `${esc(report.id)} · ${esc(report.created_at)}`));
-  if (report.completeness) {
-    const c = report.completeness;
-    const stats = el("div", "detail-stats");
-    stats.innerHTML = `
-      <div class="ds"><strong>${c.planned_steps}</strong><span>计划步骤</span></div>
-      <div class="ds"><strong style="color:var(--green)">${c.completed_steps}</strong><span>已完成</span></div>
-      <div class="ds"><strong style="color:var(--yellow)">${c.failed_steps + c.blocked_steps}</strong><span>失败/受阻</span></div>
-      <div class="ds"><strong>${Math.round((c.completion_ratio || 0) * 100)}%</strong><span>完成度</span></div>`;
-    heroPanel.appendChild(stats);
-  }
-  col.appendChild(heroPanel);
-
-  if (direct.headline) {
-    const dp = el("div", "panel");
-    dp.appendChild(el("div", "follow-sec-title", "核心结论"));
-    dp.appendChild(el("h2", "", esc(direct.headline)));
-    if (direct.explanation) dp.appendChild(el("p", "", `<span style="color:var(--text-2);line-height:1.7">${esc(direct.explanation)}</span>`));
-    col.appendChild(dp);
+  if (!researchPresentation) {
+    col.appendChild(stateBox(
+      "error",
+      "结果展示模块未能加载",
+      "研究结果仍被保留，但当前无法安全地转换为用户可见报告。",
+    ));
+    return col;
   }
 
-  const blocks = Array.isArray(agg.content_blocks) ? agg.content_blocks : [];
-  blocks.forEach((b) => {
-    const bp = el("div", "panel");
-    bp.appendChild(el("div", "follow-sec-title blk-title", `${blockIcon(b.type)}<span>${esc(b.title || b.type || "内容块")}</span>`));
-    if (b.description) bp.appendChild(el("p", "", `<span style="color:var(--text-2);line-height:1.7">${esc(b.description)}</span>`));
-    bp.appendChild(renderBlock(b));
-    col.appendChild(bp);
+  const vm = researchPresentation.buildResearchViewModel({
+    report,
+    task: report.task,
   });
+  if (vm.empty) {
+    col.appendChild(stateBox(
+      "empty",
+      "本次任务尚未形成可展示结果",
+      "页面不会用固定案例或模拟数据填充空白。",
+    ));
+    return col;
+  }
+  const knowledgeCount = connectReportKnowledge(vm.metrics);
 
-  if (agg.disclaimer) col.appendChild(el("div", "op-note", esc(agg.disclaimer)));
+  col.appendChild(renderResearchHero(report, vm));
+  col.appendChild(renderParticipants(vm));
+  col.appendChild(renderResearchPlan(vm.researchPlan));
+  col.appendChild(renderMetricOverview(vm.metrics));
+  col.appendChild(renderEvidenceChains(vm.evidenceChains));
+  col.appendChild(renderAgentWorkbenches(vm.agents));
+  col.appendChild(renderSignals(vm));
+  col.appendChild(renderCoverage(vm.coverage));
+  col.appendChild(renderLearningSummary(vm.learningSummary, knowledgeCount));
+  if (vm.reportText) col.appendChild(renderOriginalReport(vm.reportText));
+  if (vm.disclaimer) col.appendChild(el("div", "op-note research-disclaimer", esc(vm.disclaimer)));
   return col;
+}
+
+function connectReportKnowledge(metrics) {
+  const glossary = globalThis.AlphaGlossary;
+  if (!glossary?.setResearchEntries) return 0;
+  return glossary.setResearchEntries((metrics || []).map((metric) => ({
+    term: metric.label,
+    color: "var(--cyan)",
+    explanation: [
+      metric.english
+        ? `${metric.english}${metric.abbreviation ? `（${metric.abbreviation}）` : ""}。`
+        : "",
+      metric.purpose,
+      metric.importance,
+      metric.formula ? `计算方式：${metric.formula}。` : "",
+      `本次结果：${metric.value}${metric.subject ? `（${metric.subject}）` : ""}。`,
+      metric.reading,
+      `使用局限：${metric.limitation}`,
+      `建议结合：${metric.combineWith}。`,
+    ].filter(Boolean).join(" "),
+  })));
+}
+
+function researchPanel(kicker, title, description, cls = "") {
+  const panel = el("section", `panel research-section ${cls}`.trim());
+  const head = el("div", "research-section-head");
+  head.appendChild(el("span", "research-kicker", esc(kicker)));
+  const copy = el("div");
+  copy.appendChild(el("h2", "", esc(title)));
+  if (description) copy.appendChild(el("p", "", esc(description)));
+  head.appendChild(copy);
+  panel.appendChild(head);
+  return panel;
+}
+
+function researchList(items, cls = "") {
+  const list = el("div", `research-list ${cls}`.trim());
+  const values = (items || []).filter(Boolean);
+  if (!values.length) {
+    list.appendChild(el("p", "research-empty", "本次真实结果没有返回这一层内容，因此不补写固定教材。"));
+    return list;
+  }
+  values.forEach((item) => {
+    const text = typeof item === "string" ? item : item.text;
+    if (!text) return;
+    const row = el("div", "research-list-item");
+    row.appendChild(el("span", "research-list-mark", ""));
+    row.appendChild(el("span", "", esc(text)));
+    list.appendChild(row);
+  });
+  return list;
+}
+
+function renderResearchHero(report, vm) {
+  const hero = el("section", "panel research-hero");
+  const eyebrow = el("div", "research-hero-eyebrow");
+  eyebrow.appendChild(el("span", "research-live-dot", ""));
+  eyebrow.appendChild(el("span", "", "统一研究报告"));
+  eyebrow.appendChild(el("span", "research-created", esc(report.created_at || "")));
+  hero.appendChild(eyebrow);
+  hero.appendChild(el("h1", "", esc(vm.summary.text)));
+  if (vm.summary.explanation) {
+    hero.appendChild(el("p", "research-hero-explanation", esc(vm.summary.explanation)));
+  }
+  const badges = el("div", "research-summary-badges");
+  badges.appendChild(el("span", "research-badge", `结论倾向 · ${esc(vm.summary.status)}`));
+  badges.appendChild(el("span", "research-badge", `置信度 · ${esc(vm.summary.confidence)}`));
+  if (report.completeness) {
+    const ratio = Math.round((report.completeness.completion_ratio || 0) * 100);
+    badges.appendChild(el("span", "research-badge", `研究完成度 · ${ratio}%`));
+  }
+  hero.appendChild(badges);
+  hero.appendChild(el(
+    "p",
+    "research-hero-boundary",
+    "这是一份带条件的专业判断。事实、判断、假设与缺失证据在下方分别标注。",
+  ));
+  return hero;
+}
+
+function renderParticipants(vm) {
+  const panel = researchPanel(
+    "01 · EXPERT TEAM",
+    "本次参与的专家",
+    "只列出本次任务实际选择且产生执行结果的专家。",
+  );
+  const grid = el("div", "participant-grid");
+  if (!vm.participation.length) {
+    grid.appendChild(el("p", "research-empty", "本次任务没有实际完成的专家结果。"));
+  }
+  vm.participation.forEach((item) => {
+    const card = el("article", "participant-card");
+    card.appendChild(el("span", "participant-avatar", esc(item.name.slice(0, 1))));
+    const body = el("div");
+    body.appendChild(el("strong", "", esc(item.name)));
+    body.appendChild(el("small", "", esc(item.role)));
+    body.appendChild(el("p", "", esc(item.contribution)));
+    card.appendChild(body);
+    card.appendChild(el("span", "research-status completed", esc(item.status)));
+    grid.appendChild(card);
+  });
+  panel.appendChild(grid);
+  return panel;
+}
+
+function renderResearchPlan(plan) {
+  const panel = researchPanel(
+    "02 · RESEARCH PLAN",
+    "研究问题与分析框架",
+    "研究经理如何把原始问题拆成可验证的专业子问题。",
+  );
+  const question = el("div", "original-question");
+  question.appendChild(el("span", "", "用户原始问题"));
+  question.appendChild(el("strong", "", esc(plan.originalQuestion || plan.goal)));
+  if (plan.goal && plan.goal !== plan.originalQuestion) {
+    question.appendChild(el("p", "", `研究目标：${esc(plan.goal)}`));
+  }
+  panel.appendChild(question);
+
+  const steps = el("div", "research-plan-steps");
+  plan.researchQuestions.forEach((item) => {
+    const step = el("article", "research-plan-step");
+    step.appendChild(el("span", "plan-step-number", String(item.order).padStart(2, "0")));
+    const body = el("div");
+    body.appendChild(el("h3", "", esc(item.question)));
+    body.appendChild(el("p", "", `${esc(item.agent)} · ${esc(item.role)}`));
+    if (item.output) body.appendChild(el("small", "", `预期形成：${esc(item.output)}`));
+    step.appendChild(body);
+    steps.appendChild(step);
+  });
+  if (!plan.researchQuestions.length) {
+    steps.appendChild(el("p", "research-empty", "本次任务没有创建专家研究步骤。"));
+  }
+  panel.appendChild(steps);
+
+  const layout = el("div", "plan-logic-grid");
+  const division = el("div", "plan-logic-card");
+  division.appendChild(el("h3", "", "为什么需要这些专家"));
+  division.appendChild(researchList(plan.agents.map((agent) =>
+    `${agent.name}：${agent.reason}`
+  )));
+  layout.appendChild(division);
+
+  const dependency = el("div", "plan-logic-card");
+  dependency.appendChild(el("h3", "", "协作与依赖"));
+  const lines = [
+    ...plan.dependencies.map((item) =>
+      `${item.from} 完成后，由 ${item.to} 继续处理：${item.reason}`
+    ),
+    ...plan.parallelGroups.map((group) =>
+      `可并行研究：${group.join("、")}`
+    ),
+    `最终汇总：${plan.synthesis}`,
+  ];
+  dependency.appendChild(researchList(lines));
+  layout.appendChild(dependency);
+  panel.appendChild(layout);
+  return panel;
+}
+
+function renderMetricOverview(metrics) {
+  const panel = researchPanel(
+    "03 · KEY METRICS",
+    "核心指标总览",
+    "每个数字都可以展开查看用途、公式、报告期、解读方法和局限。",
+  );
+  const grid = el("div", "metric-learning-grid");
+  if (!metrics.length) {
+    grid.appendChild(el(
+      "p",
+      "research-empty",
+      "本次真实结果没有返回可安全展示的指标，页面不会伪造计算过程。",
+    ));
+  }
+  metrics.forEach((metric) => grid.appendChild(renderMetricCard(metric)));
+  panel.appendChild(grid);
+  return panel;
+}
+
+function renderMetricCard(metric) {
+  const card = el("article", "metric-learning-card");
+  const head = el("div", "metric-learning-head");
+  const name = el("div");
+  name.appendChild(el("span", "research-tag fact", "计算结果"));
+  name.appendChild(el("h3", "", esc(metric.label)));
+  if (metric.english) {
+    name.appendChild(el(
+      "small",
+      "",
+      `${esc(metric.english)}${metric.abbreviation ? ` · ${esc(metric.abbreviation)}` : ""}`,
+    ));
+  }
+  head.appendChild(name);
+  const value = el("div", "metric-learning-value");
+  value.appendChild(el("strong", "", esc(metric.value)));
+  if (metric.subject) value.appendChild(el("small", "", esc(metric.subject)));
+  head.appendChild(value);
+  card.appendChild(head);
+  card.appendChild(el("p", "metric-meaning", esc(metric.interpretation || metric.reading)));
+  const details = el("details", "research-details metric-details");
+  details.appendChild(el("summary", "", "怎么算 · 为什么重要"));
+  const body = el("div", "details-body");
+  body.appendChild(metricDetail("它衡量什么", metric.purpose));
+  body.appendChild(metricDetail("为什么重要", metric.importance));
+  if (metric.formula) body.appendChild(metricDetail("计算方式", metric.formula));
+  body.appendChild(metricDetail("如何理解", metric.reading));
+  body.appendChild(metricDetail("常见误区与局限", metric.limitation));
+  body.appendChild(metricDetail("需要结合", metric.combineWith));
+  details.appendChild(body);
+  card.appendChild(details);
+  return card;
+}
+
+function metricDetail(label, value) {
+  const row = el("div", "metric-detail-row");
+  row.appendChild(el("span", "", esc(label)));
+  row.appendChild(el("p", "", esc(value || "本次结果未提供")));
+  return row;
+}
+
+function renderEvidenceChains(chains) {
+  const panel = researchPanel(
+    "04 · EVIDENCE CHAIN",
+    "从数据到结论的证据链",
+    "重要判断可以回看支持证据、反对证据、缺失证据和当前结论强度。",
+  );
+  const list = el("div", "evidence-chain-list");
+  if (!chains.length) {
+    list.appendChild(el("p", "research-empty", "本次任务尚未形成可追溯的重要判断。"));
+  }
+  chains.forEach((chain) => {
+    const card = el("article", "evidence-chain-card");
+    const flow = el("div", "evidence-flow");
+    flow.appendChild(evidenceNode("事实", chain.facts[0] || "相关事实未单独返回"));
+    flow.appendChild(el("span", "evidence-arrow", "↓"));
+    flow.appendChild(evidenceNode(
+      "计算与解释",
+      chain.calculation[0] || chain.supporting[0] || "依据已完成的专家结果综合判断",
+    ));
+    flow.appendChild(el("span", "evidence-arrow", "↓"));
+    flow.appendChild(evidenceNode("专业判断", chain.conclusion, "judgment"));
+    card.appendChild(flow);
+    const details = el("details", "research-details evidence-details");
+    details.appendChild(el("summary", "", "查看依据"));
+    const body = el("div", "evidence-detail-grid");
+    body.appendChild(evidenceColumn("支持证据", chain.supporting));
+    body.appendChild(evidenceColumn("反对与风险证据", chain.opposing));
+    body.appendChild(evidenceColumn("缺失证据", chain.missing));
+    body.appendChild(evidenceColumn("还需要验证", chain.nextChecks));
+    const strength = el("div", "evidence-strength");
+    strength.appendChild(el("span", "", "当前结论强度"));
+    strength.appendChild(el("strong", "", esc(chain.strength)));
+    body.appendChild(strength);
+    details.appendChild(body);
+    card.appendChild(details);
+    list.appendChild(card);
+  });
+  panel.appendChild(list);
+  return panel;
+}
+
+function evidenceNode(label, text, kind = "fact") {
+  const node = el("div", `evidence-node ${kind}`);
+  node.appendChild(el("span", "", esc(label)));
+  node.appendChild(el("p", "", esc(text)));
+  return node;
+}
+
+function evidenceColumn(title, items) {
+  const col = el("div", "evidence-column");
+  col.appendChild(el("h4", "", esc(title)));
+  col.appendChild(researchList(items));
+  return col;
+}
+
+function renderAgentWorkbenches(agents) {
+  const panel = researchPanel(
+    "05 · EXPERT WORKBENCH",
+    "各专家的研究工作台",
+    "默认展示核心事实与阶段判断；按需展开方法、替代解释、质疑和下一步研究。",
+    "agent-workbench-section",
+  );
+  const tabs = el("div", "agent-workbench-tabs");
+  const body = el("div", "agent-workbench-body");
+  if (!agents.length) {
+    body.appendChild(el("p", "research-empty", "本次任务没有实际选择专家。"));
+    panel.append(tabs, body);
+    return panel;
+  }
+  let active = 0;
+  const draw = () => {
+    tabs.innerHTML = "";
+    body.innerHTML = "";
+    agents.forEach((agent, index) => {
+      const tab = el("button", `workbench-tab${index === active ? " active" : ""}`);
+      tab.type = "button";
+      tab.appendChild(el("span", "", esc(agent.name.slice(0, 1))));
+      tab.appendChild(el("strong", "", esc(agent.name)));
+      tab.appendChild(el("em", `research-status ${agent.status}`, esc(agent.statusLabel)));
+      tab.addEventListener("click", () => { active = index; draw(); });
+      tabs.appendChild(tab);
+    });
+    body.appendChild(renderAgentWorkbench(agents[active]));
+  };
+  draw();
+  panel.append(tabs, body);
+  return panel;
+}
+
+function renderAgentWorkbench(agent) {
+  const wrap = el("article", "agent-workbench");
+  const hero = el("div", "agent-workbench-hero");
+  const copy = el("div");
+  copy.appendChild(el("span", "research-kicker", esc(agent.role)));
+  copy.appendChild(el("h3", "", esc(agent.researchQuestion)));
+  copy.appendChild(el("p", "", esc(agent.reason)));
+  hero.appendChild(copy);
+  hero.appendChild(el("span", `research-status ${agent.status}`, esc(agent.statusLabel)));
+  wrap.appendChild(hero);
+  if (agent.emptyReason) {
+    wrap.appendChild(el("p", "research-empty", esc(agent.emptyReason)));
+    return wrap;
+  }
+
+  const dimensions = el("div", "analysis-dimensions");
+  agent.analysisDimensions.forEach((item) =>
+    dimensions.appendChild(el("span", "", esc(item)))
+  );
+  wrap.appendChild(dimensions);
+
+  const visible = el("div", "workbench-visible-grid");
+  const facts = el("section", "workbench-layer");
+  facts.appendChild(el("div", "layer-title", '<span class="research-tag fact">已确认 / 计算</span><strong>关键事实</strong>'));
+  facts.appendChild(researchList(agent.facts.slice(0, 5)));
+  visible.appendChild(facts);
+
+  const interpretation = el("section", "workbench-layer");
+  interpretation.appendChild(el("div", "layer-title", '<span class="research-tag judgment">专业判断</span><strong>阶段性结论</strong>'));
+  interpretation.appendChild(researchList(agent.interpretations.slice(0, 4)));
+  visible.appendChild(interpretation);
+
+  const pending = el("section", "workbench-layer");
+  pending.appendChild(el("div", "layer-title", '<span class="research-tag hypothesis">尚待验证</span><strong>当前证据缺口</strong>'));
+  pending.appendChild(researchList([
+    ...agent.hypotheses,
+    ...agent.nextChecks.slice(0, 2),
+  ]));
+  visible.appendChild(pending);
+  wrap.appendChild(visible);
+
+  const expanders = el("div", "workbench-expanders");
+  expanders.appendChild(workbenchDetails(
+    "为什么",
+    "分析逻辑与指标组合",
+    agent.interpretations,
+  ));
+  expanders.appendChild(workbenchMetricDetails(agent.metrics));
+  expanders.appendChild(workbenchTermDetails(agent.terms));
+  expanders.appendChild(workbenchDetails(
+    "还有哪些可能",
+    "替代解释与假设",
+    agent.hypotheses,
+  ));
+  expanders.appendChild(workbenchDetails(
+    "挑战这个结论",
+    "风险专家会追问什么",
+    agent.challenges,
+  ));
+  expanders.appendChild(workbenchDetails(
+    "下一步查什么",
+    "专业研究路径",
+    agent.nextChecks,
+  ));
+  expanders.appendChild(workbenchMisconceptions(agent.misconceptions));
+  wrap.appendChild(expanders);
+  return wrap;
+}
+
+function workbenchDetails(label, title, items) {
+  const details = el("details", "research-details workbench-details");
+  details.appendChild(el("summary", "", esc(label)));
+  const body = el("div", "details-body");
+  body.appendChild(el("h4", "", esc(title)));
+  body.appendChild(researchList(items));
+  details.appendChild(body);
+  return details;
+}
+
+function workbenchMetricDetails(metrics) {
+  const details = el("details", "research-details workbench-details");
+  details.appendChild(el("summary", "", "怎么算"));
+  const body = el("div", "details-body");
+  body.appendChild(el("h4", "", "指标计算过程"));
+  if (!metrics.length) {
+    body.appendChild(el("p", "research-empty", "本次专家结果没有返回可展示的公式。"));
+  }
+  metrics.forEach((metric) => {
+    body.appendChild(metricDetail(
+      `${metric.label} · ${metric.value}`,
+      metric.formula || "本次结果未返回公式，因此不补造计算过程。",
+    ));
+  });
+  details.appendChild(body);
+  return details;
+}
+
+function workbenchTermDetails(terms) {
+  const details = el("details", "research-details workbench-details");
+  details.appendChild(el("summary", "", "学习这个术语"));
+  const body = el("div", "details-body");
+  if (!terms.length) {
+    body.appendChild(el("p", "research-empty", "本次结果没有产生需要单独解释的指标术语。"));
+  }
+  terms.slice(0, 4).forEach((term) => body.appendChild(metricDetail(
+    `${term.label}${term.english ? ` · ${term.english}` : ""}`,
+    `${term.purpose} 本次结果：${term.value}。${term.limitation}`,
+  )));
+  details.appendChild(body);
+  return details;
+}
+
+function workbenchMisconceptions(items) {
+  const details = el("details", "research-details workbench-details misconception-details");
+  details.appendChild(el("summary", "", "常见误区"));
+  const body = el("div", "details-body");
+  if (!items.length) {
+    body.appendChild(el("p", "research-empty", "本次结果没有足够的真实局限信息来生成针对性误区提醒。"));
+  }
+  items.forEach((item) => {
+    const card = el("div", "misconception-card");
+    card.appendChild(el("strong", "", `不要这样理解：${esc(item.wrong)}`));
+    card.appendChild(el("p", "", `正确理解：${esc(item.correct)}`));
+    body.appendChild(card);
+  });
+  details.appendChild(body);
+  return details;
+}
+
+function renderSignals(vm) {
+  const panel = researchPanel(
+    "06 · SYNTHESIS",
+    "专家观点、积极信号与风险质疑",
+    "把支持证据、风险信号、观点冲突和研究局限放在同一层比较。",
+  );
+  const grid = el("div", "signal-grid");
+  grid.appendChild(signalCard("积极信号", vm.positiveSignals, "positive"));
+  grid.appendChild(signalCard("需要关注", vm.riskSignals, "risk"));
+  grid.appendChild(signalCard(
+    "专家观点冲突",
+    vm.expertDisagreements.length
+      ? vm.expertDisagreements
+      : ["本次真实结果未报告明确冲突；这不代表所有风险已被排除。"],
+    "conflict",
+  ));
+  grid.appendChild(signalCard("研究局限", vm.limitations, "limit"));
+  panel.appendChild(grid);
+  return panel;
+}
+
+function signalCard(title, items, cls) {
+  const card = el("article", `signal-card ${cls}`);
+  card.appendChild(el("h3", "", esc(title)));
+  card.appendChild(researchList(items));
+  return card;
+}
+
+function renderCoverage(coverage) {
+  const panel = researchPanel(
+    "07 · DATA COVERAGE",
+    "数据覆盖与局限",
+    "缺失数据以中性状态解释，并明确它会影响什么判断。",
+  );
+  const grid = el("div", "coverage-grid");
+  if (!coverage.length) {
+    grid.appendChild(el(
+      "p",
+      "research-empty",
+      "本次报告没有返回可安全展示的数据覆盖摘要。",
+    ));
+  }
+  coverage.forEach((item) => {
+    const card = el("article", `coverage-card ${item.status}`);
+    const head = el("div", "coverage-head");
+    head.appendChild(el("strong", "", esc(item.type)));
+    const label = item.status === "available"
+      ? "已获取"
+      : item.status === "partial" ? "部分覆盖" : "暂未获取";
+    head.appendChild(el("span", `research-status ${item.status}`, esc(label)));
+    card.appendChild(head);
+    if (item.period) card.appendChild(el("small", "", `覆盖期间：${esc(item.period)}`));
+    card.appendChild(el("p", "", esc(item.purpose)));
+    card.appendChild(el("p", "coverage-impact", esc(item.impact)));
+    grid.appendChild(card);
+  });
+  panel.appendChild(grid);
+  return panel;
+}
+
+function renderLearningSummary(summary, knowledgeCount = 0) {
+  const panel = researchPanel(
+    "08 · LEARNING",
+    "本次研究，你掌握了什么？",
+    "把本次真实研究过程还原为可复用的分析框架和专业术语。",
+    "learning-section",
+  );
+  const grid = el("div", "learning-grid");
+  const framework = el("article", "learning-card");
+  framework.appendChild(el("h3", "", "本次分析框架"));
+  framework.appendChild(researchList(summary.framework));
+  grid.appendChild(framework);
+  const terms = el("article", "learning-card");
+  terms.appendChild(el("h3", "", "本次专业术语"));
+  const termWrap = el("div", "learning-terms");
+  if (!summary.terms.length) {
+    termWrap.appendChild(el("p", "research-empty", "本次结果没有产生指标术语。"));
+  }
+  summary.terms.forEach((term) => termWrap.appendChild(el("span", "", esc(term))));
+  terms.appendChild(termWrap);
+  if (knowledgeCount) {
+    const knowledgeLink = el(
+      "button",
+      "knowledge-link",
+      `📚 ${knowledgeCount} 个本次术语已接入投研知识库`,
+    );
+    knowledgeLink.type = "button";
+    knowledgeLink.addEventListener("click", openOfficeGlossary);
+    terms.appendChild(knowledgeLink);
+  }
+  grid.appendChild(terms);
+  panel.appendChild(grid);
+  panel.appendChild(renderLearningQuiz(summary.quiz));
+  return panel;
+}
+
+function renderLearningQuiz(quiz) {
+  const card = el("article", "learning-quiz");
+  card.appendChild(el("span", "research-kicker", "学习检查题"));
+  card.appendChild(el("h3", "", esc(quiz.question)));
+  const options = el("div", "quiz-options");
+  const feedback = el("div", "quiz-feedback");
+  quiz.options.forEach((option, index) => {
+    const button = el("button", "quiz-option");
+    button.type = "button";
+    button.appendChild(el("span", "", String.fromCharCode(65 + index)));
+    button.appendChild(el("strong", "", esc(option)));
+    button.addEventListener("click", () => {
+      options.querySelectorAll(".quiz-option").forEach((item) => {
+        item.disabled = true;
+        item.classList.remove("correct", "wrong");
+      });
+      button.classList.add(index === quiz.answerIndex ? "correct" : "wrong");
+      const correct = options.querySelectorAll(".quiz-option")[quiz.answerIndex];
+      if (correct) correct.classList.add("correct");
+      feedback.className = `quiz-feedback show ${index === quiz.answerIndex ? "correct" : "wrong"}`;
+      feedback.textContent = `${index === quiz.answerIndex ? "回答正确。" : "再想一步。"} ${quiz.explanation}`;
+    });
+    options.appendChild(button);
+  });
+  card.append(options, feedback);
+  return card;
+}
+
+function renderOriginalReport(text) {
+  const panel = researchPanel(
+    "09 · ORIGINAL REPORT",
+    "专家整合原文",
+    "以下内容来自本次实际运行的报告专家，已过滤内部实现信息。",
+  );
+  const details = el("details", "research-details original-report");
+  details.appendChild(el("summary", "", "展开查看报告原文"));
+  details.appendChild(el("div", "original-report-text", esc(text)));
+  panel.appendChild(details);
+  return panel;
 }
 
 // Type-aware renderer for aggregator content blocks. Presentation only: it
@@ -2300,8 +3083,6 @@ function renderEvidenceList(items, type) {
     li.appendChild(el("span", "rpt-li-mark", esc(LIST_MARK[type] || "•")));
     const body = el("div", "rpt-li-body");
     body.appendChild(el("div", "rpt-li-text", esc(text)));
-    const src = it && typeof it === "object" ? it.source_step : null;
-    if (src) body.appendChild(el("span", "src-chip", `⛭ ${esc(src)}`));
     li.appendChild(body);
     list.appendChild(li);
   });
@@ -2322,25 +3103,40 @@ function renderDataScope(sources) {
   const grid = el("div", "ds-cards");
   sources.slice(0, 30).forEach((s) => {
     if (!s || typeof s !== "object") return;
+    const item = researchPresentation?.safeObject
+      ? researchPresentation.safeObject(s)
+      : {};
+    const status = dataScopeStatus(s.missing_status);
+    const sourceText = JSON.stringify(s).toLowerCase();
+    const type = /audit|审计/.test(sourceText)
+      ? "审计意见"
+      : /forecast|预告/.test(sourceText)
+        ? "业绩预告"
+        : /financial|fina|财务|利润|营收/.test(sourceText)
+          ? "财务报表"
+          : /macro|宏观|政策|利率/.test(sourceText)
+            ? "宏观与行业数据"
+            : /price|market|行情/.test(sourceText)
+              ? "历史市场数据"
+              : "研究证据";
     const card = el("div", "ds-card");
     const head = el("div", "ds-card-head");
-    head.appendChild(el("span", "ds-src", esc(s.name || "数据源")));
-    if (s.missing_status != null && s.missing_status !== "") {
-      const st = dataScopeStatus(s.missing_status);
-      head.appendChild(el("span", `badge ${st.cls}`, `<span class="dot"></span>${esc(st.label)}`));
-    } else if (s.commit || s.license) {
-      head.appendChild(el("span", "badge waiting", `<span class="dot"></span>Skill 来源`));
-    }
+    head.appendChild(el("span", "ds-src", esc(type)));
+    head.appendChild(el("span", `badge ${status.cls}`, `<span class="dot"></span>${esc(status.label)}`));
     card.appendChild(head);
-    if (s.method) card.appendChild(dsKv("方法", s.method, true));
-    if (s.symbol) card.appendChild(dsKv("标的", s.symbol));
-    const qr = s.query_range || {};
+    const qr = item.query_range || {};
     const range = [qr.start_period, qr.end_period].filter(Boolean).join(" ~ ");
     if (range) card.appendChild(dsKv("区间", range));
-    if (s.latest_report_period != null && s.latest_report_period !== "null") card.appendChild(dsKv("最新期", s.latest_report_period));
-    if (s.row_count != null) card.appendChild(dsKv("记录数", s.row_count));
-    if (s.commit) card.appendChild(dsKv("commit", String(s.commit).slice(0, 10), true));
-    if (s.license) card.appendChild(dsKv("license", s.license));
+    if (item.latest_report_period != null && item.latest_report_period !== "null") {
+      card.appendChild(dsKv("最新期", item.latest_report_period));
+    }
+    card.appendChild(el(
+      "p",
+      "coverage-impact",
+      status.cls === "off"
+        ? `当前未获取到有效${type}，相关判断不会被补造，结论置信度会相应降低。`
+        : `${type}已用于支持本次研究，仍需结合其他证据交叉判断。`,
+    ));
     grid.appendChild(card);
   });
   return grid;
@@ -2348,44 +3144,29 @@ function renderDataScope(sources) {
 
 // Generic, bounded renderer for a content block's `data` — no fixed schema.
 function renderBlockData(data) {
-  const wrap = el("div");
-  const walk = (value, into, depth) => {
-    if (depth > 3) return;
-    if (value == null) return;
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      into.appendChild(el("div", "skill-row", `<span>•</span><span>${esc(String(value))}</span>`));
-    } else if (Array.isArray(value)) {
-      value.slice(0, 20).forEach((item) => walk(item, into, depth + 1));
-    } else if (typeof value === "object") {
-      Object.entries(value).slice(0, 20).forEach(([k, v]) => {
-        if (typeof v === "object" && v !== null) {
-          into.appendChild(el("div", "follow-sec-title", esc(k)));
-          walk(v, into, depth + 1);
-        } else {
-          into.appendChild(el("div", "skill-row", `<span style="color:var(--text-3)">${esc(k)}</span><span>${esc(String(v))}</span>`));
-        }
-      });
-    }
-  };
-  walk(data, wrap, 0);
+  const wrap = el("div", "op-note");
+  wrap.textContent = "该部分没有可安全展示的用户摘要，页面不会直接展开原始研究数据。";
   return wrap;
 }
 
 function buildFollowPanelLive(report) {
   const panel = el("div", "panel follow-panel glossary-scope");
+  const publicTitle = researchPresentation
+    ? researchPresentation.publicText(report.title, "本次研究报告")
+    : report.title;
   const completionStatus = String((report.aggregation || {}).completion_status || "failed");
   const reportMessage = {
-    completed: `报告《${report.title}》已成功生成`,
-    partially_completed: `报告《${report.title}》已部分生成，部分步骤未完成`,
-    failed: `报告《${report.title}》执行失败，已保存失败说明`,
-    needs_clarification: `报告《${report.title}》尚未生成，需要补充信息`,
-    rejected: `报告《${report.title}》未生成，任务已被拒绝`,
-  }[completionStatus] || `报告《${report.title}》处理结束`;
+    completed: `报告《${publicTitle}》已成功生成`,
+    partially_completed: `报告《${publicTitle}》已部分生成，部分步骤未完成`,
+    failed: `报告《${publicTitle}》执行失败，已保存失败说明`,
+    needs_clarification: `报告《${publicTitle}》尚未生成，需要补充信息`,
+    rejected: `报告《${publicTitle}》未生成，任务已被拒绝`,
+  }[completionStatus] || `报告《${publicTitle}》处理结束`;
   const head = el("div", "follow-head");
   head.appendChild(avatar("manager", 46, "fh-ava"));
   const who = el("div", "fh-who");
   who.appendChild(el("strong", "", "报告内证据检索"));
-  who.appendChild(el("p", "", "追问将在后端对报告证据做确定性检索，不调用模型、不产生新分析。"));
+  who.appendChild(el("p", "", "追问只会检索本次报告已经存在的证据，不会产生新的研究结论。"));
   who.appendChild(el("span", "badge online", '<span class="dot"></span>实时'));
   head.appendChild(who);
   panel.appendChild(head);
@@ -2464,7 +3245,7 @@ function submitLiveFollowup(report, question, scroll) {
     })
     .catch((err) => {
       typing.remove();
-      scroll.appendChild(renderLiveMessage({ role: "bot", text: `检索失败：${err && err.message ? err.message : "后端不可用"}`, time: nowClock() }));
+      scroll.appendChild(renderLiveMessage({ role: "bot", text: "当前无法完成证据检索。已生成的研究报告仍然保留，请稍后重试。", time: nowClock() }));
       scroll.scrollTop = scroll.scrollHeight;
     });
 }
@@ -2516,7 +3297,7 @@ function pageHallLive() {
         navigate(plan && plan.needsClarification ? "clarify" : "war");
       })
       .catch((err) => {
-        const message = err && err.message ? err.message : "后端不可用";
+        const message = "研究服务暂时无法完成任务规划，请稍后重试。";
         setLiveSession({ phase: "failed", error: message });
         navigate("war");
         toast(`规划失败：${message}`);
@@ -2592,7 +3373,7 @@ function pageHallLive() {
       cards.innerHTML = "";
       [
         { num: `${ov.enabled_experts}`, label: "在线专家", sub: "真实注册专家", green: true, route: "experts" },
-        { num: `${ov.enabled_skills}`, label: "已启用 Skill", sub: "运行时 Skill", route: "skills" },
+        { num: `${ov.enabled_skills}`, label: "可用研究能力", sub: "专业分析方法", route: "skills" },
         { num: `${ov.total_tasks}`, label: "累计任务", sub: `含 ${ov.completed_tasks} 个已完成`, route: "tasks" },
         { num: `${ov.report_count}`, label: "已生成报告", sub: "可追问 / 检索", route: "reports" },
       ].forEach((s) => {
@@ -2604,7 +3385,7 @@ function pageHallLive() {
     })
     .catch((err) => {
       strip.innerHTML = "";
-      strip.appendChild(stateBox("error", "无法读取在线专家", err && err.message ? err.message : ""));
+      strip.appendChild(stateBox("error", "无法读取在线专家", "当前无法更新专家状态，请稍后重试。"));
       requestAnimationFrame(() => drawOfficeScene(canvas, AGENTS));
     });
 
@@ -2735,7 +3516,7 @@ function pageClarifyLive() {
       .catch((err) => {
         go.disabled = false;
         go.textContent = "🚀 确认并提交澄清";
-        toast(`澄清提交失败：${err && err.message ? err.message : "后端不可用"}`);
+        toast("澄清提交未完成：研究服务暂时不可用，请稍后重试。");
       });
   });
   right.appendChild(go);
@@ -2756,7 +3537,7 @@ function pageManagerPlanningLive(session) {
   const wrap = el("div");
   const head = el("div", "war-head");
   head.appendChild(el("h1", "", "🛰 多 Agent 作战室 · 实时"));
-  head.appendChild(el("span", "sub", "Manager 正在生成真实执行计划"));
+  head.appendChild(el("span", "sub", "研究经理正在拆解真实研究问题"));
   const task = el("div", "war-task");
   task.appendChild(el("span", "wt-name", esc(session.prompt)));
   task.appendChild(el("span", "badge running", '<span class="dot"></span>规划中'));
@@ -2764,15 +3545,15 @@ function pageManagerPlanningLive(session) {
   wrap.appendChild(head);
 
   const panel = el("div", "panel manager-planning-shell");
-  panel.appendChild(el("div", "panel-title", "Manager 编排过程 <span class='title-extra'>等待真实 /api/tasks/sessions 响应</span>"));
+  panel.appendChild(el("div", "panel-title", "研究经理的任务拆解 <span class='title-extra'>等待真实研究计划</span>"));
 
   const flow = el("div", "manager-planning-flow");
   const manager = el("div", "manager-core is-planning");
   manager.innerHTML = `
     <span class="manager-core-icon">🧠</span>
     <strong>Manager Agent</strong>
-    <small>正在解析目标并验证任务图</small>
-    <span class="badge running"><span class="dot"></span>真实规划请求进行中</span>
+    <small>正在理解目标、选择专家并检查依赖关系</small>
+    <span class="badge running"><span class="dot"></span>研究规划进行中</span>
   `;
   flow.appendChild(manager);
 
@@ -2783,7 +3564,7 @@ function pageManagerPlanningLive(session) {
   const pending = el("div", "manager-pending");
   pending.appendChild(el("strong", "", "动态专家池"));
   pending.appendChild(el("span", "", "尚未返回选择结果"));
-  pending.appendChild(el("small", "", "Manager 返回前不会预设 Agent 或伪造 DAG"));
+  pending.appendChild(el("small", "", "研究计划返回前不会预设专家或伪造执行步骤"));
   flow.appendChild(pending);
   panel.appendChild(flow);
 
@@ -2798,7 +3579,7 @@ function pageManagerPlanningLive(session) {
     stages.appendChild(stage);
   });
   panel.appendChild(stages);
-  panel.appendChild(el("p", "manager-truth-note", "当前仅展示 Manager 请求的真实等待状态；实际 Agent、依赖关系和执行状态将在后端计划返回后出现。"));
+  panel.appendChild(el("p", "manager-truth-note", "当前仅展示真实等待状态；本次实际选择的专家、依赖关系和执行状态将在研究计划返回后出现。"));
   wrap.appendChild(panel);
   return wrap;
 }
@@ -2816,7 +3597,7 @@ function pageWarRoomLive() {
       failed ? "error" : "empty",
       failed ? "Manager 规划失败" : "尚无进行中的任务",
       failed
-        ? `未启动任何 Agent：${session.error || "后端不可用"}`
+        ? "研究团队尚未启动：研究服务暂时无法完成任务规划，请稍后重试。"
         : "请先在投研大厅提交研究请求。",
     );
     const back = el("button", "btn btn-primary", "‹ 返回大厅");
@@ -2834,7 +3615,7 @@ function pageWarRoomLive() {
   // ---- head ----
   const head = el("div", "war-head");
   head.appendChild(el("h1", "", "🛰 多 Agent 作战室 · 实时"));
-  head.appendChild(el("span", "sub", "真实 SSE 执行流 · 专家自主协作"));
+  head.appendChild(el("span", "sub", "真实研究进度 · 专家自主协作"));
   const task = el("div", "war-task");
   task.appendChild(el("span", "wt-name", esc(plan && plan.goal ? plan.goal : session.prompt)));
   const badge = el("span", "badge running", '<span class="dot"></span>执行中');
@@ -2855,15 +3636,18 @@ function pageWarRoomLive() {
     <span class="badge done manager-dispatch-status"><span class="dot"></span>计划已验证</span>
   `;
   managerFlow.appendChild(managerCard);
-  managerFlow.appendChild(el("div", "manager-dispatch-arrow", "分派 →"));
+  managerFlow.appendChild(el("div", "manager-dispatch-arrow", "研究分工 →"));
   const managerAgents = el("div", "manager-agent-list");
   const agentFlowEls = {};
   ((plan && plan.agents) || []).forEach((agent) => {
+    const publicAgent = researchPresentation
+      ? researchPresentation.agentInfo(agent.id)
+      : { name: agent.role || "AI 投研专家", role: agent.role || "" };
     const chip = el("div", "manager-agent-chip idle");
     chip.title = agent.reason || "";
     chip.innerHTML = `
-      <span class="manager-agent-avatar">${esc((agent.id || "?").slice(0, 1).toUpperCase())}</span>
-      <span><strong>${esc(agent.name || agent.id)}</strong><small>${esc(agent.role || "")}</small></span>
+      <span class="manager-agent-avatar">${esc(publicAgent.name.slice(0, 1))}</span>
+      <span><strong>${esc(publicAgent.name)}</strong><small>${esc(publicAgent.role)}</small></span>
       <em>已入列</em>
     `;
     agentFlowEls[agent.id] = chip;
@@ -2926,8 +3710,11 @@ function pageWarRoomLive() {
     node.style.left = `${x}%`;
     node.style.top = `${y}%`;
     node.appendChild(avatar(s.agent, 34, "dn-ava"));
-    node.appendChild(el("strong", "", esc(s.agent)));
-    node.appendChild(el("small", "", esc(s.role || "")));
+    const publicAgent = researchPresentation
+      ? researchPresentation.agentInfo(s.agent)
+      : { name: s.role || "AI 投研专家", role: s.role || "" };
+    node.appendChild(el("strong", "", esc(publicAgent.name)));
+    node.appendChild(el("small", "", esc(s.objective || publicAgent.role)));
     node.appendChild(el("span", "badge off dn-badge", '<span class="dot"></span>待命'));
     node.title = s.objective || "";
     node.addEventListener("click", () => navigate("experts"));
@@ -2965,16 +3752,16 @@ function pageWarRoomLive() {
   // ---- RIGHT: skills + logs ----
   const rightCol = el("div");
   const skillPanel = el("div", "panel");
-  skillPanel.appendChild(el("div", "panel-title", "Skill 调用"));
+  skillPanel.appendChild(el("div", "panel-title", "专业研究方法"));
   const skillList = el("div");
   skillPanel.appendChild(skillList);
-  const skillEmpty = el("div", "op-note", "尚无 Skill 调用");
+  const skillEmpty = el("div", "op-note", "专家尚未开始专业分析步骤");
   skillPanel.appendChild(skillEmpty);
   rightCol.appendChild(skillPanel);
 
   const logPanel = el("div", "panel");
   logPanel.style.marginTop = "14px";
-  logPanel.appendChild(el("div", "panel-title", "实时日志"));
+  logPanel.appendChild(el("div", "panel-title", "研究过程"));
   const logEl = el("div", "log-list");
   logPanel.appendChild(logEl);
   rightCol.appendChild(logPanel);
@@ -3071,72 +3858,80 @@ function pageWarRoomLive() {
     logEl.scrollTop = logEl.scrollHeight;
   };
 
-  const bumpSkill = (name) => {
-    if (!name) return;
+  const bumpSkill = (agentId) => {
+    if (!agentId) return;
+    const publicAgent = researchPresentation
+      ? researchPresentation.agentInfo(agentId)
+      : { name: "AI 投研专家" };
+    const name = `${publicAgent.name} · 专业分析`;
     skillCounts[name] = (skillCounts[name] || 0) + 1;
     skillEmpty.style.display = "none";
     let row = skillList.querySelector(`[data-skill="${window.CSS && CSS.escape ? CSS.escape(name) : name}"]`);
     if (!row) {
       row = el("div", "skill-row");
       row.setAttribute("data-skill", name);
-      row.innerHTML = `<span>🧩</span><span>${esc(name)}</span><span class="sk-count">0</span>`;
+      row.innerHTML = `<span></span><span>${esc(name)}</span><span class="sk-count">0</span>`;
       skillList.appendChild(row);
     }
     row.querySelector(".sk-count").textContent = String(skillCounts[name]);
   };
 
   const handleEvent = (evt) => {
-    const meta = evt.metadata || {};
     const agent = evt.agent || "";
     const stepId = evt.step_id;
+    const publicAgent = researchPresentation
+      ? researchPresentation.agentInfo(agent).name
+      : "研究团队";
+    const publicMessage = researchPresentation
+      ? researchPresentation.translateProgressEvent({
+          ...evt,
+          objective: steps.find((step) => step.id === stepId)?.objective || "",
+        })
+      : "研究团队正在更新任务进度。";
     switch (evt.type) {
       case "plan_created":
         managerCard.querySelector(".manager-dispatch-status").innerHTML = '<span class="dot"></span>分派完成';
-        pushLog("manager", evt.message || "任务图已生成");
+        pushLog("研究经理", publicMessage);
         break;
       case "step_started":
         if (stepId) { stepStatus[stepId] = "running"; setNode(stepId, "running"); }
         if (agent) setAgentFlow(agent);
-        pushLog(agent, evt.message || "开始执行", "run");
+        pushLog(publicAgent, publicMessage, "run");
         break;
       case "step_completed":
         if (stepId) { stepStatus[stepId] = "done"; setNode(stepId, "done"); }
         if (agent) setAgentFlow(agent);
-        pushLog(agent, evt.message || "步骤完成", "done");
+        pushLog(publicAgent, publicMessage, "done");
         break;
       case "step_failed":
         if (stepId) { stepStatus[stepId] = "failed"; setNode(stepId, "failed"); }
         if (agent) setAgentFlow(agent);
-        pushLog(agent, evt.message || "步骤失败", "fail");
+        pushLog(publicAgent, publicMessage, "fail");
         break;
       case "skill_plan_created":
-        pushLog(agent, evt.message || "已创建内部 Skill Plan", "skill");
+        pushLog(publicAgent, publicMessage, "skill");
         break;
       case "skill_started":
-        bumpSkill(meta.skill_id);
-        pushLog(agent, evt.message || "调用 Skill", "skill");
+        bumpSkill(agent);
+        pushLog(publicAgent, publicMessage, "skill");
         break;
       case "skill_completed":
-        pushLog(agent, evt.message || "Skill 完成", "skill");
+        pushLog(publicAgent, publicMessage, "skill");
         break;
       case "skill_failed":
-        pushLog(agent, evt.message || "Skill 失败", "fail");
+        pushLog(publicAgent, publicMessage, "fail");
         break;
       case "tool_called":
-        pushLog(agent, evt.message || `调用工具 ${meta.tool || ""}`, "tool");
+        pushLog(publicAgent, publicMessage, "tool");
         break;
       case "synthesis_started":
-        pushLog(agent || "report", evt.message || "正在整合结论…", "run");
+        pushLog("研究整合专家", publicMessage, "run");
         break;
       case "task_completed":
-        pushLog(
-          agent || "system",
-          evt.message || "任务处理结束",
-          ["failed", "rejected"].includes(meta.status) ? "fail" : "done",
-        );
+        pushLog("研究团队", publicMessage, "done");
         break;
       default:
-        if (evt.message) pushLog(agent, evt.message);
+        pushLog(publicAgent, publicMessage);
     }
     updateProgress();
   };

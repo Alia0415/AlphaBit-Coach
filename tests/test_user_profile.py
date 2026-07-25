@@ -190,7 +190,30 @@ def test_profile_api_revalidates_and_rejects_sensitive_browser_payload() -> None
     assert "traceback" not in response.text.lower()
 
 
-def test_skipped_onboarding_does_not_restart_full_questionnaire() -> None:
+def test_investment_knowledge_is_the_only_required_profile_answer() -> None:
+    client = TestClient(main_module.app)
+    created = client.put(
+        "/api/user-profile",
+        json=full_profile(
+            monthly_after_tax_income_cny=None,
+            emergency_fund_cny=None,
+            existing_positions=None,
+            skipped_fields=[
+                "monthly_after_tax_income_cny",
+                "emergency_fund_cny",
+                "existing_positions",
+            ],
+            confirmed_fields=["investment_experience"],
+        ),
+    )
+    assert created.status_code == 200
+    status = client.get("/api/user-profile/status").json()
+    assert status["onboarding_completed"] is True
+    assert status["action_required"] is None
+    assert status["missing_fields"] == []
+
+
+def test_missing_investment_knowledge_requires_profile_update() -> None:
     client = TestClient(main_module.app)
     created = client.put(
         "/api/user-profile",
@@ -203,7 +226,8 @@ def test_skipped_onboarding_does_not_restart_full_questionnaire() -> None:
     assert created.status_code == 200
     status = client.get("/api/user-profile/status").json()
     assert status["onboarding_completed"] is True
-    assert status["action_required"] is None
+    assert status["action_required"] == "profile_update_required"
+    assert status["missing_fields"] == ["investment_experience"]
 
 
 def test_personal_task_without_profile_requires_onboarding_before_dag() -> None:
@@ -252,7 +276,7 @@ def test_personal_task_with_completed_but_missing_profile_requests_update() -> N
     client = TestClient(main_module.app)
     assert client.put(
         "/api/user-profile",
-        json=full_profile(emergency_fund_cny=None),
+        json=full_profile(investment_experience=None),
     ).status_code == 200
 
     with patch.object(
@@ -267,7 +291,9 @@ def test_personal_task_with_completed_but_missing_profile_requests_update() -> N
 
     body = response.json()
     assert body["action_required"] == "profile_update_required"
-    assert body["required_profile_fields"] == ["emergency_fund_cny"]
+    assert body["required_profile_fields"] == ["investment_experience"]
+    assert "投资知识水平" in body["final_answer"]
+    assert "investment_experience" not in body["final_answer"]
     assert "不会重新启动整套问卷" in body["final_answer"]
 
 

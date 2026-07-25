@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 
-const STEP_KEY = "alphaos.profile.onboarding.step.v1";
+const STEP_KEY = "alphaos.profile.onboarding.step.v2";
+const REQUIRED_FIELD = "investment_experience";
 
 const FIELD_META = {
   investment_goal: {
@@ -87,15 +88,17 @@ const FIELD_META = {
     kind: "positions",
   },
   investment_experience: {
-    label: "投资经验",
-    question: "你过去是否实际购买并持有过股票、基金或债券？",
-    hint: "投资经验不会被用来自动提高你的风险承受能力。",
+    label: "投资知识水平（必答）",
+    question: "你目前的投资知识水平如何？",
+    hint: "请选择最接近的水平；这只用于调整解释深度，不代表你的风险承受能力。",
     kind: "select",
-    options: [["none", "没有实际投资经验"], ["basic", "有一些实际持有经验"], ["experienced", "有较长时间的实际经验"]],
+    required: true,
+    options: [["none", "入门：只了解少量基础概念"], ["basic", "基础：理解常见产品与风险"], ["experienced", "熟练：能独立分析产品、估值与风险"]],
   },
 };
 
 const STEPS = [
+  "investment_experience",
   "investment_goal",
   "monthly_after_tax_income_cny",
   "income_stability",
@@ -109,13 +112,14 @@ const STEPS = [
   "liquidity_need",
   "max_acceptable_loss_ratio",
   "existing_positions",
-  "investment_experience",
 ];
+const ALL_FIELDS = STEPS.flatMap((item) => Array.isArray(item) ? item : [item]);
+const OPTIONAL_FIELDS = ALL_FIELDS.filter((field) => field !== REQUIRED_FIELD);
 const SECTIONS = [
   { title: "现金流与家庭责任", fields: ["monthly_after_tax_income_cny", "income_stability", "monthly_essential_expenses_cny", "monthly_debt_payment_cny", "dependents_count", "emergency_fund_cny"] },
   { title: "目标与资金安排", fields: ["investment_goal", "planned_large_expenses_cny", "planned_large_expenses_within_months", "available_investment_funds_cny", "investment_horizon_months"] },
   { title: "流动性与亏损边界", fields: ["liquidity_need", "max_acceptable_loss_ratio"] },
-  { title: "持仓与经验", fields: ["existing_positions", "investment_experience"] },
+  { title: "持仓与知识水平", fields: ["existing_positions", "investment_experience"] },
 ];
 
 const money = (value) => value == null ? "未填写" : new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY", maximumFractionDigits: 0 }).format(value);
@@ -128,7 +132,10 @@ function inputMarkup(field, value, compact = false) {
   const id = `profile-${field}-${Math.random().toString(36).slice(2)}`;
   const label = compact ? `<label for="${id}">${esc(meta.label)}</label>` : "";
   if (meta.kind === "select") {
-    return `${label}<select id="${id}" data-profile-field="${field}"><option value="">暂不填写</option>${meta.options.map(([v, t]) => `<option value="${v}"${value === v ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
+    const placeholder = meta.required ? "请选择投资知识水平" : "暂不填写";
+    const required = meta.required ? ' required aria-required="true"' : "";
+    const disabled = meta.required ? " disabled" : "";
+    return `${label}<select id="${id}" data-profile-field="${field}"${required}><option value=""${value == null ? " selected" : ""}${disabled}>${placeholder}</option>${meta.options.map(([v, t]) => `<option value="${v}"${value === v ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
   }
   if (meta.kind === "positions") {
     const rows = Array.isArray(value) ? value.map((p) => [p.asset_name, p.asset_type, p.amount_cny ?? "", p.portfolio_ratio == null ? "" : p.portfolio_ratio * 100].join(" | ")).join("\n") : "";
@@ -160,7 +167,13 @@ function readField(root, field) {
       };
     });
   }
-  if (meta.kind === "select" || meta.kind === "text") return input.value.trim() || null;
+  if (meta.kind === "select" || meta.kind === "text") {
+    const value = input.value.trim() || null;
+    if (meta.required && value == null) {
+      throw new Error(`${meta.label.replace("（必答）", "")}为必答题，请先选择。`);
+    }
+    return value;
+  }
   if (input.value === "") return null;
   const value = Number(input.value);
   if (!Number.isFinite(value)) throw new Error(`${meta.label}格式不正确。`);
@@ -278,31 +291,32 @@ export async function openProfileOnboarding(notify = () => {}) {
   const render = () => {
     localStorage.setItem(STEP_KEY, String(step));
     if (step >= STEPS.length) {
-      const allFields = STEPS.flatMap((item) => Array.isArray(item) ? item : [item]);
-      const answered = allFields.filter((field) => profile[field] != null).length;
-      dialog.innerHTML = `<div class="profile-progress"><span>画像摘要确认</span><strong>${answered}/${allFields.length}</strong><i style="width:100%"></i></div><h2>画像已整理，请确认保存</h2><p>未填写项保持为空，不会被填成 0。后续可以在“用户画像”栏目分模块修改。</p><div class="onboarding-summary">${profileCard("投资目标", text(profile.investment_goal))}${profileCard("投资期限", profile.investment_horizon_months == null ? "未填写" : `${profile.investment_horizon_months} 个月`)}${profileCard("可投资资金", money(profile.available_investment_funds_cny))}${profileCard("最大亏损", percent(profile.max_acceptable_loss_ratio))}</div><p class="profile-inline-error" data-profile-error></p><div class="onboarding-buttons"><button class="btn" data-back>上一步</button><button class="btn btn-primary" data-confirm>确认并完成建档</button></div>`;
+      const answered = ALL_FIELDS.filter((field) => profile[field] != null).length;
+      dialog.innerHTML = `<div class="profile-progress"><span>画像摘要确认</span><strong>${answered}/${ALL_FIELDS.length}</strong><i style="width:100%"></i></div><h2>画像已整理，请确认保存</h2><p>除投资知识水平外，未填写项都会保持为空，不会被填成 0。后续可以在“用户画像”栏目分模块修改。</p><div class="onboarding-summary">${profileCard("投资知识水平", text(FIELD_META[REQUIRED_FIELD].options.find(([value]) => value === profile[REQUIRED_FIELD])?.[1]))}${profileCard("投资目标", text(profile.investment_goal))}${profileCard("投资期限", profile.investment_horizon_months == null ? "未填写" : `${profile.investment_horizon_months} 个月`)}${profileCard("可投资资金", money(profile.available_investment_funds_cny))}${profileCard("最大亏损", percent(profile.max_acceptable_loss_ratio))}</div><p class="profile-inline-error" data-profile-error></p><div class="onboarding-buttons"><button class="btn" data-back>上一步</button><button class="btn btn-primary" data-confirm>确认并完成建档</button></div>`;
       dialog.querySelector("[data-back]").onclick = () => { step -= 1; render(); };
-      dialog.querySelector("[data-confirm]").onclick = async () => {
-        try {
-          const saved = await api.patchUserProfile({ onboarding_completed: true, confirmed_fields: [...confirmed], skipped_fields: [...skipped] });
-          profile = saved.profile;
-          localStorage.removeItem(STEP_KEY);
-          close();
-          notify("首次画像建档已完成并保存到 SQLite。");
-        } catch (error) { setError(dialog, error.message); }
-      };
+      dialog.querySelector("[data-confirm]").onclick = finishOnboarding;
       return;
     }
     const fields = Array.isArray(STEPS[step]) ? STEPS[step] : [STEPS[step]];
     const field = fields[0];
     const meta = FIELD_META[field];
-    dialog.innerHTML = `<div class="profile-progress"><span>首次画像建档</span><strong>${step + 1}/${STEPS.length}</strong><i style="width:${((step + 1) / STEPS.length) * 100}%"></i></div><p class="profile-kicker">${esc(meta.label)}</p><h2>${esc(meta.question)}</h2><p>${esc(meta.hint || "可以跳过，缺失值会保持为空。")}</p><div class="onboarding-control">${fields.map((name) => inputMarkup(name, profile[name], fields.length > 1)).join("")}</div><p class="profile-inline-error" data-profile-error></p><div class="onboarding-buttons"><button class="btn" data-back${step === 0 ? " disabled" : ""}>上一步</button><button class="btn" data-exit>保存退出</button><button class="btn" data-skip>跳过</button><button class="btn btn-primary" data-next>保存并继续</button></div>`;
+    const isRequiredStep = fields.includes(REQUIRED_FIELD);
+    const guidance = isRequiredStep
+      ? meta.hint
+      : (meta.hint || "这是可选内容，可以单题跳过，也可以一次性跳过其余问题。");
+    const optionalActions = isRequiredStep
+      ? `<button class="btn" data-skip-rest>保存并跳过其余问题</button>`
+      : `<button class="btn" data-skip>跳过本题</button><button class="btn" data-skip-rest>跳过其余问题并完成</button>`;
+    dialog.innerHTML = `<div class="profile-progress"><span>首次画像建档</span><strong>${step + 1}/${STEPS.length}</strong><i style="width:${((step + 1) / STEPS.length) * 100}%"></i></div><p class="profile-kicker">${esc(meta.label)}</p><h2>${esc(meta.question)}</h2><p>${esc(guidance)}</p><div class="onboarding-control">${fields.map((name) => inputMarkup(name, profile[name], fields.length > 1)).join("")}</div><p class="profile-inline-error" data-profile-error></p><div class="onboarding-buttons"><button class="btn" data-back${step === 0 ? " disabled" : ""}>上一步</button><button class="btn" data-exit>保存退出</button>${optionalActions}<button class="btn btn-primary" data-next>保存并继续</button></div>`;
     dialog.querySelector("[data-back]").onclick = () => { step = Math.max(0, step - 1); render(); };
     dialog.querySelector("[data-exit]").onclick = close;
-    dialog.querySelector("[data-skip]").onclick = () => save(true);
+    if (!isRequiredStep) {
+      dialog.querySelector("[data-skip]").onclick = () => save(true);
+    }
+    dialog.querySelector("[data-skip-rest]").onclick = () => save(isRequiredStep ? false : true, true);
     dialog.querySelector("[data-next]").onclick = () => save(false);
 
-    async function save(isSkip) {
+    async function save(isSkip, finish = false) {
       try {
         setError(dialog);
         const patch = {};
@@ -312,12 +326,40 @@ export async function openProfileOnboarding(notify = () => {}) {
           if (isSkip || value == null) { skipped.add(name); confirmed.delete(name); }
           else { confirmed.add(name); skipped.delete(name); }
         });
-        const saved = await api.patchUserProfile({ ...patch, confirmed_fields: [...confirmed], skipped_fields: [...skipped], onboarding_completed: false });
+        if (finish) {
+          OPTIONAL_FIELDS.forEach((name) => {
+            if (profile[name] == null && patch[name] == null) {
+              skipped.add(name);
+              confirmed.delete(name);
+            }
+          });
+        }
+        const saved = await api.patchUserProfile({ ...patch, confirmed_fields: [...confirmed], skipped_fields: [...skipped], onboarding_completed: finish });
         profile = saved.profile;
+        if (finish) {
+          await finishOnboarding(false);
+          return;
+        }
         step += 1;
         render();
       } catch (error) { setError(dialog, error.message); }
     }
   };
+
+  async function finishOnboarding(persist = true) {
+    try {
+      if (profile[REQUIRED_FIELD] == null) {
+        throw new Error("投资知识水平为必答题，请先选择。");
+      }
+      if (persist) {
+        const saved = await api.patchUserProfile({ onboarding_completed: true, confirmed_fields: [...confirmed], skipped_fields: [...skipped] });
+        profile = saved.profile;
+      }
+      localStorage.removeItem(STEP_KEY);
+      close();
+      notify("首次画像建档已完成并保存到 SQLite。");
+    } catch (error) { setError(dialog, error.message); }
+  }
+
   render();
 }

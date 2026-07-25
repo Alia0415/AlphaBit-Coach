@@ -330,5 +330,6 @@ def test_personal_decision_api_clarifies_without_manager_or_experts() -> None:
     assert body["results"] == {}
     assert body["aggregation"]["result_type"] == "clarification"
     assert body["aggregation"]["completion_status"] == "needs_clarification"
-    assert "投资期限" in body["final_answer"]
+    assert "投资知识水平" in body["final_answer"]
+    assert "一次性跳过" in body["final_answer"]
     assert all(event["type"] != "plan_created" for event in body["events"])
