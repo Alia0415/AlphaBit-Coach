@@ -71,6 +71,250 @@ class ResearchAgent:
         time_range = str(inputs.get("time_range", "")).strip()
         research_goal = str(inputs.get("research_goal", "")).strip()
         focus = str(inputs.get("focus", "")).strip()
+        # If a symbol is provided, try evidence-based industry competition
+        symbol = str(inputs.get("symbol", "")).strip()
+        if not symbol:
+            symbols = inputs.get("symbols")
+            if isinstance(symbols, list) and len(symbols) == 1:
+                symbol = str(symbols[0]).strip()
+
+        # Attempt evidence-based industry research (spec §7.1)
+        if symbol and self._data_client.configured:
+            try:
+                return self._execute_industry_evidence(
+                    task, symbol, industry, time_range, research_goal, focus
+                )
+            except Exception:
+                pass  # Fall through to framework-only path
+
+        # Original framework-only path (evidence_status=insufficient)
+        return self._execute_industry_framework(
+            task, industry, time_range, research_goal, focus
+        )
+
+    def _execute_industry_evidence(
+        self,
+        task: ExpertTask,
+        symbol: str,
+        industry: str,
+        time_range: str,
+        research_goal: str,
+        focus: str,
+    ) -> ExpertResult:
+        """Evidence-based industry competition using PandaData (spec §7.1)."""
+        tool_calls: list[dict[str, Any]] = []
+        evidence: list[dict[str, Any]] = []
+        limitations: list[str] = []
+
+        # 1. Get stock industry classification
+        industry_data = None
+        try:
+            industry_data = self._data_client.get_stock_industry(symbol=symbol)
+            tool_calls.append({
+                "tool": "get_stock_industry",
+                "status": "completed",
+                "arguments": {"symbol": symbol},
+            })
+            if industry_data:
+                evidence.append({
+                    "type": "industry_classification",
+                    "symbol": symbol,
+                    "data": industry_data,
+                    "source": "pandadata",
+                })
+                # Use actual industry from data if not specified
+                if not industry and isinstance(industry_data, list) and industry_data:
+                    row = industry_data[0] if isinstance(industry_data[0], dict) else {}
+                    industry = row.get("industry_name", "") or industry
+        except Exception as exc:
+            tool_calls.append({
+                "tool": "get_stock_industry",
+                "status": "failed",
+                "error": str(exc)[:100],
+            })
+            limitations.append("行业分类查询失败")
+
+        # 2. Get competitors
+        competitors: list[str] = []
+        try:
+            comp_data = self._data_client.get_stock_competitor(
+                symbol=symbol, max_results=10
+            )
+            tool_calls.append({
+                "tool": "get_stock_competitor",
+                "status": "completed",
+                "arguments": {"symbol": symbol, "max_results": 10},
+            })
+            if isinstance(comp_data, list):
+                for item in comp_data:
+                    if isinstance(item, dict) and item.get("symbol"):
+                        competitors.append(str(item["symbol"]))
+                evidence.append({
+                    "type": "competitor_candidates",
+                    "symbol": symbol,
+                    "competitors": competitors[:10],
+                    "source": "pandadata",
+                })
+        except Exception as exc:
+            tool_calls.append({
+                "tool": "get_stock_competitor",
+                "status": "failed",
+                "error": str(exc)[:100],
+            })
+
+        # 3. If competitors insufficient, use industry constituents
+        if len(competitors) < 3 and industry:
+            try:
+                constituents = self._data_client.get_industry_constituents(
+                    industry=industry, level="L1", max_results=20
+                )
+                tool_calls.append({
+                    "tool": "get_industry_constituents",
+                    "status": "completed",
+                    "arguments": {"industry": industry, "level": "L1"},
+                })
+                if isinstance(constituents, list):
+                    for item in constituents:
+                        if isinstance(item, dict) and item.get("symbol"):
+                            sym = str(item["symbol"])
+                            if sym != symbol and sym not in competitors:
+                                competitors.append(sym)
+                    evidence.append({
+                        "type": "industry_constituents",
+                        "industry": industry,
+                        "count": len(constituents),
+                        "source": "pandadata",
+                    })
+            except Exception as exc:
+                tool_calls.append({
+                    "tool": "get_industry_constituents",
+                    "status": "failed",
+                    "error": str(exc)[:100],
+                })
+                limitations.append("同行业成分股查询失败")
+
+        # 4. Get industry detail
+        if industry:
+            try:
+                detail = self._data_client.get_industry_detail(
+                    industry=industry, level="L1"
+                )
+                tool_calls.append({
+                    "tool": "get_industry_detail",
+                    "status": "completed",
+                    "arguments": {"industry": industry},
+                })
+                if detail:
+                    evidence.append({
+                        "type": "industry_detail",
+                        "industry": industry,
+                        "data": detail,
+                        "source": "pandadata",
+                    })
+            except Exception as exc:
+                tool_calls.append({
+                    "tool": "get_industry_detail",
+                    "status": "failed",
+                    "error": str(exc)[:100],
+                })
+
+        # Determine evidence status
+        has_real_data = any(
+            e.get("type") in (
+                "competitor_candidates",
+                "industry_constituents",
+                "industry_detail",
+            )
+            for e in evidence
+        )
+        evidence_status = "partial" if has_real_data else "insufficient"
+
+        summary = (
+            f"已完成{industry or '目标行业'}的竞争格局分析，"
+            f"识别 {len(competitors)} 家可比公司。"
+            if has_real_data
+            else f"已为{industry or '目标行业'}建立行业研究框架，"
+            "但缺少充分的行业竞品数据。"
+        )
+
+        # Try Ark explanation if data exists
+        fallback_used = False
+        if has_real_data:
+            try:
+                ark_summary = self._get_ark_client().chat(
+                    _industry_explanation_prompt(
+                        task=task,
+                        industry=industry,
+                        time_range=time_range,
+                        research_goal=research_goal,
+                        focus=focus,
+                        dimensions=[
+                            "行业竞争格局",
+                            "可比公司",
+                            "竞争位置",
+                        ],
+                    )
+                ).strip()
+                if ark_summary:
+                    summary = ark_summary
+            except Exception:
+                fallback_used = True
+
+        if not has_real_data:
+            limitations.append(
+                "行业数据不足，当前结果为框架性分析，"
+                "不能替代完整的同业比较。"
+            )
+
+        return ExpertResult(
+            task_id=task.task_id,
+            agent=AgentId.RESEARCH,
+            status="completed",
+            summary=summary,
+            evidence=evidence,
+            assumptions=[
+                "竞品候选来自 PandaData 申万行业分类和竞品推荐。",
+                "行业地位需结合财务数据进一步验证。",
+            ],
+            risks=[
+                "行业分类口径变化可能影响可比性。",
+                "中小市值公司可能在竞品列表中被遗漏。",
+            ],
+            limitations=limitations,
+            recommendations=[
+                "结合公司级财务数据验证行业竞争位置。",
+                "如需量化横截面对比，可通过 Quant Agent 进行交叉验证。",
+            ],
+            tool_calls=tool_calls,
+            data_sources=[
+                {
+                    "name": "PandaData",
+                    "scope": "industry_competition",
+                    "symbol": symbol,
+                    "industry": industry,
+                    "competitor_count": len(competitors),
+                }
+            ],
+            metadata={
+                "mode": "industry_evidence",
+                "industry": industry,
+                "symbol": symbol,
+                "competitor_count": len(competitors),
+                "evidence_status": evidence_status,
+                "ark_fallback_used": fallback_used,
+                "independent_industry_database_connected": True,
+            },
+        )
+
+    def _execute_industry_framework(
+        self,
+        task: ExpertTask,
+        industry: str,
+        time_range: str,
+        research_goal: str,
+        focus: str,
+    ) -> ExpertResult:
+        """Framework-only industry research (no real data)."""
 
         dimensions = [
             "需求与增长驱动",

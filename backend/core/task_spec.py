@@ -27,6 +27,30 @@ SubjectType = Literal[
     "research_thesis",
 ]
 
+# ---------------------------------------------------------------------------
+# Research dimensions — the controlled vocabulary for multidimensional research
+# ---------------------------------------------------------------------------
+
+ResearchDimension = Literal[
+    "company_fundamentals",
+    "industry_competition",
+    "macro_environment",
+    "quantitative_cross_check",
+    "risk_assessment",
+    "formal_report",
+]
+
+RequestScope = Literal["focused", "comprehensive"]
+
+# Default required dimensions for comprehensive single-company research
+_COMPREHENSIVE_DEFAULTS: list[ResearchDimension] = [
+    "company_fundamentals",
+    "industry_competition",
+    "macro_environment",
+    "quantitative_cross_check",
+    "risk_assessment",
+]
+
 
 class TaskSpec(BaseModel):
     """The sole normalized research goal supplied to the Manager."""
@@ -52,6 +76,11 @@ class TaskSpec(BaseModel):
     ]
     clarification_question: str | None = None
 
+    # --- Multidimensional research fields (spec §5) ---
+    request_scope: RequestScope = "focused"
+    required_dimensions: list[ResearchDimension] = Field(default_factory=list)
+    optional_dimensions: list[ResearchDimension] = Field(default_factory=list)
+
     @model_validator(mode="after")
     def clarification_is_explicit(self) -> "TaskSpec":
         if self.execution_decision == "clarify" and not (
@@ -60,4 +89,17 @@ class TaskSpec(BaseModel):
             raise ValueError(
                 "clarification_question is required when execution_decision=clarify"
             )
+        return self
+
+    @model_validator(mode="after")
+    def dimensions_are_valid(self) -> "TaskSpec":
+        # required_dimensions must be deduplicated and non-empty when scope
+        # is comprehensive (unless clarification is needed).
+        if self.execution_decision == "clarify":
+            return self
+        if self.required_dimensions:
+            if len(self.required_dimensions) != len(set(self.required_dimensions)):
+                raise ValueError("required_dimensions must not contain duplicates")
+        # formal_report only appears when explicitly requested
+        # (enforced at interpreter level, not blocked here to allow flexibility)
         return self

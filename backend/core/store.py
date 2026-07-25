@@ -3,6 +3,8 @@
 The store keeps only real orchestration facts: the plans the Manager produced,
 the events the executor emitted, the aggregations synthesized from evidence, and
 the evidence-derived completeness of each report. It never fabricates data.
+
+Supports execution_id, idempotency_key, and TaskSession state machine (spec §12.1).
 """
 
 from __future__ import annotations
@@ -12,12 +14,42 @@ import os
 import sqlite3
 import threading
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = REPO_ROOT / "alphaos.db"
 _ENV_DB_PATH = "ALPHAOS_DB"
+
+
+# ---------------------------------------------------------------------------
+# TaskSession state machine (spec §12.1)
+# ---------------------------------------------------------------------------
+
+
+class SessionState(str, Enum):
+    """Controlled task session states with defined transitions."""
+
+    CREATED = "created"
+    PLANNING = "planning"
+    EXECUTING = "executing"
+    AGGREGATING = "aggregating"
+    COMPLETED = "completed"
+    PARTIALLY_COMPLETED = "partially_completed"
+    FAILED = "failed"
+
+
+# Valid transitions (from → set of to)
+_VALID_TRANSITIONS: dict[SessionState, set[SessionState]] = {
+    SessionState.CREATED: {SessionState.PLANNING, SessionState.FAILED},
+    SessionState.PLANNING: {SessionState.EXECUTING, SessionState.FAILED},
+    SessionState.EXECUTING: {SessionState.AGGREGATING, SessionState.FAILED, SessionState.PARTIALLY_COMPLETED},
+    SessionState.AGGREGATING: {SessionState.COMPLETED, SessionState.PARTIALLY_COMPLETED, SessionState.FAILED},
+    SessionState.COMPLETED: set(),
+    SessionState.PARTIALLY_COMPLETED: set(),
+    SessionState.FAILED: set(),
+}
 
 
 def _now() -> str:
@@ -43,7 +75,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     plan_json TEXT,
     aggregation_json TEXT,
     final_answer TEXT,
-    duration_ms INTEGER
+    duration_ms INTEGER,
+    execution_id TEXT,
+    idempotency_key TEXT,
+    owner TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
     task_id TEXT NOT NULL,
@@ -105,7 +140,26 @@ class Store:
             self._conn.execute("PRAGMA journal_mode=WAL;")
             self._conn.execute("PRAGMA foreign_keys=ON;")
             self._conn.executescript(_SCHEMA)
+            self._migrate()
             self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Add columns that may be missing from an older schema version."""
+        cursor = self._conn.execute("PRAGMA table_info(tasks)")
+        existing_cols = {row["name"] for row in cursor.fetchall()}
+        migrations = [
+            ("execution_id", "ALTER TABLE tasks ADD COLUMN execution_id TEXT"),
+            ("idempotency_key", "ALTER TABLE tasks ADD COLUMN idempotency_key TEXT"),
+            ("owner", "ALTER TABLE tasks ADD COLUMN owner TEXT"),
+        ]
+        for col_name, sql in migrations:
+            if col_name not in existing_cols:
+                self._conn.execute(sql)
+        # Ensure unique index exists (safe to re-run)
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_idempotency "
+            "ON tasks(idempotency_key) WHERE idempotency_key IS NOT NULL"
+        )
 
     def close(self) -> None:
         with self._lock:
@@ -120,14 +174,78 @@ class Store:
         prompt: str,
         status: str,
         plan: Any | None = None,
+        execution_id: str | None = None,
+        idempotency_key: str | None = None,
+        owner: str | None = None,
     ) -> None:
         with self._lock:
+            # Idempotency check (spec §12.1): if key exists, skip creation
+            if idempotency_key:
+                existing = self._conn.execute(
+                    "SELECT id, status FROM tasks WHERE idempotency_key = ?",
+                    (idempotency_key,),
+                ).fetchone()
+                if existing is not None:
+                    return  # Task already exists for this key
             self._conn.execute(
-                "INSERT INTO tasks (id, prompt, status, created_at, plan_json) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (task_id, prompt, status, _now(), _dumps(plan) if plan is not None else None),
+                "INSERT INTO tasks (id, prompt, status, created_at, plan_json, "
+                "execution_id, idempotency_key, owner) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    task_id,
+                    prompt,
+                    status,
+                    _now(),
+                    _dumps(plan) if plan is not None else None,
+                    execution_id or task_id,
+                    idempotency_key,
+                    owner,
+                ),
             )
             self._conn.commit()
+
+    def transition_task_state(
+        self,
+        task_id: str,
+        *,
+        to_state: SessionState,
+    ) -> bool:
+        """Transition task to new state following the state machine.
+
+        Returns True if transition succeeded, False if invalid transition.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT status FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if row is None:
+                return False
+            current = row["status"]
+            try:
+                current_state = SessionState(current)
+            except ValueError:
+                # Legacy free-text status → allow any transition
+                current_state = SessionState.CREATED
+
+            if to_state not in _VALID_TRANSITIONS.get(current_state, set()):
+                return False
+
+            self._conn.execute(
+                "UPDATE tasks SET status = ? WHERE id = ?",
+                (to_state.value, task_id),
+            )
+            self._conn.commit()
+            return True
+
+    def get_task_by_idempotency_key(self, key: str) -> dict[str, Any] | None:
+        """Look up an existing task by idempotency key (spec §12.1)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM tasks WHERE idempotency_key = ?", (key,)
+            ).fetchone()
+        if row is None:
+            return None
+        return self.get_task(row["id"])
 
     def update_task_plan(
         self,

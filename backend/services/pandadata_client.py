@@ -514,6 +514,105 @@ class PandaDataClient:
     ) -> Any:
         return self._dated_call("get_hsgt_hold", symbol, start_date, end_date)
 
+    # ------------------------------------------------------------------
+    # Industry, competitor, concept, and factor methods (spec §8)
+    # ------------------------------------------------------------------
+
+    def get_stock_competitor(
+        self,
+        *,
+        symbol: str,
+        max_results: int = 10,
+    ) -> Any:
+        """Retrieve competitor candidates for a given stock."""
+        symbol = _validate_symbol(symbol)
+        if max_results < 1 or max_results > 50:
+            raise ValueError("max_results must be between 1 and 50")
+        return self._call(
+            "get_stock_competitor",
+            symbol=symbol,
+            max_results=max_results,
+        )
+
+    def get_industry_constituents(
+        self,
+        *,
+        industry: str,
+        level: str = "L1",
+        max_results: int = 30,
+    ) -> Any:
+        """Get constituent stocks of a given Shenwan industry level."""
+        if not industry or not industry.strip():
+            raise ValueError("industry must be non-empty")
+        if level not in ("L1", "L2", "L3"):
+            raise ValueError("level must be L1, L2, or L3")
+        if max_results < 1 or max_results > 100:
+            raise ValueError("max_results must be between 1 and 100")
+        return self._call(
+            "get_industry_constituents",
+            industry=industry.strip(),
+            level=level,
+            max_results=max_results,
+        )
+
+    def get_industry_detail(self, *, industry: str, level: str = "L1") -> Any:
+        """Get metadata and description of a Shenwan industry."""
+        if not industry or not industry.strip():
+            raise ValueError("industry must be non-empty")
+        if level not in ("L1", "L2", "L3"):
+            raise ValueError("level must be L1, L2, or L3")
+        return self._call(
+            "get_industry_detail",
+            industry=industry.strip(),
+            level=level,
+        )
+
+    def get_concept_list(self, *, max_results: int = 50) -> Any:
+        """Get available concept boards/themes."""
+        if max_results < 1 or max_results > 200:
+            raise ValueError("max_results must be between 1 and 200")
+        return self._call("get_concept_list", max_results=max_results)
+
+    def get_concept_constituents(
+        self,
+        *,
+        concept: str,
+        max_results: int = 30,
+    ) -> Any:
+        """Get constituent stocks of a concept board."""
+        if not concept or not concept.strip():
+            raise ValueError("concept must be non-empty")
+        if max_results < 1 or max_results > 100:
+            raise ValueError("max_results must be between 1 and 100")
+        return self._call(
+            "get_concept_constituents",
+            concept=concept.strip(),
+            max_results=max_results,
+        )
+
+    def get_factor(
+        self,
+        *,
+        symbols: list[str],
+        factor_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> Any:
+        """Get factor values for specified stocks and date range."""
+        if not symbols or len(symbols) > 50:
+            raise ValueError("symbols must be a non-empty list (max 50)")
+        validated_symbols = [_validate_symbol(s) for s in symbols]
+        if not factor_id or not factor_id.strip():
+            raise ValueError("factor_id must be non-empty")
+        start_date, end_date = _validate_date_range(start_date, end_date)
+        return self._call(
+            "get_factor",
+            symbol=validated_symbols,
+            factor_id=factor_id.strip(),
+            start_date=start_date,
+            end_date=end_date,
+        )
+
     def _dated_call(
         self,
         method: str,

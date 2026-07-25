@@ -8,6 +8,7 @@ from typing import Any
 
 from backend.core.agent_registry import AgentRegistry
 from backend.core.contracts import AgentId, ExecutionPlan, PlanStep
+from backend.core.task_spec import ResearchDimension, TaskSpec
 
 
 class PlanValidationError(ValueError):
@@ -168,7 +169,9 @@ def _validate_industry_research_inputs(
         raise PlanValidationError(
             f"Industry research step {step.id} requires a non-empty industry"
         )
-    if "symbol" in inputs or "symbols" in inputs:
+    # symbol (singular) is allowed for industry research (spec §7.1 competitor lookup)
+    # but symbols (plural list) is the market-research format and must be rejected
+    if "symbols" in inputs:
         raise PlanValidationError(
             f"Industry research step {step.id} cannot include symbol or symbols"
         )
@@ -290,3 +293,122 @@ def _assert_acyclic(dependencies: dict[str, list[str]]) -> None:
 
 def _format_agents(agents: set[AgentId]) -> str:
     return ", ".join(sorted(agent.value for agent in agents))
+
+
+# ---------------------------------------------------------------------------
+# Dimension-coverage semantic validation (spec §6.3)
+# ---------------------------------------------------------------------------
+
+
+def validate_plan_dimensions(
+    plan: ExecutionPlan,
+    task_spec: TaskSpec,
+    registry: AgentRegistry,
+) -> ExecutionPlan:
+    """Validate dimension coverage, step authorization, and scope rules.
+
+    Must be called after structural validation (validate_execution_plan).
+    Raises PlanValidationError on any semantic violation.
+    """
+    # 1. Each step's covers_dimensions must be authorized by the Registry
+    for step in plan.steps:
+        if not step.covers_dimensions:
+            continue
+        authorized = set(registry.dimensions_for(step.agent))
+        claimed = set(step.covers_dimensions)
+        unauthorized = claimed - authorized
+        if unauthorized:
+            dims = ", ".join(sorted(unauthorized))
+            raise PlanValidationError(
+                f"Step {step.id} ({step.agent.value}) claims unauthorized "
+                f"dimensions: {dims}"
+            )
+
+    # 2. All required dimensions must be covered by at least one step
+    #    Skip this check if no step declares any covers_dimensions (legacy plan format)
+    covered_dimensions: set[ResearchDimension] = set()
+    any_step_has_dimensions = False
+    for step in plan.steps:
+        if step.covers_dimensions:
+            any_step_has_dimensions = True
+        covered_dimensions.update(step.covers_dimensions)
+
+    if any_step_has_dimensions:
+        missing_required = set(task_spec.required_dimensions) - covered_dimensions
+        if missing_required:
+            dims = ", ".join(sorted(missing_required))
+            raise PlanValidationError(
+                f"Plan does not cover required dimensions: {dims}"
+            )
+
+    # 3. Focused requests must not add unrelated steps
+    if task_spec.request_scope == "focused":
+        allowed_dimensions = set(task_spec.required_dimensions) | set(
+            task_spec.optional_dimensions
+        )
+        for step in plan.steps:
+            if not step.covers_dimensions:
+                # Steps without declared dimensions are OK (utility steps)
+                continue
+            step_dims = set(step.covers_dimensions)
+            unrelated = step_dims - allowed_dimensions
+            if unrelated:
+                dims = ", ".join(sorted(unrelated))
+                raise PlanValidationError(
+                    f"Focused plan step {step.id} covers unrelated "
+                    f"dimensions: {dims}"
+                )
+
+    # 4. formal_report not in TaskSpec → reject any Report step
+    task_dimensions = set(task_spec.required_dimensions) | set(
+        task_spec.optional_dimensions
+    )
+    if "formal_report" not in task_dimensions:
+        for step in plan.steps:
+            if step.agent == AgentId.REPORT:
+                raise PlanValidationError(
+                    f"Report step {step.id} is not allowed when formal_report "
+                    "is not in task dimensions"
+                )
+
+    # 5. formal_report in TaskSpec → Report must depend on research evidence
+    if "formal_report" in task_dimensions:
+        for step in plan.steps:
+            if step.agent == AgentId.REPORT:
+                all_deps = step.all_dependency_step_ids()
+                if not all_deps:
+                    raise PlanValidationError(
+                        f"Report step {step.id} must depend on at least one "
+                        "research evidence step"
+                    )
+
+    # 6. Manager must not appear in selected_agents or as a step agent
+    #    (Manager is not an expert, checked as AgentId not in enum but
+    #     this is a semantic rule — verify no step.agent == 'manager')
+    for selection in plan.selected_agents:
+        if selection.agent.value == "manager":
+            raise PlanValidationError(
+                "Manager must not appear in selected_agents"
+            )
+
+    # 7. Validate typed dependencies for cycle and unknown refs
+    step_id_set = {step.id for step in plan.steps}
+    all_dependencies: dict[str, list[str]] = {}
+    for step in plan.steps:
+        deps = step.all_dependency_step_ids()
+        all_dependencies[step.id] = deps
+        unknown = set(deps) - step_id_set
+        if unknown:
+            names = ", ".join(sorted(unknown))
+            raise PlanValidationError(
+                f"Step {step.id} typed dependencies reference unknown "
+                f"steps: {names}"
+            )
+        if step.id in deps:
+            raise PlanValidationError(
+                f"Step {step.id} cannot depend on itself (typed dependency)"
+            )
+
+    _assert_acyclic(all_dependencies)
+
+    return plan

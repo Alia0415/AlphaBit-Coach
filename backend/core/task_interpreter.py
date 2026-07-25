@@ -1,13 +1,30 @@
-"""Deterministic natural-language normalization into a research TaskSpec."""
+"""Natural-language normalization into a research TaskSpec.
+
+Uses LLM semantic analysis for scope and dimension extraction (spec §5.2),
+with deterministic fallback for robustness.
+"""
 
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime
 import re
-from typing import Literal
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
 
 from backend.core.policy_contracts import PolicyDecision
-from backend.core.task_spec import SubjectType, TaskSpec, TaskType
+from backend.core.task_spec import (
+    ResearchDimension,
+    RequestScope,
+    SubjectType,
+    TaskSpec,
+    TaskType,
+    _COMPREHENSIVE_DEFAULTS,
+)
+
+logger = logging.getLogger(__name__)
 
 
 _SYMBOL = re.compile(r"(?<!\d)(\d{6}\.(?:SH|SZ))(?![A-Z])", re.IGNORECASE)
@@ -34,8 +51,58 @@ _EVIDENCE_REQUIREMENTS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# LLM dimension analysis model (spec §5.2)
+# ---------------------------------------------------------------------------
+
+
+class _DimensionAnalysis(BaseModel):
+    """LLM output for semantic dimension classification."""
+
+    request_scope: RequestScope
+    required_dimensions: list[ResearchDimension] = Field(min_length=1)
+    optional_dimensions: list[ResearchDimension] = Field(default_factory=list)
+    reasoning: str = ""
+
+
+_DIMENSION_PROMPT_TEMPLATE = """你是 AlphaOS TaskInterpreter 的维度分析器。
+根据用户输入判断研究范围和所需研究维度。
+
+可用维度（受控枚举）：
+- company_fundamentals: 公司基本面（财报、业绩、股东等）
+- industry_competition: 行业竞争（行业格局、竞品比较）
+- macro_environment: 宏观环境（经济周期、利率、政策）
+- quantitative_cross_check: 量化交叉验证（收益、波动、回撤、相对排名）
+- risk_assessment: 风险评估（事件风险、质押、异常交易）
+- formal_report: 正式报告（仅用户明确要求研报时）
+
+判定规则：
+- "分析某公司""全面研究""从多角度评估"等宽泛单公司请求→ comprehensive，包含前五个维度
+- "看波动回撤""技术分析""历史表现"→ focused，仅 quantitative_cross_check
+- "财报分析""财务质量""基本面"→ focused，仅 company_fundamentals
+- "行业研究""竞争格局"→ focused，仅 industry_competition
+- "事件风险""风险扫描"→ focused，仅 risk_assessment
+- "宏观分析""经济环境"→ focused，仅 macro_environment
+- "生成研报""正式报告"→ 用户要求的维度加 formal_report
+- 只输出维度，不输出专家名称
+
+只返回严格 JSON：
+{{"request_scope": "...", "required_dimensions": [...], "optional_dimensions": [...], "reasoning": "..."}}
+
+用户输入：
+{user_input}
+"""
+
+
 class TaskInterpreter:
-    """Interpret intent without choosing experts, Skills, or conclusions."""
+    """Interpret intent without choosing experts, Skills, or conclusions.
+
+    Uses LLM for semantic dimension extraction when available (spec §5.2),
+    with deterministic fallback for robustness.
+    """
+
+    def __init__(self, ark_client: Any | None = None) -> None:
+        self._ark_client = ark_client
 
     def interpret(self, prompt: str, policy: PolicyDecision) -> TaskSpec:
         if not policy.allowed:
@@ -105,6 +172,31 @@ class TaskInterpreter:
             if defaulted_fields
             else "execute"
         )
+
+        # --- Dimension extraction (spec §5.2) ---
+        request_scope: RequestScope = "focused"
+        required_dimensions: list[ResearchDimension] = []
+        optional_dimensions: list[ResearchDimension] = []
+        dimension_defaulted = False
+
+        if execution_decision != "clarify":
+            # Try LLM semantic analysis first
+            llm_result = self._try_llm_dimensions(text)
+            if llm_result is not None:
+                request_scope = llm_result.request_scope
+                required_dimensions = llm_result.required_dimensions
+                optional_dimensions = llm_result.optional_dimensions
+            else:
+                # Deterministic fallback (spec §5.2 conservative defaults)
+                request_scope, required_dimensions = _deterministic_dimensions(
+                    task_type, subject_type, lowered
+                )
+                if required_dimensions:
+                    dimension_defaulted = True
+
+        if dimension_defaulted:
+            defaulted_fields.append("dimensions=deterministic_fallback")
+
         return TaskSpec(
             task_type=task_type,
             subject_type=subject_type,
@@ -122,7 +214,41 @@ class TaskInterpreter:
             missing_fields=missing_fields,
             execution_decision=execution_decision,
             clarification_question=clarification,
+            request_scope=request_scope,
+            required_dimensions=required_dimensions,
+            optional_dimensions=optional_dimensions,
         )
+
+    def _try_llm_dimensions(self, text: str) -> _DimensionAnalysis | None:
+        """Attempt LLM-based semantic dimension extraction.
+
+        Returns None if LLM is unavailable or fails (triggers deterministic fallback).
+        """
+        if self._ark_client is None:
+            return None
+
+        try:
+            from backend.services.ark_client import ArkJsonRequest
+
+            prompt = _DIMENSION_PROMPT_TEMPLATE.format(user_input=text)
+            request = ArkJsonRequest(
+                prompt=prompt,
+                response_model=_DimensionAnalysis,
+                temperature=0.0,
+                purpose="dimension_analysis",
+                prompt_version="1.0",
+            )
+            result = self._ark_client.chat_json(request)
+            # Validate: required_dimensions must be non-empty and deduplicated
+            if not result.required_dimensions:
+                return None
+            if len(result.required_dimensions) != len(set(result.required_dimensions)):
+                # Deduplicate
+                result.required_dimensions = list(dict.fromkeys(result.required_dimensions))
+            return result
+        except Exception as exc:
+            logger.warning("LLM dimension extraction failed, using fallback: %s", str(exc)[:100])
+            return None
 
 
 def _task_type(text: str) -> TaskType:
@@ -285,3 +411,100 @@ def _missing_personal_decision_fields(text: str) -> list[str]:
     ):
         missing.append("loss_tolerance")
     return missing
+
+
+# ---------------------------------------------------------------------------
+# Deterministic dimension fallback (spec §5.2)
+# ---------------------------------------------------------------------------
+
+# Focused markers → single dimension
+_FOCUSED_QUANTITATIVE = (
+    "波动", "回撤", "收益", "表现", "涨跌", "成交量", "技术分析", "历史",
+    "价格", "股价", "行情",
+)
+_FOCUSED_FUNDAMENTALS = (
+    "财务", "财报", "现金流", "盈利质量", "审计意见", "基本面", "利润", "营收",
+)
+_FOCUSED_INDUSTRY = ("行业", "竞争格局", "竞品", "产业链", "同业")
+_FOCUSED_RISK = ("事件风险", "风险扫描", "风险预警", "质押", "解禁")
+_FOCUSED_MACRO = ("宏观", "经济周期", "利率", "流动性", "政策")
+_FOCUSED_REPORT = ("正式报告", "研究报告", "备忘录", "研报")
+
+# Comprehensive triggers
+_COMPREHENSIVE_TRIGGERS = (
+    "全面", "综合", "深度分析", "全方位", "多角度", "整体评估",
+)
+
+
+def _deterministic_dimensions(
+    task_type: TaskType,
+    subject_type: SubjectType,
+    lowered: str,
+) -> tuple[RequestScope, list[ResearchDimension]]:
+    """Conservative deterministic dimension assignment (spec §5.2 fallback).
+
+    Single-company broad analysis → comprehensive.
+    Specific indicator requests → focused with minimal dimensions.
+    """
+    # Personal investment decisions don't get research dimensions
+    if task_type == "personal_investment_decision":
+        return "focused", []
+
+    # Formal report
+    if task_type == "formal_report":
+        dims: list[ResearchDimension] = list(_COMPREHENSIVE_DEFAULTS)
+        dims.append("formal_report")
+        return "comprehensive", dims
+
+    # Check for explicit comprehensive triggers
+    is_comprehensive_trigger = any(t in lowered for t in _COMPREHENSIVE_TRIGGERS)
+
+    # Company research with broad/vague phrasing → comprehensive
+    if subject_type == "company" and task_type == "company_research":
+        # If it's a broad company request (just "分析X" without specific focus)
+        has_specific_focus = any(
+            any(m in lowered for m in markers)
+            for markers in (
+                _FOCUSED_QUANTITATIVE,
+                _FOCUSED_FUNDAMENTALS,
+                _FOCUSED_RISK,
+                _FOCUSED_MACRO,
+            )
+        )
+        if is_comprehensive_trigger or not has_specific_focus:
+            return "comprehensive", list(_COMPREHENSIVE_DEFAULTS)
+
+    # Factor research doesn't map well to research dimensions
+    if task_type == "factor_research":
+        return "focused", ["quantitative_cross_check"]
+
+    # Historical analysis / market research with quantitative markers
+    if task_type == "historical_analysis" or (
+        task_type == "market_research"
+        and any(m in lowered for m in _FOCUSED_QUANTITATIVE)
+    ):
+        return "focused", ["quantitative_cross_check"]
+
+    # Risk review
+    if task_type == "risk_review":
+        return "focused", ["risk_assessment"]
+
+    # Focused dimension detection by markers
+    if any(m in lowered for m in _FOCUSED_FUNDAMENTALS):
+        return "focused", ["company_fundamentals"]
+    if any(m in lowered for m in _FOCUSED_INDUSTRY):
+        return "focused", ["industry_competition"]
+    if any(m in lowered for m in _FOCUSED_MACRO):
+        return "focused", ["macro_environment"]
+    if any(m in lowered for m in _FOCUSED_RISK):
+        return "focused", ["risk_assessment"]
+    if any(m in lowered for m in _FOCUSED_QUANTITATIVE):
+        return "focused", ["quantitative_cross_check"]
+
+    # Market research with company subject → comprehensive
+    if subject_type == "company" and is_comprehensive_trigger:
+        return "comprehensive", list(_COMPREHENSIVE_DEFAULTS)
+
+    # Default: market_research without specific markers → no dimensions
+    # (Manager will still route correctly via existing logic)
+    return "focused", []
