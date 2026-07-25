@@ -713,9 +713,6 @@ button.contrib-card:hover { border-color: var(--cyan-dim); }
 .contrib-card .cc-ava { width: 40px; height: 40px; margin: 0 auto 5px; }
 .contrib-card .cc-ava canvas { width: 100%; height: 100%; image-rendering: pixelated; }
 .contrib-card ul { margin: 6px 0 0; padding: 0; list-style: none; color: var(--text-2); font-size: 10.5px; }
-.follow-panel { display: flex; flex-direction: column; height: calc(100vh - 170px); min-height: 480px; }
-.follow-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 2px; }
-.quick-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
 .report-charts { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; }
 .chart-box canvas { width: 100%; display: block; }
 .chart-legend { display: flex; gap: 14px; font-size: 11px; color: var(--text-2); margin-top: 6px; }
@@ -807,8 +804,6 @@ button.task-item:hover { border-color: var(--cyan-dim); }
 .ds-kv span { color: var(--text-3); flex-shrink: 0; }
 .ds-kv b { color: var(--text); font-weight: 600; text-align: right; word-break: break-all; }
 .ds-kv b.mono { font-family: var(--mono); font-weight: 500; font-size: 11.5px; }
-.quick-chips .qchip { border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; background: #0e1e34; color: var(--text-2); font-size: 12px; text-align: left; line-height: 1.45; transition: all 0.15s; }
-.quick-chips .qchip:hover { border-color: var(--cyan-dim); color: var(--text); transform: translateY(-1px); }
 
 /* ---------- neon screen title ---------- */
 .screen-title { margin-bottom: 14px; }
@@ -823,7 +818,6 @@ button.task-item:hover { border-color: var(--cyan-dim); }
 
 @media (max-width: 1180px) {
   .report-layout, .rpt-hero, .report-charts { grid-template-columns: 1fr; }
-  .follow-panel { height: auto; min-height: 420px; }
   .manager-dispatch { grid-template-columns: 1fr; }
   .manager-dispatch-arrow { text-align: left; }
   .war-grid { grid-template-columns: 1fr; }
@@ -857,7 +851,7 @@ button.task-item:hover { border-color: var(--cyan-dim); }
 
 @media print {
   body { overflow: visible; background: #fff; color: #111; }
-  .sidebar, .topbar, .statusbar, .follow-panel, .no-print { display: none !important; }
+  .sidebar, .topbar, .statusbar, .coach-side, .coach-fab, .coach-select-btn, .no-print { display: none !important; }
   .panel { border-color: #ccc; background: #fff; color: #111; }
 }
 /* P0-3 user profile: keeps the Office visual language and server-first data flow. */
@@ -1309,4 +1303,89 @@ button.task-item:hover { border-color: var(--cyan-dim); }
   .participant-card>.research-status{grid-column:2}
   .final-learning-card{grid-template-columns:1fr}
   .final-common-mistake{grid-column:auto}
+}
+
+/* ---------- AI 金融陪练：报告陪练侧边栏 + 投研课堂 ---------- */
+.coach-side { position: sticky; top: 12px; min-width: 0; }
+.coach-side.collapsed { width: 0; min-width: 0; }
+.report-layout.coach-collapsed { grid-template-columns: 1fr auto; }
+.coach-panel { display: flex; flex-direction: column; height: calc(100vh - 170px); min-height: 480px; }
+.coach-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
+.coach-head-title strong { display: block; font-size: 13.5px; }
+.coach-head-title small { display: block; color: var(--text-3); font-size: 10.5px; margin-top: 3px; }
+.coach-collapse-btn { border: 1px solid var(--line); border-radius: 7px; background: #13263f; color: var(--text-2); padding: 3px 9px; font-size: 12px; cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
+.coach-collapse-btn:hover { border-color: var(--cyan-dim); color: var(--cyan); }
+.coach-fab { position: fixed; right: 20px; bottom: 72px; z-index: 80; width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--cyan-dim); background: #0e1e34; font-size: 20px; cursor: pointer; box-shadow: 0 4px 18px rgba(34, 211, 238, 0.25); transition: transform 0.15s; }
+.coach-fab:hover { transform: translateY(-2px); }
+
+/* 复盘 + 思考题 */
+.coach-guide-slot { flex-shrink: 0; }
+.coach-guide { border: 1px solid var(--line-soft); border-radius: 10px; background: rgba(34, 211, 238, 0.04); padding: 10px 12px; margin: 10px 0 4px; }
+.coach-guide-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; font-size: 12.5px; margin-bottom: 8px; }
+.coach-guide-refresh { border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--text-2); font-size: 10.5px; padding: 2px 7px; cursor: pointer; flex-shrink: 0; }
+.coach-guide-refresh:hover { border-color: var(--cyan-dim); color: var(--cyan); }
+.coach-guide-row { font-size: 11.5px; color: var(--text-2); line-height: 1.6; margin-bottom: 6px; }
+.coach-guide-row b { display: block; color: var(--text); font-size: 11px; margin-bottom: 2px; }
+.coach-guide-row span { display: block; }
+.coach-guide-sub { color: var(--cyan); font-size: 11px; font-weight: 600; margin: 8px 0 6px; }
+.coach-guide-chips { display: flex; flex-direction: column; gap: 6px; }
+.coach-qchip { border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; background: #0e1e34; color: var(--text-2); font-size: 11.5px; text-align: left; line-height: 1.5; cursor: pointer; transition: all 0.15s; }
+.coach-qchip:hover { border-color: var(--cyan-dim); color: var(--text); }
+.coach-guide-loading { color: var(--text-3); font-size: 11.5px; padding: 10px 2px; }
+.coach-guide-loading.error { color: var(--yellow); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* 对话流 */
+.coach-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 10px 2px; min-height: 120px; }
+.coach-msg { display: flex; flex-direction: column; gap: 4px; }
+.coach-msg.me { align-items: flex-end; }
+.coach-meta { color: var(--text-3); font-size: 10px; display: flex; align-items: center; gap: 6px; }
+.coach-bubble { border: 1px solid var(--line-soft); border-radius: 10px; background: #0e1e34; padding: 9px 11px; font-size: 12px; line-height: 1.65; max-width: 100%; white-space: pre-wrap; word-break: break-word; }
+.coach-bubble.me { background: rgba(34, 211, 238, 0.09); border-color: var(--cyan-dim); }
+.coach-bubble.sys { color: var(--text-3); font-size: 11px; background: transparent; border-style: dashed; }
+.coach-bubble.error { border-color: rgba(251, 191, 36, 0.55); color: var(--yellow); }
+.coach-quote-ref { align-self: flex-end; max-width: 92%; color: var(--text-3); font-size: 10.5px; border-left: 2px solid var(--cyan-dim); padding: 2px 8px; background: rgba(34, 211, 238, 0.05); border-radius: 0 6px 6px 0; }
+.coach-badge { display: inline-block; border-radius: 5px; font-size: 9.5px; padding: 1px 6px; line-height: 1.5; }
+.coach-badge.model { color: var(--cyan); background: rgba(34, 211, 238, 0.12); }
+.coach-badge.demo { color: var(--yellow); background: rgba(251, 191, 36, 0.12); }
+.coach-badge.evidence { color: var(--green); background: rgba(52, 211, 153, 0.12); }
+.coach-terms { display: flex; flex-direction: column; gap: 6px; }
+.coach-term-card { border: 1px solid var(--line-soft); border-left: 2px solid var(--cyan); border-radius: 8px; background: rgba(7, 20, 36, 0.5); padding: 7px 10px; font-size: 11px; line-height: 1.6; }
+.coach-term-card strong { display: block; color: var(--cyan); font-size: 11.5px; margin-bottom: 2px; }
+.coach-term-card span { color: var(--text-2); }
+.coach-cites { border: 1px dashed var(--line); border-radius: 8px; padding: 7px 10px; }
+.coach-cites-title { color: var(--text-3); font-size: 10px; margin-bottom: 4px; }
+.coach-cite { color: var(--text-2); font-size: 10.5px; line-height: 1.6; }
+.coach-uncertain { color: var(--yellow); font-size: 10.5px; line-height: 1.55; }
+
+/* 引用条 + 模式切换 + 输入区 */
+.coach-quotebar { padding-top: 8px; }
+.coach-quote-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; border: 1px solid var(--cyan-dim); border-radius: 8px; background: rgba(34, 211, 238, 0.08); color: var(--text-2); font-size: 10.5px; padding: 4px 8px; overflow: hidden; }
+.coach-quote-x { border: 0; background: transparent; color: var(--text-3); cursor: pointer; font-size: 11px; padding: 0 2px; }
+.coach-quote-x:hover { color: var(--yellow); }
+.coach-modebar { display: flex; gap: 6px; padding-top: 8px; }
+.coach-mode { flex: 1; border: 1px solid var(--line); border-radius: 8px; background: #0e1e34; color: var(--text-3); font-size: 10.5px; padding: 5px 6px; cursor: pointer; transition: all 0.15s; }
+.coach-mode.sel { border-color: var(--cyan); color: var(--cyan); background: rgba(34, 211, 238, 0.1); }
+.coach-inputbar { padding-top: 8px; }
+
+/* 类 IDE 的「引用并提问」选区悬浮按钮 */
+.coach-select-btn { position: absolute; z-index: 90; border: 1px solid var(--cyan-dim); border-radius: 8px; background: #0e1e34; color: var(--cyan); font-size: 11.5px; padding: 5px 10px; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4); }
+.coach-select-btn:hover { background: rgba(34, 211, 238, 0.12); }
+
+/* 作战室投研课堂（过程解说） */
+.classroom-panel { margin-top: 14px; }
+.classroom-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.classroom-head strong { font-size: 13px; }
+.classroom-head small { display: block; color: var(--text-3); font-size: 10.5px; margin-top: 2px; }
+.classroom-feed { display: flex; flex-direction: column; gap: 9px; margin-top: 10px; max-height: 300px; overflow-y: auto; }
+.classroom-waiting { color: var(--text-3); font-size: 11px; border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; }
+.classroom-item { border: 1px solid var(--line-soft); border-left: 2px solid var(--cyan-dim); border-radius: 9px; background: #0e1e34; padding: 9px 11px; }
+.classroom-item-head { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+.classroom-milestone { color: var(--cyan); font-size: 10.5px; font-weight: 700; }
+.classroom-agent { color: var(--text-2); font-size: 10.5px; }
+.classroom-narration { margin: 0; color: var(--text); font-size: 12px; line-height: 1.65; }
+.classroom-teaching { margin: 5px 0 0; color: var(--text-2); font-size: 11px; line-height: 1.6; border-top: 1px dashed var(--line-soft); padding-top: 5px; }
+
+@media (max-width: 1180px) {
+  .coach-side { position: static; }
+  .coach-panel { height: auto; min-height: 420px; max-height: 70vh; }
 }

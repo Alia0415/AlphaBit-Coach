@@ -26,6 +26,9 @@ from backend.agents.manager_agent import ManagerAgent, ManagerAgentError
 from backend.core.agent_registry import DEFAULT_EXPERTS
 from backend.core.contracts import (
     AgentId,
+    CoachGuide,
+    CoachMessage,
+    CoachNarration,
     ExecutionEvent,
     ExecutionPlan,
     ExpertInfo,
@@ -41,6 +44,12 @@ from backend.core.contracts import (
     TaskSummary,
 )
 from backend.core.evidence_validator import EvidenceValidator
+from backend.core.coach_service import (
+    MAX_NARRATIONS_PER_TASK,
+    CoachService,
+    CoachServiceError,
+    validate_quoted_text,
+)
 from backend.core.policy_gate import PolicyGate
 from backend.core.profile_service import UserProfileService
 from backend.core.registry_factory import build_registry
@@ -108,6 +117,18 @@ def _build_task_interpreter(
 
 
 task_interpreter = _build_task_interpreter()
+
+
+def _build_coach_service(
+    client_factory: Any = ArkClient,
+) -> CoachService:
+    try:
+        return CoachService(ark_client=client_factory())
+    except ArkClientError:
+        return CoachService()
+
+
+coach_service = _build_coach_service()
 evidence_validator = EvidenceValidator()
 result_policy_checker = ResultPolicyChecker()
 manager = ManagerAgent(registry=build_registry(store))
@@ -158,6 +179,27 @@ class FollowupRequest(BaseModel):
         if not question:
             raise ValueError("question 不能为空")
         return question
+
+
+class CoachAskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2_000)
+    quoted_text: str | None = Field(default=None, max_length=500)
+
+    @field_validator("question")
+    @classmethod
+    def validate_question(cls, value: str) -> str:
+        question = value.strip()
+        if not question:
+            raise ValueError("question 不能为空")
+        return question
+
+    @field_validator("quoted_text")
+    @classmethod
+    def validate_quoted_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        quoted = value.strip()
+        return quoted or None
 
 
 class SessionResponse(BaseModel):
@@ -606,6 +648,54 @@ async def stream_task(task_id: str) -> StreamingResponse:
         queue: asyncio.Queue[Any] = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
+        # -- 过程陪练（投研课堂）：里程碑触发、异步生成、失败即跳过 --------------
+        coach_tasks: list[asyncio.Task[None]] = []
+        narration_count = 0
+        pending_context: list[dict[str, Any]] = list(persisted_events)
+
+        async def narrate(
+            milestone: str,
+            step_id: str | None,
+            agent: str | None,
+            context: list[dict[str, Any]],
+        ) -> None:
+            try:
+                draft = await run_in_threadpool(
+                    coach_service.narrate_milestone, prompt, context, milestone
+                )
+            except CoachServiceError:
+                return  # 解说失败只跳过，绝不影响任务执行与聚合
+            payload = {
+                "milestone": milestone,
+                "step_id": step_id,
+                "agent": agent,
+                "narration": draft.narration,
+                "teaching_point": draft.teaching_point,
+                "generated_by": "model",
+            }
+            seq = store.add_coach_narration(task_id, payload=payload)
+            queue.put_nowait(
+                ("__coach__", {"task_id": task_id, "seq": seq, **payload})
+            )
+
+        def trigger_narration(
+            milestone: str,
+            *,
+            step_id: str | None = None,
+            agent: str | None = None,
+        ) -> None:
+            nonlocal narration_count, pending_context
+            if not coach_service.available:
+                return
+            if narration_count >= MAX_NARRATIONS_PER_TASK:
+                return
+            narration_count += 1
+            context = pending_context
+            pending_context = []
+            coach_tasks.append(
+                loop.create_task(narrate(milestone, step_id, agent, context))
+            )
+
         def sink(event: ExecutionEvent) -> None:
             loop.call_soon_threadsafe(queue.put_nowait, event)
 
@@ -621,10 +711,14 @@ async def stream_task(task_id: str) -> StreamingResponse:
                 loop.call_soon_threadsafe(queue.put_nowait, ("__error__", exc))
 
         loop.run_in_executor(None, run)
+        trigger_narration("plan_created")
 
         results: dict[str, ExpertResult] = {}
         while True:
             item = await queue.get()
+            if isinstance(item, tuple) and item and item[0] == "__coach__":
+                yield _sse_named("coach", item[1])
+                continue
             if isinstance(item, tuple) and item and item[0] == "__done__":
                 results = item[2]
                 break
@@ -634,7 +728,15 @@ async def stream_task(task_id: str) -> StreamingResponse:
                 return
             event = item
             _persist_event(task_id, event)
-            yield _sse(_event_to_dict(event))
+            event_dict = _event_to_dict(event)
+            yield _sse(event_dict)
+            pending_context.append(event_dict)
+            if event.type in {"step_completed", "step_failed"}:
+                trigger_narration(
+                    event.type,
+                    step_id=event.step_id,
+                    agent=event.agent.value if event.agent else None,
+                )
 
         synthesis = ExecutionEvent(
             type="synthesis_started",
@@ -668,6 +770,8 @@ async def stream_task(task_id: str) -> StreamingResponse:
         )
         _persist_event(task_id, completed)
         yield _sse(_event_to_dict(completed))
+        pending_context.append(_event_to_dict(completed))
+        trigger_narration("task_completed")
 
         record = build_report_record(task_id, plan, aggregation, results)
         report_id = uuid.uuid4().hex
@@ -695,6 +799,13 @@ async def stream_task(task_id: str) -> StreamingResponse:
                 "aggregation": record["aggregation"],
             },
         )
+        # done 前短超时等待尚未完成的解说；超时则放弃（后台仍会落库供回放）
+        if coach_tasks:
+            await asyncio.wait(coach_tasks, timeout=8.0)
+            while not queue.empty():
+                item = queue.get_nowait()
+                if isinstance(item, tuple) and item and item[0] == "__coach__":
+                    yield _sse_named("coach", item[1])
         yield _sse_named(
             "done",
             {"task_id": task_id, "status": aggregation.completion_status},
@@ -735,6 +846,95 @@ async def report_followup(
             evidence=evidence,
         )
     )
+
+
+# -- coach layer (model-driven learning companion) ----------------------------
+
+
+@app.post("/api/reports/{report_id}/coach", response_model=CoachMessage)
+async def report_coach_ask(
+    report_id: str,
+    request: CoachAskRequest,
+) -> CoachMessage:
+    report = store.get_report(report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    if request.quoted_text is not None and not validate_quoted_text(
+        report.get("aggregation"), request.quoted_text
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="引用片段必须来自报告正文，请重新选择后再提问。",
+        )
+    profile = _profile_service().get()
+    try:
+        reply = await run_in_threadpool(
+            coach_service.answer,
+            report,
+            request.question,
+            request.quoted_text,
+            profile,
+        )
+    except CoachServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    store.add_coach_message(
+        message_id=uuid.uuid4().hex,
+        report_id=report_id,
+        role="user",
+        text=request.question,
+        payload={"quoted_text": request.quoted_text, "generated_by": "user"},
+    )
+    coach_record = store.add_coach_message(
+        message_id=uuid.uuid4().hex,
+        report_id=report_id,
+        role="coach",
+        text=reply.answer,
+        payload={
+            "quoted_text": request.quoted_text,
+            "concept_notes": [note.model_dump() for note in reply.concept_notes],
+            "cited_evidence": reply.cited_evidence,
+            "uncertainty_note": reply.uncertainty_note,
+            "is_general_knowledge_included": reply.is_general_knowledge_included,
+            "generated_by": "model",
+        },
+    )
+    return CoachMessage.model_validate(coach_record)
+
+
+@app.get("/api/reports/{report_id}/coach/guide", response_model=CoachGuide)
+async def report_coach_guide(
+    report_id: str,
+    refresh: bool = False,
+) -> CoachGuide:
+    report = store.get_report(report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    if not refresh:
+        cached = store.get_coach_guide(report_id)
+        if cached is not None:
+            return CoachGuide.model_validate(cached)
+    profile = _profile_service().get()
+    try:
+        guide = await run_in_threadpool(
+            coach_service.build_guide, report, profile
+        )
+    except CoachServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    store.save_coach_guide(report_id, guide.model_dump(mode="json"))
+    return guide
+
+
+@app.get(
+    "/api/tasks/{task_id}/coach-narrations",
+    response_model=list[CoachNarration],
+)
+async def task_coach_narrations(task_id: str) -> list[CoachNarration]:
+    if store.get_task(task_id) is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return [
+        CoachNarration.model_validate(record)
+        for record in store.list_coach_narrations(task_id)
+    ]
 
 
 # -- legacy endpoints (kept for compatibility) -------------------------------

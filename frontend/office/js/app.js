@@ -1,6 +1,7 @@
 // AlphaOS Pixel Office — application shell + router.
 // Renders the sidebar / topbar / statusbar chrome and the page outlet.
-// Demo data comes from mock.js; every demo value stays labelled DEMO in UI.
+// Local example data remains available for internal validation, but the
+// product entrypoint is the live research workflow.
 import { store } from "./store.js";
 import {
   maybeStartProfileOnboarding,
@@ -21,7 +22,8 @@ import {
   SKILL_FINAL_COUNTS,
   HISTORY_TASKS,
   DEMO_COMPANION,
-} from "./mock.js?v=20260725-p07";
+  DEMO_COACH,
+} from "./mock.js?v=20260725-c02";
 import { companionAdapter, renderCompanionCard } from "./companion.js?v=20260725-p04";
 import {
   isLive,
@@ -35,11 +37,19 @@ import {
   extractReportGlossary,
   setExpertEnabled as liveSetExpertEnabled,
   submitReportFollowup,
+  askCoach,
+  fetchCoachGuide,
+  fetchCoachNarrations,
   createSession as liveCreateSession,
   clarifySession as liveClarifySession,
   openTaskStream,
   roleFor as liveRoleFor,
-} from "./live.js?v=20260725-p12";
+} from "./live.js?v=20260725-c01";
+import {
+  attachSelectionQuoting,
+  buildCoachSidebar,
+  createClassroomPanel,
+} from "./coach.js?v=20260725-c01";
 import {
   highlightGlossaryScope,
   initOfficeGlossary,
@@ -146,20 +156,20 @@ function resetLiveSession() {
 }
 
 // ---------------------------------------------------------------------------
-// mode (demo | live) — both modes expose the same backend-supported product
-// surface. Demo mode supplies labelled local examples; live mode calls the API.
+// mode (demo | live) — live is the default product workflow. Demo mode is a
+// labelled local walkthrough for sales demos and offline product review.
 // ---------------------------------------------------------------------------
 let liveStatus = { online: false, healthy: false, pandadata: null };
 
 function setMode(mode) {
   if (store.state.mode === mode) return;
   store.set({ mode });
-  toast(mode === "live" ? "已切换到实时数据模式" : "已切换到演示模式");
+  toast(mode === "live" ? "已切换到实时研究" : "已切换到产品演示");
   refreshServiceStatus().finally(() => {
     renderTopbar();
     renderStatusbar();
-    // land somewhere with guaranteed content for the active mode
-    navigate(mode === "live" ? "hall" : "reports", mode === "live" ? null : REPORTS[0].id);
+    // Both modes start from the research hall so demos can show the full flow.
+    navigate("hall");
   });
 }
 
@@ -186,7 +196,7 @@ function stateBox(kind, title, sub) {
 // error state (with the reason) if the backend is unreachable.
 function renderLive(host, loader, builder) {
   host.innerHTML = "";
-  host.appendChild(stateBox("loading", "正在读取本次真实研究结果…", "页面只展示已经完成的研究与可验证证据。"));
+  host.appendChild(stateBox("loading", "正在读取研究结果…", "这里只展示已经完成的研究与可验证证据。"));
   loader()
     .then((data) => {
       host.innerHTML = "";
@@ -198,15 +208,13 @@ function renderLive(host, loader, builder) {
       const box = stateBox(
         "error",
         "研究服务暂时不可用",
-        "当前无法读取真实研究结果。页面不会切换为模拟结论，请稍后重试。",
+        "当前无法读取研究结果，请稍后重试。",
       );
       const retry = el("button", "btn btn-primary", "重试");
       retry.addEventListener("click", () => renderLive(host, loader, builder));
-      const back = el("button", "btn-ghost", "查看明确标注的产品示例");
-      back.addEventListener("click", () => setMode("demo"));
       const row = el("div", "");
       row.style.cssText = "display:flex;gap:8px;justify-content:center;margin-top:10px";
-      row.append(retry, back);
+      row.append(retry);
       box.appendChild(row);
       host.appendChild(box);
     });
@@ -236,10 +244,10 @@ function nowClock() {
   return new Date().toLocaleTimeString("zh-CN", { hour12: false });
 }
 
-// Neon bracketed screen heading, e.g. 「界面 04 │ 专家中心」 with optional subtitle.
+// Product page heading. The numeric argument is kept for older call sites.
 function screenTitle(num, name, sub) {
   const box = el("div", "screen-title");
-  box.innerHTML = `<h1><span class="st-brk">✦ 界面 ${esc(num)}</span> <span class="st-bar">│</span> ${esc(name)}</h1>` +
+  box.innerHTML = `<h1>${esc(name)}</h1>` +
     (sub ? `<p>${esc(sub)}</p>` : "");
   return box;
 }
@@ -505,7 +513,7 @@ function renderSidebar() {
   });
   side.appendChild(nav);
 
-  side.appendChild(el("div", "sidebar-foot", `AlphaBit Coach v0.4 · ${isLive() ? "实时数据" : "演示模式"}`));
+  side.appendChild(el("div", "sidebar-foot", `AlphaBit Coach v0.4${isLive() ? "" : " · 产品演示"}`));
 }
 
 function renderTopbar() {
@@ -528,18 +536,16 @@ function renderTopbar() {
     );
     bar.append(status, data);
   } else {
-    const status = el("span", "pill", '<span class="dot ok"></span>系统状态：<strong style="color:var(--green)">正常运行</strong>');
-    const engine = el("span", "pill", "🧠 模型引擎：GPT-4o（DEMO）");
-    const data = el("span", "pill", '📡 数据源：演示数据 <span class="dot ok"></span>');
-    bar.append(status, engine, data);
+    bar.appendChild(el("span", "pill", '<span class="dot warn"></span>产品演示：本地示例，不调用模型或数据源'));
   }
 
   bar.appendChild(el("div", "topbar-spacer"));
 
-  // demo / live mode toggle
   const live = isLive();
-  const modeBtn = el("button", "pill", `${live ? "🟢 实时数据" : "🧪 演示模式"} · 点击切换`);
-  modeBtn.title = live ? "当前使用真实数据与研究流程" : "当前使用明确标注的产品示例";
+  const modeBtn = el("button", "pill", live ? "查看产品演示" : "切换到实时研究");
+  modeBtn.title = live
+    ? "使用本地示例演示完整产品流程"
+    : "返回真实研究流程";
   modeBtn.addEventListener("click", () => setMode(live ? "demo" : "live"));
   bar.append(modeBtn);
 
@@ -564,7 +570,7 @@ function renderTopbar() {
 function renderStatusbar() {
   const sb = $("#statusbar");
   sb.innerHTML = "";
-  sb.appendChild(el("span", "sb-item", "🙂 用最强的 AI 团队，做最专业的投资研究。"));
+  sb.appendChild(el("span", "sb-item", "AI 投研团队 · 证据边界清晰 · 仅供研究参考"));
   sb.appendChild(el("span", "spacer"));
   sb.appendChild(el("span", "sb-item sb-slogan", nowClock()));
 }
@@ -797,8 +803,28 @@ function pageReportDetail(reportId) {
   const report = REPORTS.find((r) => r.id === reportId) || REPORTS[0];
   const researchReport = buildDemoResearchReport(report);
   const layout = el("div", "report-layout");
-  layout.appendChild(buildReportMainLive(researchReport));
-  layout.appendChild(buildFollowPanel(report));
+  const main = buildReportMainLive(researchReport);
+  layout.appendChild(main);
+  // demo coach sidebar: locally labeled sample data, no credentials required
+  const coach = buildCoachSidebar({
+    demo: true,
+    seedMessages: [],
+    loadGuide: () => Promise.resolve(DEMO_COACH.guide),
+    ask: (question, quoted) => new Promise((resolve) => {
+      setTimeout(() => resolve({ ...DEMO_COACH.reply, quoted_text: quoted || null }), 600);
+    }),
+    evidence: (question) => new Promise((resolve) => {
+      setTimeout(() => resolve({
+        text: matchReply(report, question),
+        evidence: [],
+        created_at: "",
+      }), 600);
+    }),
+    onCollapseChange: (c) => layout.classList.toggle("coach-collapsed", c),
+  });
+  layout.appendChild(coach.root);
+  const quoting = attachSelectionQuoting(main, (text) => coach.setQuote(text));
+  registerTeardown(() => quoting.destroy());
   return layout;
 }
 
@@ -827,10 +853,10 @@ function buildDemoResearchReport(report) {
         || "已完成本次专业研究。",
       assumptions: [],
       risks: step.agent === "risk"
-        ? ["演示结论仍需结合最新真实数据重新验证。"]
+        ? ["该示例结论需要结合实际数据重新验证。"]
         : [],
-      limitations: ["当前为产品演示数据，不代表实时研究结论。"],
-      recommendations: ["使用 Live 模式发起任务，以真实数据重新验证。"],
+      limitations: ["当前为本地示例数据，不代表实际研究结论。"],
+      recommendations: ["请从投研大厅重新发起研究任务，并以实际数据验证结论。"],
       data_sources: [],
     },
   ]));
@@ -844,6 +870,7 @@ function buildDemoResearchReport(report) {
     .map((item) => `${item.h}\n${item.p}`)
     .join("\n\n");
   return {
+    demo: true,
     title: report.title,
     created_at: report.doneAt,
     completeness: {
@@ -871,7 +898,7 @@ function buildDemoResearchReport(report) {
       completion_status: "completed",
       direct_answer: {
         headline: report.summary,
-        explanation: "以下内容使用与 Live 报告相同的学习化展示逻辑。",
+        explanation: "以下内容使用与正式报告相同的学习化展示逻辑。",
         confidence: "not_applicable",
         stance: "not_applicable",
       },
@@ -879,12 +906,12 @@ function buildDemoResearchReport(report) {
       evidence_summary: [],
       risks: findings.filter((item) => item.evidence_type === "risk"),
       limitations: [{
-        text: "当前为产品演示数据，不代表实时研究结论。",
+        text: "当前为本地示例数据，不代表实际研究结论。",
         evidence_type: "limitation",
         source_steps: [],
       }],
       next_research_steps: [{
-        text: "切换至 Live 模式并发起真实任务，以最新数据验证结论。",
+        text: "请从投研大厅重新发起研究任务，并以实际数据验证结论。",
         evidence_type: "research_action",
         source_steps: [],
       }],
@@ -911,7 +938,7 @@ function buildDemoResearchReport(report) {
         conflicts: [],
         source_results: sourceResults,
       },
-      disclaimer: "演示内容仅用于了解产品展示方式，不构成投资建议。",
+      disclaimer: "产品演示使用本地示例数据，不构成投资建议。",
     },
   };
 }
@@ -1052,115 +1079,8 @@ function buildReportMain(report) {
 }
 
 // ---------------------------------------------------------------------------
-// follow-up conversation panel (right column)
+// demo follow-up replies (侧边栏「只查证据」示例通道复用)
 // ---------------------------------------------------------------------------
-function buildFollowPanel(report) {
-  const panel = el("div", "panel follow-panel glossary-scope");
-
-  // header
-  const head = el("div", "follow-head");
-  head.appendChild(avatar("manager", 46, "fh-ava"));
-  const who = el("div", "fh-who");
-  who.appendChild(el("strong", "", "与 Manager 继续对话"));
-  who.appendChild(el("p", "", "我是您的研究管理员，报告已完成，您可以继续深入追问，或补充研究维度。"));
-  who.appendChild(el("span", "badge online", '<span class="dot"></span>在线'));
-  head.appendChild(who);
-  panel.appendChild(head);
-
-  // quick asks
-  panel.appendChild(el("div", "follow-sec-title", "快速追问建议"));
-  const chips = el("div", "quick-chips");
-  (report.quickAsks || []).forEach((q) => {
-    const chip = el("button", "qchip", esc(q));
-    chip.addEventListener("click", () => submitFollowup(report, q));
-    chips.appendChild(chip);
-  });
-  panel.appendChild(chips);
-
-  // conversation log
-  panel.appendChild(el("div", "follow-sec-title", "对话记录"));
-  const scroll = el("div", "follow-scroll");
-  scroll.id = "followScroll";
-  panel.appendChild(scroll);
-
-  // seed with system message + persisted followups
-  const saved = store.state.followups[report.id] || [];
-  const seed = [{ role: "sys", text: `报告《${report.title}》已生成`, time: nowClock() }, ...saved];
-  seed.forEach((m) => scroll.appendChild(renderMessage(m)));
-
-  // input bar
-  const inputBar = el("div", "chat-inputbar");
-  const input = el("input");
-  input.type = "text";
-  input.placeholder = "请输入您的问题，继续深入研究…";
-  const send = el("button", "btn btn-primary", "➤");
-  const fire = () => {
-    const q = input.value.trim();
-    if (!q) return;
-    input.value = "";
-    submitFollowup(report, q);
-  };
-  send.addEventListener("click", fire);
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") fire();
-  });
-  inputBar.append(input, send);
-  panel.appendChild(inputBar);
-
-  requestAnimationFrame(() => { scroll.scrollTop = scroll.scrollHeight; });
-  return panel;
-}
-
-function renderMessage(m) {
-  if (m.role === "sys") {
-    return el("div", "msg", `
-      <div class="m-avatar" style="display:grid;place-items:center;color:var(--green)">✓</div>
-      <div class="m-body">
-        <div class="m-meta"><span>系统</span><span>${esc(m.time || "")}</span></div>
-        <div class="m-bubble" style="color:var(--text-2)">${esc(m.text)}</div>
-      </div>
-    `);
-  }
-  const me = m.role === "me";
-  const node = el("div", `msg${me ? " me" : ""}`);
-  const ava = el("div", "m-avatar");
-  ava.appendChild(avatar(me ? "user" : "manager", 38));
-  const body = el("div", "m-body");
-  body.appendChild(el("div", "m-meta", `<span>${me ? "你" : "Manager"}</span><span>${esc(m.time || "")}</span>`));
-  body.appendChild(el("div", "m-bubble", esc(m.text)));
-  node.append(ava, body);
-  return node;
-}
-
-function submitFollowup(report, question) {
-  const scroll = $("#followScroll");
-  if (!scroll) return;
-  const userMsg = { role: "me", text: question, time: nowClock() };
-  scroll.appendChild(renderMessage(userMsg));
-  store.addFollowup(report.id, userMsg);
-  scroll.scrollTop = scroll.scrollHeight;
-
-  // typing indicator
-  const typing = el("div", "msg");
-  const ava = el("div", "m-avatar");
-  ava.appendChild(avatar("manager", 38));
-  typing.appendChild(ava);
-  typing.appendChild(el("div", "m-body", '<div class="m-bubble"><span class="typing-dots"><i></i><i></i><i></i></span></div>'));
-  scroll.appendChild(typing);
-  scroll.scrollTop = scroll.scrollHeight;
-
-  setTimeout(() => {
-    typing.remove();
-    const reply = matchReply(report, question);
-    const botMsg = { role: "bot", text: reply, time: nowClock() };
-    const replyNode = renderMessage(botMsg);
-    scroll.appendChild(replyNode);
-    highlightGlossaryScope(replyNode);
-    store.addFollowup(report.id, botMsg);
-    scroll.scrollTop = scroll.scrollHeight;
-  }, 900);
-}
-
 function matchReply(report, question) {
   const rules = report.followReplies || [];
   for (const rule of rules) {
@@ -1168,7 +1088,7 @@ function matchReply(report, question) {
     if (rule.match.some((kw) => question.includes(kw))) return rule.reply;
   }
   const fallback = rules.find((r) => !r.match || r.match.length === 0);
-  return fallback ? fallback.reply : "收到，我会基于报告的证据链继续分析。（DEMO 应答）";
+  return fallback ? fallback.reply : "收到，我会基于报告的证据链继续分析。";
 }
 
 // ---------------------------------------------------------------------------
@@ -1232,13 +1152,13 @@ let hallRecIdx = 0;
 
 function pageHall() {
   const wrap = el("div");
-  wrap.appendChild(screenTitle("01", "投研大厅", "用最强的 AI 团队，做最专业的投资研究。"));
+  wrap.appendChild(screenTitle("01", "投研大厅", "产品演示使用本地示例数据，适合展示完整研究流程和交互方式。"));
 
   // ---- hero grid: ask box + LIVE office preview ----
   const grid = el("div", "hall-grid");
 
   const askPanel = el("div", "panel");
-  askPanel.appendChild(el("div", "panel-title", "今天想研究什么？ <span class='title-extra'>描述你的研究意向，Manager 会拆解并编排团队</span>"));
+  askPanel.appendChild(el("div", "panel-title", "今天想研究什么？ <span class='title-extra'>演示模式会使用预置案例展示任务拆解和团队协作</span>"));
   const askBox = el("div", "ask-box");
   const ta = el("textarea");
   ta.placeholder = "例如：分析特斯拉（TSLA）的基本面、自动驾驶与机器人业务，并给出估值与风险判断…";
@@ -1248,7 +1168,7 @@ function pageHall() {
   ta.addEventListener("input", () => { count.textContent = `${ta.value.length} / 500`; });
   const startBtn = el("button", "btn btn-primary", "🚀 开始研究");
   startBtn.addEventListener("click", () => {
-    toast("Manager 正在澄清任务需求…（DEMO）");
+    toast("正在进入演示澄清流程…");
     navigate("clarify");
   });
   foot.append(count, startBtn);
@@ -1257,7 +1177,7 @@ function pageHall() {
 
   // recommended tasks
   const rec = el("div", "rec-row");
-  const recLabel = el("span", "rec-label", "💡 推荐任务");
+  const recLabel = el("span", "rec-label", "演示案例");
   rec.appendChild(recLabel);
   RECOMMENDED_GROUPS[hallRecIdx % RECOMMENDED_GROUPS.length].forEach((t) => {
     const chip = el("button", "chip", esc(t));
@@ -1272,11 +1192,11 @@ function pageHall() {
 
   // LIVE office preview
   const officePanel = el("div", "panel");
-  officePanel.appendChild(el("div", "panel-title", "投研办公室 <span class='title-extra'>点击进入作战室</span>"));
+  officePanel.appendChild(el("div", "panel-title", "投研办公室 <span class='title-extra'>演示专家协作状态</span>"));
   const preview = el("div", "office-preview");
   const canvas = el("canvas");
   preview.appendChild(canvas);
-  preview.appendChild(el("div", "live-tag", "<i></i>LIVE"));
+  preview.appendChild(el("div", "live-tag", "<i></i>在线"));
   preview.addEventListener("click", () => navigate("war"));
   officePanel.appendChild(preview);
   const ofeed = el("div", "office-feed");
@@ -1298,7 +1218,7 @@ function pageHall() {
   // ---- online experts ----
   const expertPanel = el("div", "panel");
   expertPanel.style.marginTop = "18px";
-  expertPanel.appendChild(el("div", "panel-title", `在线专家 <span class='title-extra'>${AGENTS.filter((a) => a.status !== "off").length} 位专家在线协作</span>`));
+  expertPanel.appendChild(el("div", "panel-title", `专家角色 <span class='title-extra'>${AGENTS.filter((a) => a.status !== "off").length} 位角色参与演示流程</span>`));
   const strip = el("div", "expert-strip");
   AGENTS.forEach((a) => {
     const card = el("button", "expert-mini");
@@ -1323,12 +1243,10 @@ function pageHall() {
   const online = AGENTS.filter((a) => a.status !== "off").length;
   const skillTotal = AGENTS.reduce((s, a) => s + (a.skillCount || 0), 0);
   [
-    { num: "3", label: "今日研究任务", sub: "含 1 个进行中", green: true },
-    { num: `${online}/${AGENTS.length}`, label: "在线专家", sub: "多线协作中" },
-    { num: `${skillTotal}`, label: "专业分析方法", sub: "覆盖全研究链路" },
-    { num: `${REPORTS.length}`, label: "已完成报告", sub: "可追问 / 导出" },
-    { num: "98%", label: "证据校验通过率", sub: "结论均可溯源", green: true },
-    { num: "5", label: "本月新增策略", sub: "策略库沉淀" },
+    { num: `${HISTORY_TASKS.length}`, label: "演示任务", sub: "预置流程", green: true },
+    { num: `${online}/${AGENTS.length}`, label: "专家角色", sub: "演示团队配置" },
+    { num: `${skillTotal}`, label: "研究能力", sub: "覆盖主要分析环节" },
+    { num: `${REPORTS.length}`, label: "示例报告", sub: "支持追问展示" },
   ].forEach((s) => {
     const c = el("button", "stat-card");
     c.innerHTML = `<div class="sc-num${s.green ? " green" : ""}">${esc(s.num)}</div>
@@ -1369,17 +1287,17 @@ function pageClarify() {
 
   // ---- left: Manager conversation ----
   const left = el("div", "panel chat-col");
-  left.appendChild(screenTitle("02", "任务澄清", "Manager 正在与你确认关键研究口径，以便精准编排专家团队。"));
+  left.appendChild(screenTitle("02", "任务澄清", "演示模式会展示研究经理如何确认关键口径。"));
 
   const head = el("div", "chat-head");
   head.appendChild(avatar("manager", 46, "pix-ava"));
   const who = el("div", "who");
-  who.innerHTML = "<strong>Manager · 研究管理员</strong><small>正在澄清任务需求…</small>";
+  who.innerHTML = "<strong>研究经理</strong><small>正在澄清任务需求…</small>";
   head.appendChild(who);
   left.appendChild(head);
 
   const scroll = el("div", "chat-scroll");
-  scroll.appendChild(clarifyMsg("bot", `收到你的研究意向：<b>${esc(CLARIFY_TASK.object)}</b>。在正式开工前，我想先确认几个关键口径，团队会据此精准编排。`));
+  scroll.appendChild(clarifyMsg("bot", `收到你的研究意向：<b>${esc(CLARIFY_TASK.object)}</b>。在正式开工前，我想先确认几个关键口径，团队会据此安排后续研究。`));
 
   // clarify option grid, rendered inside a wide Manager bubble
   const gridMsg = el("div", "msg");
@@ -1387,7 +1305,7 @@ function pageClarify() {
   gAva.appendChild(avatar("manager", 38));
   const gBody = el("div", "m-body");
   gBody.style.maxWidth = "none";
-  gBody.appendChild(el("div", "m-meta", "<span>Manager</span><span>关键澄清项</span>"));
+  gBody.appendChild(el("div", "m-meta", "<span>研究经理</span><span>关键澄清项</span>"));
   const gridWrap = el("div", "m-bubble");
   gridWrap.style.width = "100%";
   const grid = el("div", "clarify-grid");
@@ -1397,7 +1315,7 @@ function pageClarify() {
   scroll.appendChild(gridMsg);
   renderClarifyGrid(grid);
 
-  scroll.appendChild(clarifyMsg("bot", "确认无误后点击右侧「确认并启动研究」，我会立刻把任务拆解给团队并进入作战室。"));
+  scroll.appendChild(clarifyMsg("bot", "确认无误后点击右侧「确认并启动研究」，演示会进入研究作战室并展示协作过程。"));
   left.appendChild(scroll);
 
   const inputBar = el("div", "chat-inputbar");
@@ -1435,7 +1353,7 @@ function clarifyMsg(role, html) {
   const ava = el("div", "m-avatar");
   ava.appendChild(avatar(me ? "user" : "manager", 38));
   const body = el("div", "m-body");
-  body.appendChild(el("div", "m-meta", `<span>${me ? "你" : "Manager"}</span><span>${nowClock()}</span>`));
+  body.appendChild(el("div", "m-meta", `<span>${me ? "你" : "研究经理"}</span><span>${nowClock()}</span>`));
   body.appendChild(el("div", "m-bubble", html));
   node.append(ava, body);
   return node;
@@ -1513,7 +1431,7 @@ function renderClarifySummary(panel) {
   const go = el("button", "btn btn-primary", "🚀 确认并启动研究");
   go.style.cssText = "width:100%;margin-top:16px";
   go.addEventListener("click", () => {
-    toast("任务已启动，进入作战室（DEMO）");
+    toast("任务已启动，进入研究作战室");
     navigate("war");
   });
   panel.appendChild(go);
@@ -1547,8 +1465,8 @@ function pageWarRoom() {
 
   // ---- head ----
   const head = el("div", "war-head");
-  head.appendChild(el("h1", "", "🛰 多 Agent 作战室"));
-  head.appendChild(el("span", "sub", "专家自主协作 · 任务执行实时可视化"));
+  head.appendChild(el("h1", "", "研究作战室"));
+  head.appendChild(el("span", "sub", "产品演示 · 预置场景 · 不调用外部模型或数据源"));
   const task = el("div", "war-task");
   task.appendChild(el("span", "wt-name", esc(DEMO_TASK.title)));
   const badge = el("span", "badge running", '<span class="dot"></span>执行中');
@@ -1598,7 +1516,7 @@ function pageWarRoom() {
   // ================= CENTER: live stage + progress + timeline =================
   const centerCol = el("div");
   const stagePanel = el("div", "panel");
-  stagePanel.appendChild(el("div", "panel-title", "作战室实时画面 <span class='title-extra'>专家在自主走动与协作</span>"));
+  stagePanel.appendChild(el("div", "panel-title", "作战室演示画面 <span class='title-extra'>展示专家协作和任务流转</span>"));
   const stage = el("div", "office-stage");
   const canvas = el("canvas");
   stage.appendChild(canvas);
@@ -1628,10 +1546,24 @@ function pageWarRoom() {
   companionPanel.appendChild(companionFeed);
   centerCol.appendChild(companionPanel);
 
+  // demo coach classroom: replays labeled sample narrations on a timer
+  const classroom = createClassroomPanel({
+    demo: true,
+    agentName: (id) => agentById(id)?.name || id,
+  });
+  centerCol.appendChild(classroom.root);
+  (DEMO_COACH.narrations || []).forEach((n, i) => {
+    setTimeout(() => {
+      if (!classroom.root.isConnected) return;
+      classroom.push(n);
+      if (i === DEMO_COACH.narrations.length - 1) classroom.finish();
+    }, 1500 + i * 2600);
+  });
+
   // timeline
   const tlPanel = el("div", "panel");
   tlPanel.style.marginTop = "14px";
-  tlPanel.appendChild(el("div", "panel-title", "活动时间轴"));
+  tlPanel.appendChild(el("div", "panel-title", "演示时间轴"));
   const tl = el("div", "timeline");
   const tlEvents = WAR_SCRIPT.filter((e) => e.type === "timeline");
   const tlTrack = el("div", "tl-track");
@@ -1670,9 +1602,10 @@ function pageWarRoom() {
   sumPanel.appendChild(el("div", "panel-title", "任务摘要"));
   const kv = el("div", "kv-list");
   [
-    ["研究对象", DEMO_TASK.short], ["任务类型", DEMO_TASK.type],
-    ["启动时间", DEMO_TASK.started], ["优先级", DEMO_TASK.priority],
-    ["预计完成", DEMO_TASK.eta],
+    ["演示场景", DEMO_TASK.short],
+    ["任务类型", DEMO_TASK.type],
+    ["数据口径", "本地示例数据"],
+    ["流程状态", "脚本化演示"],
   ].forEach(([k, v]) => {
     kv.appendChild(el("div", "kv", `<span class="k">${esc(k)}</span><span>${esc(v)}</span>`));
   });
@@ -2119,7 +2052,7 @@ function renderExpertDetail(panel) {
       <div class="ds"><strong style="color:var(--green)">96%</strong><span>完成率</span></div>
       <div class="ds"><strong>${a.skillCount}</strong><span>影响策略</span></div>`;
     body.appendChild(grid);
-    body.appendChild(el("div", "follow-sec-title", "贡献趋势（近 5 周 · DEMO）"));
+    body.appendChild(el("div", "follow-sec-title", "贡献趋势（近 5 周）"));
     const canvas = el("canvas");
     const box = el("div", "chart-box");
     box.appendChild(canvas);
@@ -2140,7 +2073,7 @@ function renderExpertDetail(panel) {
     const sw = el("button", `switch${enabled ? " on" : ""}`);
     if (a.id === "manager") { sw.classList.add("disabled"); }
     sw.addEventListener("click", () => {
-      if (a.id === "manager") { toast("Manager 为总控，不能禁用（DEMO）"); return; }
+      if (a.id === "manager") { toast("研究经理负责统筹任务，不能停用"); return; }
       store.setAgentEnabled(a.id, !(store.state.agentEnabled[a.id] !== false));
       renderExpertDetail(panel);
       renderExpertGrid($(".experts-grid"));
@@ -2174,7 +2107,7 @@ function pageTasks() {
 // ---------------------------------------------------------------------------
 function pageSkills() {
   const wrap = el("div", "panel");
-  wrap.appendChild(screenTitle("07", "研究能力 · 演示", "以用户语言说明专家团队可使用的专业分析方法。"));
+  wrap.appendChild(screenTitle("07", "研究能力", "以用户语言说明专家团队可使用的专业分析方法。"));
   const list = el("div", "report-list");
   DEMO_SKILLS.forEach((skill) => {
     const method = publicResearchMethod(skill);
@@ -2182,7 +2115,7 @@ function pageSkills() {
     item.style.cursor = "default";
     item.appendChild(el("span", "ri-ico", "🧩"));
     item.appendChild(el("div", "", `
-      <div style="font-weight:600">${esc(method.name)} <span class="badge online"><span class="dot ok"></span>产品示例</span></div>
+      <div style="font-weight:600">${esc(method.name)} <span class="badge online"><span class="dot ok"></span>可用</span></div>
       <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(method.description)}</div>
     `));
     list.appendChild(item);
@@ -2210,7 +2143,7 @@ function buildExpertsLive(experts) {
   }
   const layout = el("div", "experts-layout");
   const left = el("div", "panel");
-  left.appendChild(screenTitle("04", "专家中心 · 实时", "了解每位投研专家的专业分工、研究能力和当前可用状态。"));
+  left.appendChild(screenTitle("04", "专家中心", "了解每位投研专家的专业分工、研究能力和当前可用状态。"));
 
   const toolbar = el("div", "experts-toolbar");
   const search = el("input");
@@ -2336,7 +2269,7 @@ function pageSkillsLive() {
   const host = el("div");
   return renderLive(host, fetchSkills, (skills) => {
     const wrap = el("div", "panel");
-    wrap.appendChild(screenTitle("07", "研究能力 · 实时", "了解专家团队当前可使用的专业研究方法，以及每种方法帮助用户回答什么问题。"));
+    wrap.appendChild(screenTitle("07", "研究能力", "了解专家团队可使用的专业研究方法，以及每种方法帮助用户回答什么问题。"));
     if (!skills.length) {
       wrap.appendChild(stateBox("empty", "暂无可展示的研究能力", "研究服务仍可保留已完成的报告，请稍后再查看能力清单。"));
       return wrap;
@@ -2445,7 +2378,7 @@ function pageReportListLive() {
   });
 }
 
-// ---- live: report detail + real evidence-bounded follow-up ----------------
+// ---- live: report detail + coach sidebar (陪练问答 + 证据检索双通道) ------
 function pageReportDetailLive(reportId) {
   const host = el("div");
   return renderLive(host, () => fetchReport(reportId), buildReportDetailLive);
@@ -2453,8 +2386,19 @@ function pageReportDetailLive(reportId) {
 
 function buildReportDetailLive(report) {
   const layout = el("div", "report-layout");
-  layout.appendChild(buildReportMainLive(report));
-  layout.appendChild(buildFollowPanelLive(report));
+  const main = buildReportMainLive(report);
+  layout.appendChild(main);
+  const coach = buildCoachSidebar({
+    seedMessages: report.coach_messages || [],
+    loadGuide: (refresh) => fetchCoachGuide(report.id, refresh),
+    ask: (question, quoted) => askCoach(report.id, question, quoted),
+    evidence: (question) => submitReportFollowup(report.id, question),
+    onCollapseChange: (c) => layout.classList.toggle("coach-collapsed", c),
+  });
+  layout.appendChild(coach.root);
+  // 选字引用：报告正文选区 → 侧边栏引用 chip（导航离开时清理监听）
+  const quoting = attachSelectionQuoting(main, (text) => coach.setQuote(text));
+  registerTeardown(() => quoting.destroy());
   extractReportGlossary(report.id)
     .then((terms) => registerGlossaryTerms(terms, layout))
     .catch(() => {});
@@ -2467,7 +2411,11 @@ function buildReportMainLive(report) {
   const back = el("button", "btn-ghost", "‹ 返回历史记录");
   back.addEventListener("click", () => navigate("tasks"));
   toolbar.appendChild(back);
-  toolbar.appendChild(el("span", "research-truth-label", "仅展示本次真实研究"));
+  toolbar.appendChild(el(
+    "span",
+    "research-truth-label",
+    report.demo ? "产品演示报告 · 本地示例" : "仅展示本次真实研究",
+  ));
   col.appendChild(toolbar);
 
   if (!researchPresentation) {
@@ -2487,7 +2435,7 @@ function buildReportMainLive(report) {
     col.appendChild(stateBox(
       "empty",
       "本次任务尚未形成可展示结果",
-      "页面不会用固定案例或模拟数据填充空白。",
+      "当前任务还没有生成可展示的研究内容。",
     ));
     return col;
   }
@@ -2553,7 +2501,7 @@ function researchList(items, cls = "") {
   const list = el("div", `research-list ${cls}`.trim());
   const values = (items || []).filter(Boolean);
   if (!values.length) {
-    list.appendChild(el("p", "research-empty", "本次真实结果没有返回这一层内容，因此不补写固定教材。"));
+    list.appendChild(el("p", "research-empty", "本次结果没有返回这一层内容，因此不补写固定教材。"));
     return list;
   }
   values.forEach((item) => {
@@ -2725,7 +2673,7 @@ function renderMetricOverview(metrics) {
     grid.appendChild(el(
       "p",
       "research-empty",
-      "本次真实结果没有返回可安全展示的指标，页面不会伪造计算过程。",
+      "本次结果没有返回可安全展示的指标。",
     ));
   }
   metrics.forEach((metric) => grid.appendChild(renderMetricCard(metric)));
@@ -3005,7 +2953,7 @@ function renderSignals(vm) {
     "专家观点冲突",
     vm.expertDisagreements.length
       ? vm.expertDisagreements
-      : ["本次真实结果未报告明确冲突；这不代表所有风险已被排除。"],
+      : ["本次结果未报告明确冲突；这不代表所有风险已被排除。"],
     "conflict",
   ));
   grid.appendChild(signalCard("研究局限", vm.limitations, "limit"));
@@ -3056,7 +3004,7 @@ function renderLearningSummary(summary, knowledgeCount = 0) {
   const panel = researchPanel(
     "08 · LEARNING",
     "本次研究，你掌握了什么？",
-    "把本次真实研究过程还原为可复用的分析框架和专业术语。",
+    "把本次研究过程还原为可复用的分析框架和专业术语。",
     "learning-section",
   );
   const grid = el("div", "learning-grid");
@@ -3222,109 +3170,8 @@ function renderDataScope(sources) {
 // Generic, bounded renderer for a content block's `data` — no fixed schema.
 function renderBlockData(data) {
   const wrap = el("div", "op-note");
-  wrap.textContent = "该部分没有可安全展示的用户摘要，页面不会直接展开原始研究数据。";
+  wrap.textContent = "该部分暂无可安全展示的用户摘要。";
   return wrap;
-}
-
-function buildFollowPanelLive(report) {
-  const panel = el("div", "panel follow-panel glossary-scope");
-  const publicTitle = researchPresentation
-    ? researchPresentation.publicText(report.title, "本次研究报告")
-    : report.title;
-  const completionStatus = String((report.aggregation || {}).completion_status || "failed");
-  const reportMessage = {
-    completed: `报告《${publicTitle}》已成功生成`,
-    partially_completed: `报告《${publicTitle}》已部分生成，部分步骤未完成`,
-    failed: `报告《${publicTitle}》执行失败，已保存失败说明`,
-    needs_clarification: `报告《${publicTitle}》尚未生成，需要补充信息`,
-    rejected: `报告《${publicTitle}》未生成，任务已被拒绝`,
-  }[completionStatus] || `报告《${publicTitle}》处理结束`;
-  const head = el("div", "follow-head");
-  head.appendChild(avatar("manager", 46, "fh-ava"));
-  const who = el("div", "fh-who");
-  who.appendChild(el("strong", "", "报告内证据检索"));
-  who.appendChild(el("p", "", "追问只会检索本次报告已经存在的证据，不会产生新的研究结论。"));
-  who.appendChild(el("span", "badge online", '<span class="dot"></span>实时'));
-  head.appendChild(who);
-  panel.appendChild(head);
-
-  panel.appendChild(el("div", "follow-sec-title", "对话记录"));
-  const scroll = el("div", "follow-scroll");
-  scroll.id = "liveFollowScroll";
-  panel.appendChild(scroll);
-
-  const seed = [{ role: "sys", text: reportMessage, time: "" }];
-  (report.followups || []).forEach((f) => {
-    seed.push({ role: f.role === "user" ? "me" : "bot", text: f.text, time: (f.created_at || "").slice(11, 19), evidence: f.evidence });
-  });
-  seed.forEach((m) => scroll.appendChild(renderLiveMessage(m)));
-
-  const inputBar = el("div", "chat-inputbar");
-  const input = el("input");
-  input.type = "text";
-  input.placeholder = "输入问题，检索报告证据…";
-  const send = el("button", "btn btn-primary", "➤");
-  const fire = () => {
-    const q = input.value.trim();
-    if (!q) return;
-    input.value = "";
-    submitLiveFollowup(report, q, scroll);
-  };
-  send.addEventListener("click", fire);
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") fire(); });
-  inputBar.append(input, send);
-  panel.appendChild(inputBar);
-
-  requestAnimationFrame(() => { scroll.scrollTop = scroll.scrollHeight; });
-  return panel;
-}
-
-function renderLiveMessage(m) {
-  if (m.role === "sys") {
-    return el("div", "msg", `
-      <div class="m-avatar" style="display:grid;place-items:center;color:var(--green)">✓</div>
-      <div class="m-body"><div class="m-meta"><span>系统</span><span>${esc(m.time || "")}</span></div>
-      <div class="m-bubble" style="color:var(--text-2)">${esc(m.text)}</div></div>`);
-  }
-  const me = m.role === "me";
-  const node = el("div", `msg${me ? " me" : ""}`);
-  const ava = el("div", "m-avatar");
-  ava.appendChild(avatar(me ? "user" : "manager", 38));
-  const body = el("div", "m-body");
-  body.appendChild(el("div", "m-meta", `<span>${me ? "你" : "Manager"}</span><span>${esc(m.time || "")}</span>`));
-  body.appendChild(el("div", "m-bubble", esc(m.text)));
-  if (m.evidence && m.evidence.length) {
-    const ev = el("div", "op-note");
-    ev.style.marginTop = "6px";
-    ev.innerHTML = m.evidence.map((e) => `<div>· <b>${esc(e.source || "证据")}</b>：${esc(String(e.text || "").slice(0, 160))}</div>`).join("");
-    body.appendChild(ev);
-  }
-  node.append(ava, body);
-  return node;
-}
-
-function submitLiveFollowup(report, question, scroll) {
-  scroll.appendChild(renderLiveMessage({ role: "me", text: question, time: nowClock() }));
-  scroll.scrollTop = scroll.scrollHeight;
-  const typing = el("div", "msg");
-  const ava = el("div", "m-avatar");
-  ava.appendChild(avatar("manager", 38));
-  typing.append(ava, el("div", "m-body", '<div class="m-bubble"><span class="typing-dots"><i></i><i></i><i></i></span></div>'));
-  scroll.appendChild(typing);
-  scroll.scrollTop = scroll.scrollHeight;
-  submitReportFollowup(report.id, question)
-    .then((ans) => {
-      typing.remove();
-      const replyNode = renderLiveMessage({ role: "bot", text: ans.text, time: (ans.created_at || "").slice(11, 19), evidence: ans.evidence });
-      scroll.appendChild(replyNode);
-      highlightGlossaryScope(replyNode);
-      scroll.scrollTop = scroll.scrollHeight;
-    })
-    .catch((err) => {
-      typing.remove();
-      scroll.appendChild(renderLiveMessage({ role: "bot", text: "当前无法完成证据检索。已生成的研究报告仍然保留，请稍后重试。", time: nowClock() }));
-      scroll.scrollTop = scroll.scrollHeight;
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3338,13 +3185,13 @@ const LIVE_RECOMMENDED = [
 
 function pageHallLive() {
   const wrap = el("div");
-  wrap.appendChild(screenTitle("01", "投研大厅 · 实时", "描述研究意向，Manager Agent 将实时拆解并编排真实专家团队（消耗模型额度）。"));
+  wrap.appendChild(screenTitle("01", "投研大厅", "描述研究问题，系统会拆解任务并编排合适的专家。"));
 
   const grid = el("div", "hall-grid");
 
   // ---- ask box ----
   const askPanel = el("div", "panel");
-  askPanel.appendChild(el("div", "panel-title", "今天想研究什么？ <span class='title-extra'>提交后由真实 Manager Agent 规划</span>"));
+  askPanel.appendChild(el("div", "panel-title", "今天想研究什么？ <span class='title-extra'>提交后进入研究规划</span>"));
   const askBox = el("div", "ask-box");
   const ta = el("textarea");
   ta.placeholder = "例如：分析贵州茅台（600519.SH）近三个财年的盈利能力与财务质量…";
@@ -3358,7 +3205,7 @@ function pageHallLive() {
     const prompt = ta.value.trim();
     if (!prompt) { toast("请先描述你的研究意向"); ta.focus(); return; }
     startBtn.disabled = true;
-    startBtn.textContent = "Manager 规划中…";
+    startBtn.textContent = "正在规划…";
     resetLiveSession();
     rememberCurrentReport(null);
     setLiveSession({ prompt, phase: "planning" });
@@ -3387,7 +3234,7 @@ function pageHallLive() {
   askPanel.appendChild(askBox);
 
   const rec = el("div", "rec-row");
-  rec.appendChild(el("span", "rec-label", "💡 推荐任务"));
+  rec.appendChild(el("span", "rec-label", "常见研究"));
   LIVE_RECOMMENDED.forEach((t) => {
     const chip = el("button", "chip", esc(t));
     chip.addEventListener("click", () => { ta.value = t; count.textContent = `${ta.value.length} / 500`; ta.focus(); });
@@ -3398,11 +3245,11 @@ function pageHallLive() {
 
   // ---- live office preview ----
   const officePanel = el("div", "panel");
-  officePanel.appendChild(el("div", "panel-title", "投研办公室 <span class='title-extra'>真实在线专家</span>"));
+  officePanel.appendChild(el("div", "panel-title", "投研办公室 <span class='title-extra'>专家协作状态</span>"));
   const preview = el("div", "office-preview");
   const canvas = el("canvas");
   preview.appendChild(canvas);
-  preview.appendChild(el("div", "live-tag", "<i></i>LIVE"));
+  preview.appendChild(el("div", "live-tag", "<i></i>在线"));
   officePanel.appendChild(preview);
   const ofeed = el("div", "office-feed");
   ofeed.innerHTML = `<span class="dot"></span><span>正在读取在线专家…</span>`;
@@ -3433,7 +3280,7 @@ function pageHallLive() {
       const online = experts.filter((e) => e.status !== "off");
       // office scene can only draw agents that have a pixel sprite sheet
       const scene = experts.filter((e) => SPRITE_MAP[e.id]);
-      requestAnimationFrame(() => drawOfficeScene(canvas, scene.length ? scene : AGENTS));
+      requestAnimationFrame(() => drawOfficeScene(canvas, scene));
       const ofeedSpan = ofeed.querySelector("span:last-child");
       if (ofeedSpan) ofeedSpan.textContent = `${online.length} 位专家在线协作`;
       expertTitle.innerHTML = `在线专家 <span class='title-extra'>${online.length} 位专家在线协作</span>`;
@@ -3450,7 +3297,7 @@ function pageHallLive() {
       });
       cards.innerHTML = "";
       [
-        { num: `${ov.enabled_experts}`, label: "在线专家", sub: "真实注册专家", green: true, route: "experts" },
+        { num: `${ov.enabled_experts}`, label: "在线专家", sub: "当前可调度", green: true, route: "experts" },
         { num: `${ov.enabled_skills}`, label: "可用研究能力", sub: "专业分析方法", route: "skills" },
         { num: `${ov.total_tasks}`, label: "累计任务", sub: `含 ${ov.completed_tasks} 个已完成`, route: "tasks" },
         { num: `${ov.report_count}`, label: "已生成报告", sub: "可追问 / 检索", route: "reports" },
@@ -3464,20 +3311,20 @@ function pageHallLive() {
     .catch((err) => {
       strip.innerHTML = "";
       strip.appendChild(stateBox("error", "无法读取在线专家", "当前无法更新专家状态，请稍后重试。"));
-      requestAnimationFrame(() => drawOfficeScene(canvas, AGENTS));
+      requestAnimationFrame(() => drawOfficeScene(canvas, []));
     });
 
   return wrap;
 }
 
 // ---------------------------------------------------------------------------
-// live: clarify — render real Manager clarification groups (界面 02 · 实时)
+// live: clarify — render real Manager clarification groups
 // ---------------------------------------------------------------------------
 function pageClarifyLive() {
   const session = liveSession;
   if (!session.taskId || !session.plan) {
     const wrap = el("div", "panel");
-    wrap.appendChild(screenTitle("02", "任务澄清 · 实时", ""));
+    wrap.appendChild(screenTitle("02", "任务澄清", ""));
     const box = stateBox("empty", "尚无进行中的规划会话", "请先在投研大厅提交研究请求。");
     const back = el("button", "btn btn-primary", "‹ 返回大厅");
     back.style.marginTop = "10px";
@@ -3499,12 +3346,12 @@ function pageClarifyLive() {
 
   // ---- left: Manager conversation ----
   const left = el("div", "panel chat-col");
-  left.appendChild(screenTitle("02", "任务澄清 · 实时", "Manager 需要先确认关键口径，再编排真实专家团队。"));
+  left.appendChild(screenTitle("02", "任务澄清", "请先确认关键口径，系统会据此安排后续研究。"));
 
   const head = el("div", "chat-head");
   head.appendChild(avatar("manager", 46, "pix-ava"));
   const who = el("div", "who");
-  who.innerHTML = "<strong>Manager · 研究管理员</strong><small>正在澄清任务需求…</small>";
+  who.innerHTML = "<strong>研究经理</strong><small>正在澄清任务需求…</small>";
   head.appendChild(who);
   left.appendChild(head);
 
@@ -3517,7 +3364,7 @@ function pageClarifyLive() {
     gAva.appendChild(avatar("manager", 38));
     const gBody = el("div", "m-body");
     gBody.style.maxWidth = "none";
-    gBody.appendChild(el("div", "m-meta", "<span>Manager</span><span>关键澄清项</span>"));
+    gBody.appendChild(el("div", "m-meta", "<span>研究经理</span><span>关键澄清项</span>"));
     const gridWrap = el("div", "m-bubble");
     gridWrap.style.width = "100%";
     const optGrid = el("div", "clarify-grid");
@@ -3554,7 +3401,7 @@ function pageClarifyLive() {
     renderGrid();
   }
 
-  scroll.appendChild(clarifyMsg("bot", "确认后点击右侧「确认并提交澄清」，我会据此重新规划并进入作战室。"));
+  scroll.appendChild(clarifyMsg("bot", "确认后点击右侧「确认并提交澄清」，系统会据此重新规划并开始研究。"));
   left.appendChild(scroll);
 
   const inputBar = el("div", "chat-inputbar");
@@ -3585,7 +3432,7 @@ function pageClarifyLive() {
     const supplement = input.value.trim();
     if (supplement) answers.supplement = supplement;
     go.disabled = true;
-    go.textContent = "Manager 重新规划中…";
+    go.textContent = "正在重新规划…";
     liveClarifySession(session.taskId, answers)
       .then(({ taskId, plan: nextPlan }) => {
         setLiveSession({ taskId, plan: nextPlan });
@@ -3614,8 +3461,8 @@ function pageClarifyLive() {
 function pageManagerPlanningLive(session) {
   const wrap = el("div");
   const head = el("div", "war-head");
-  head.appendChild(el("h1", "", "🛰 多 Agent 作战室 · 实时"));
-  head.appendChild(el("span", "sub", "研究经理正在拆解真实研究问题"));
+  head.appendChild(el("h1", "", "研究作战室"));
+  head.appendChild(el("span", "sub", "正在拆解研究问题"));
   const task = el("div", "war-task");
   task.appendChild(el("span", "wt-name", esc(session.prompt)));
   task.appendChild(el("span", "badge running", '<span class="dot"></span>规划中'));
@@ -3623,13 +3470,13 @@ function pageManagerPlanningLive(session) {
   wrap.appendChild(head);
 
   const panel = el("div", "panel manager-planning-shell");
-  panel.appendChild(el("div", "panel-title", "研究经理的任务拆解 <span class='title-extra'>等待真实研究计划</span>"));
+  panel.appendChild(el("div", "panel-title", "任务拆解 <span class='title-extra'>等待研究计划</span>"));
 
   const flow = el("div", "manager-planning-flow");
   const manager = el("div", "manager-core is-planning");
   manager.innerHTML = `
     <span class="manager-core-icon">🧠</span>
-    <strong>Manager Agent</strong>
+    <strong>研究经理</strong>
     <small>正在理解目标、选择专家并检查依赖关系</small>
     <span class="badge running"><span class="dot"></span>研究规划进行中</span>
   `;
@@ -3657,7 +3504,7 @@ function pageManagerPlanningLive(session) {
     stages.appendChild(stage);
   });
   panel.appendChild(stages);
-  panel.appendChild(el("p", "manager-truth-note", "当前仅展示真实等待状态；本次实际选择的专家、依赖关系和执行状态将在研究计划返回后出现。"));
+  panel.appendChild(el("p", "manager-truth-note", "研究计划返回后，将展示本次选择的专家、依赖关系和执行状态。"));
   wrap.appendChild(panel);
   return wrap;
 }
@@ -3669,7 +3516,7 @@ function pageWarRoomLive() {
       return pageManagerPlanningLive(session);
     }
     const wrap = el("div", "panel");
-    wrap.appendChild(el("div", "panel-title", "多 Agent 作战室 · 实时"));
+    wrap.appendChild(el("div", "panel-title", "研究作战室"));
     const failed = session.phase === "failed";
     const box = stateBox(
       failed ? "error" : "empty",
@@ -3692,8 +3539,8 @@ function pageWarRoomLive() {
 
   // ---- head ----
   const head = el("div", "war-head");
-  head.appendChild(el("h1", "", "🛰 多 Agent 作战室 · 实时"));
-  head.appendChild(el("span", "sub", "真实研究进度 · 专家自主协作"));
+  head.appendChild(el("h1", "", "研究作战室"));
+  head.appendChild(el("span", "sub", "研究进度与专家协作"));
   const task = el("div", "war-task");
   task.appendChild(el("span", "wt-name", esc(plan && plan.goal ? plan.goal : session.prompt)));
   const badge = el("span", "badge running", '<span class="dot"></span>执行中');
@@ -3710,11 +3557,11 @@ function pageWarRoomLive() {
   const managerCard = el("div", "manager-dispatch-card");
   managerCard.innerHTML = `
     <span class="manager-core-icon">🧠</span>
-    <span><strong>Manager Agent</strong><small>动态选人与任务图编排</small></span>
+    <span><strong>研究经理</strong><small>动态选人与任务编排</small></span>
     <span class="badge done manager-dispatch-status"><span class="dot"></span>计划已验证</span>
   `;
   managerFlow.appendChild(managerCard);
-  managerFlow.appendChild(el("div", "manager-dispatch-arrow", "研究分工 →"));
+  managerFlow.appendChild(el("div", "manager-dispatch-arrow", "研究分工"));
   const managerAgents = el("div", "manager-agent-list");
   const agentFlowEls = {};
   ((plan && plan.agents) || []).forEach((agent) => {
@@ -3806,7 +3653,7 @@ function pageWarRoomLive() {
   // ---- CENTER: live stage + progress ----
   const centerCol = el("div");
   const stagePanel = el("div", "panel");
-  stagePanel.appendChild(el("div", "panel-title", "作战室实时画面 <span class='title-extra'>专家协作执行中</span>"));
+  stagePanel.appendChild(el("div", "panel-title", "专家协作 <span class='title-extra'>研究执行中</span>"));
   const stage = el("div", "office-stage");
   const canvas = el("canvas");
   stage.appendChild(canvas);
@@ -3833,6 +3680,18 @@ function pageWarRoomLive() {
   companionPanel.appendChild(companionFeed);
   centerCol.appendChild(companionPanel);
 
+  // coach classroom feed: model-generated narrations arrive over SSE, and
+  // earlier narrations for this task are replayed from the read-only API.
+  const classroom = createClassroomPanel({
+    agentName: (id) => (researchPresentation
+      ? researchPresentation.agentInfo(id).name
+      : id),
+  });
+  centerCol.appendChild(classroom.root);
+  fetchCoachNarrations(session.taskId)
+    .then((rows) => (rows || []).forEach((n) => classroom.push(n)))
+    .catch(() => { /* replay is best-effort; live SSE still feeds the panel */ });
+
   grid.appendChild(centerCol);
 
   // ---- RIGHT: skills + logs ----
@@ -3847,7 +3706,7 @@ function pageWarRoomLive() {
 
   const logPanel = el("div", "panel");
   logPanel.style.marginTop = "14px";
-  logPanel.appendChild(el("div", "panel-title", "研究过程"));
+  logPanel.appendChild(el("div", "panel-title", "研究日志"));
   const logEl = el("div", "log-list");
   logPanel.appendChild(logEl);
   rightCol.appendChild(logPanel);
@@ -3858,8 +3717,8 @@ function pageWarRoomLive() {
   // office scene from plan agents (only those with a pixel sprite sheet)
   const planAgents = (plan && plan.agents && plan.agents.length)
     ? plan.agents.filter((a) => SPRITE_MAP[a.id]).map((a) => ({ id: a.id, name: a.name, status: "working" }))
-    : AGENTS;
-  requestAnimationFrame(() => drawOfficeScene(canvas, planAgents.length ? planAgents : AGENTS));
+    : [];
+  requestAnimationFrame(() => drawOfficeScene(canvas, planAgents));
 
   // ---- engine state ----
   const startedAt = Date.now();
@@ -4030,6 +3889,7 @@ function pageWarRoomLive() {
 
   const src = openTaskStream(session.taskId, {
     onEvent: handleEvent,
+    onCoach: (n) => classroom.push(n),
     onAggregation: (data) => {
       if (data && data.report_id) reportId = data.report_id;
       completionStatus = data && data.aggregation
@@ -4049,6 +3909,7 @@ function pageWarRoomLive() {
     },
     onDone: (data) => {
       clearInterval(elapsedTimer);
+      classroom.finish();
       completionStatus = (data && data.status) || completionStatus || "failed";
       const succeeded = completionStatus === "completed";
       const partial = completionStatus === "partially_completed";
@@ -4105,8 +3966,8 @@ function boot() {
       navigate("hall");
     });
   } else {
-    // demo mode: land directly on the report follow-up view (matches design).
-    navigate("reports", REPORTS[0].id);
+    // Demo mode starts from the hall so the full guided flow is visible.
+    navigate("hall");
   }
   maybeStartProfileOnboarding(toast);
   setInterval(renderStatusbar, 30_000);

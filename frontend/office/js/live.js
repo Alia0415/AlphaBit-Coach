@@ -3,7 +3,7 @@
 // enabled, capabilities, tools, skills, counts, statuses) come from the API;
 // only cosmetic fields (sprite / role label / specialty) are overlaid from the
 // static presentation map. It never invents research facts.
-import { api } from "./api.js?v=20260725-p12";
+import { api } from "./api.js?v=20260725-c01";
 import { store } from "./store.js";
 
 export const isLive = () => store.state.mode === "live";
@@ -141,6 +141,21 @@ export async function submitReportFollowup(id, question) {
   return api.reportFollowup(id, question);
 }
 
+// ---- AI coach layer (model-backed; never invents facts client-side) --------
+
+export async function askCoach(id, question, quotedText) {
+  return api.coachAsk(id, question, quotedText);
+}
+
+export async function fetchCoachGuide(id, refresh = false) {
+  return api.coachGuide(id, refresh);
+}
+
+export async function fetchCoachNarrations(taskId) {
+  const rows = await api.coachNarrations(taskId);
+  return Array.isArray(rows) ? rows : [];
+}
+
 // ---- planning session + live execution ------------------------------------
 
 export const roleFor = (id) => presentationFor(id).role;
@@ -199,6 +214,7 @@ export async function clarifySession(taskId, answers) {
 // EventSource so the caller can close it on teardown. Handlers:
 //   onEvent(evt)       — every ExecutionEvent (plan_created/step_*/skill_*/...)
 //   onAggregation(data)— the final aggregation payload (report_id, aggregation)
+//   onCoach(data)      — model-generated process narration ({milestone, seq, ...})
 //   onDone(data)       — terminal marker ({task_id, status})
 //   onError(info)      — stream error / connection drop
 export function openTaskStream(taskId, handlers = {}) {
@@ -219,6 +235,11 @@ export function openTaskStream(taskId, handlers = {}) {
     let payload = {};
     try { payload = JSON.parse(ev.data); } catch { /* keep empty */ }
     handlers.onAggregation && handlers.onAggregation(payload);
+  });
+  src.addEventListener("coach", (ev) => {
+    let payload = null;
+    try { payload = JSON.parse(ev.data); } catch { /* skip malformed */ }
+    if (payload) handlers.onCoach && handlers.onCoach(payload);
   });
   src.addEventListener("done", (ev) => {
     let payload = {};
