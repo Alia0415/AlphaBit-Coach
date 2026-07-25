@@ -165,7 +165,7 @@ def test_report_page_uses_dynamic_sections_scrollspy_and_sticky_coach() -> None:
     # Desktop is approximately 68/32 with a sticky, viewport-height Coach.
     assert "minmax(0, 68fr) minmax(310px, 32fr)" in styles
     assert ".coach-side { position: sticky" in styles
-    assert "height:calc(100vh - 92px)" in styles
+    assert "height:calc(100vh - 136px)" in styles
     assert ".coach-scroll { flex: 1; overflow-y: auto" in styles
     assert ".coach-compose {" in styles
 
