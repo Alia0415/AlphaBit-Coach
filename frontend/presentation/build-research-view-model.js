@@ -833,6 +833,237 @@
     return supplied || "本次研究已形成阶段性结论，证据强度与限制见下方报告。";
   }
 
+  const LEARNING_FOCUS = {
+    company_research: {
+      title: "如何判断公司基本面是否真正改善",
+      methods: [
+        "先看收入变化，判断业务是否增长",
+        "再看利润变化，判断盈利能力是否提升",
+        "检查现金流，判断利润质量",
+        "观察多个周期，判断改善是否持续",
+      ],
+      misconception: "利润增长不一定代表经营全面改善。",
+    },
+    market_research: {
+      title: "如何理解市场变化",
+      methods: [
+        "区分价格变化和基本面变化",
+        "观察趋势、波动和市场情绪",
+        "寻找支持判断的数据证据",
+      ],
+      misconception: "短期上涨或下跌不等于长期趋势改变。",
+    },
+    factor_research: {
+      title: "如何判断一个量化因子是否有效",
+      methods: [
+        "确认因子定义和计算正确",
+        "检查样本覆盖和稳定性",
+        "进行历史验证和样本外测试",
+      ],
+      misconception: "因子计算成功不代表未来有效。",
+    },
+    historical_analysis: {
+      title: "如何阅读历史表现",
+      methods: ["确认时间范围", "理解计算口径", "同时观察收益和风险"],
+      misconception: "历史表现不能直接预测未来。",
+    },
+    comparison: {
+      title: "如何进行有效比较",
+      methods: ["统一比较指标", "统一时间范围", "分析差异背后的原因"],
+      misconception: "不同口径的数据不能直接比较。",
+    },
+    risk_review: {
+      title: "如何分析投资风险",
+      methods: ["识别风险来源", "判断发生概率", "评估影响程度"],
+      misconception: "存在风险不代表风险一定发生。",
+    },
+  };
+
+  const DEFAULT_LEARNING_FOCUS = {
+    title: "如何形成专业判断",
+    methods: ["区分事实、解释和预测", "寻找支持和反向证据", "明确结论成立条件"],
+    misconception: "",
+  };
+
+  function concise(value, max) {
+    const text = publicText(value);
+    if (text.length <= max) return text;
+    return `${text.slice(0, max - 1).trim()}…`;
+  }
+
+  function finalText(value, max = 0) {
+    const text = publicText(value)
+      .replace(
+        /[（(][^（）()]{0,240}(?:专业数据源|专业研究方法|derived\s*:)[^（）()]{0,240}[）)]/gi,
+        "",
+      )
+      .replace(/\b(?:derived|source|raw)\s*:[^,，。；;)\s]+/gi, "")
+      .replace(/\b[A-Z]{2,5}\d{5,}\b/g, "")
+      .replace(/专业数据源|专业研究方法|专业字段/g, "")
+      .replace(/\s+([，。；;：:])/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim();
+    const meaningful = /[A-Za-z0-9\u4e00-\u9fff]/.test(text) ? text : "";
+    return max ? concise(meaningful, max) : meaningful;
+  }
+
+  function genericHeadline(value) {
+    const supplied = finalText(value);
+    if (/(?:已完成|分析完成|计算完成|已生成|任务已执行|已形成研究结果)/.test(supplied)) {
+      return true;
+    }
+    let text = supplied.replace(/[\s，,。.!！；;：:、\-—_（）()《》“”"'`]+/g, "");
+    const phrases = [
+      "已完成所需的数据计算",
+      "正式研究报告已生成",
+      "任务已执行完成",
+      "已完成数据计算",
+      "已形成研究结果",
+      "已完成分析",
+      "完成所需分析",
+      "完成数据计算",
+      "正式研究报告",
+      "任务已执行",
+      "已完成",
+      "已生成",
+    ];
+    let previous = "";
+    while (text && text !== previous) {
+      previous = text;
+      phrases.forEach((phrase) => {
+        text = text.replaceAll(phrase, "");
+      });
+    }
+    return !text;
+  }
+
+  function investmentAdvice(value) {
+    return /(?:建议|应当|应该|可以|适合)?(?:买入|卖出|加仓|减仓|建仓|清仓)|持有建议/.test(
+      finalText(value),
+    );
+  }
+
+  function firstValidHeadline(candidates) {
+    for (const candidate of candidates) {
+      const text = finalText(candidate);
+      if (text && !genericHeadline(text) && !investmentAdvice(text)) {
+        return concise(text, 80);
+      }
+    }
+    return "当前证据不足以形成明确判断";
+  }
+
+  function expertSummaries(results) {
+    return Object.values(results)
+      .filter((result) =>
+        !["failed", "blocked"].includes(String(object(result).status || ""))
+      )
+      .map((result) => publicText(object(result).summary))
+      .filter(Boolean);
+  }
+
+  function metricEvidence(aggregation) {
+    return array(aggregation.content_blocks).flatMap((block) => {
+      if (!block || block.type !== "metric_cards") return [];
+      const data = object(block.data);
+      const metrics = [
+        ...array(data.metrics),
+        ...array(data.entities).flatMap((entity) => array(object(entity).metrics)),
+      ];
+      return metrics.map((metric) => {
+        const item = object(metric);
+        const key = String(item.metric || item.key || "").trim();
+        const title = finalText(item.label || object(METRICS[key]).label);
+        const value = finalText(publicText(
+          item.display_value,
+          item.value == null ? "" : formatNumber(item.value, key),
+        ));
+        if (!title || !value) return null;
+        return {
+          title: `${title} ${value}`,
+          explanation: investmentAdvice(item.explanation || item.reading)
+            ? ""
+            : finalText(item.explanation || item.reading, 120),
+        };
+      }).filter(Boolean);
+    });
+  }
+
+  function textEvidence(items) {
+    return array(items).map((rawItem) => {
+      const item = typeof rawItem === "string" ? { text: rawItem } : object(rawItem);
+      const title = finalText(item.title, 80);
+      const text = finalText(item.text, title ? 120 : 80);
+      const evidenceTitle = title || text;
+      if (
+        !evidenceTitle
+        || genericHeadline(evidenceTitle)
+        || investmentAdvice(evidenceTitle)
+      ) return null;
+      const explanation = title && text && title !== text
+        ? text
+        : finalText(item.explanation, 120);
+      return {
+        title: evidenceTitle,
+        explanation: investmentAdvice(explanation) ? "" : explanation,
+      };
+    }).filter(Boolean);
+  }
+
+  function finalEvidence(aggregation) {
+    const entries = [
+      ...textEvidence(aggregation.key_findings),
+      ...textEvidence(aggregation.evidence_summary),
+      ...array(aggregation.content_blocks).flatMap((block) =>
+        block && block.type === "finding_cards"
+          ? textEvidence(object(block.data).items)
+          : []
+      ),
+    ];
+    const seen = new Set();
+    return [...entries, ...metricEvidence(aggregation)]
+      .filter((item) => {
+        const key = item.title;
+        if (!item.title || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 3);
+  }
+
+  function buildFinalSummary(aggregation, results) {
+    const direct = object(aggregation.direct_answer);
+    const findings = resultItems(aggregation, "key_findings", "judgment");
+    const headline = firstValidHeadline([
+      direct.headline,
+      findings[0] && findings[0].text,
+      ...expertSummaries(results),
+    ]);
+    const explanation = finalText(direct.explanation);
+    return {
+      conclusion: {
+        headline,
+        explanation: investmentAdvice(explanation) ? "" : concise(explanation, 180),
+        stance: STANCE[direct.stance] || "证据状态待确认",
+        confidence: CONFIDENCE[direct.confidence] || "暂无法判断",
+      },
+      evidence: finalEvidence(aggregation),
+      uncertainties: unique([
+        ...resultItems(aggregation, "risks", "risk"),
+        ...resultItems(aggregation, "limitations", "limitation"),
+      ].map((item) => finalText(item.text, 100)))
+        .filter(Boolean)
+        .filter((item) => !investmentAdvice(item))
+        .slice(0, 3),
+      learning: LEARNING_FOCUS[object(aggregation.task_understanding).task_type]
+        || DEFAULT_LEARNING_FOCUS,
+      nextSteps: unique(
+        resultItems(aggregation, "next_research_steps", "research_action")
+          .map((item) => finalText(item.text, 100)),
+      ).filter(Boolean).filter((item) => !investmentAdvice(item)).slice(0, 2),
+    };
+  }
+
   function buildResearchViewModel(bundle) {
     const source = object(bundle);
     const report = object(source.report || source);
@@ -869,7 +1100,9 @@
       terms: agent.terms.map(({ key, sourceSteps, ...metric }) => metric),
     }));
     const { rawSteps, ...publicPlan } = plan;
+    const finalSummary = buildFinalSummary(aggregation, results);
     return {
+      finalSummary,
       summary: {
         text: oneLineConclusion(direct, metrics),
         explanation: publicText(direct.explanation),
@@ -901,7 +1134,14 @@
         status: agent.statusLabel,
       })),
       disclaimer: publicText(aggregation.disclaimer),
-      empty: !direct.headline && !agents.length && !metrics.length,
+      empty: !direct.headline
+        && !findings.length
+        && !risks.length
+        && !limitations.length
+        && !finalSummary.evidence.length
+        && !finalSummary.nextSteps.length
+        && !agents.length
+        && !metrics.length,
     };
   }
 
