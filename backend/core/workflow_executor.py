@@ -171,23 +171,32 @@ class WorkflowExecutor:
                             {"tool": call.get("tool"), "status": call.get("status")},
                         )
                     )
-                event_type = (
-                    "step_completed"
-                    if result.status == "completed"
-                    else "step_failed"
-                )
-                emit(
-                    _event(
-                        event_type,
-                        result.task_id,
-                        result.agent,
-                        (
-                            f"{result.agent.value} 步骤执行完成。"
-                            if result.status == "completed"
-                            else f"{result.agent.value} 步骤执行失败。"
-                        ),
+                if result.status == "completed":
+                    emit(
+                        _event(
+                            "step_completed",
+                            result.task_id,
+                            result.agent,
+                            f"{result.agent.value} 步骤执行完成。",
+                            {
+                                "result_summary": result.summary,
+                                "evidence": result.evidence[:5],
+                                "assumptions": result.assumptions,
+                                "risks": result.risks,
+                                "limitations": result.limitations,
+                                "data_sources": result.data_sources,
+                            },
+                        )
                     )
-                )
+                else:
+                    emit(
+                        _event(
+                            "step_failed",
+                            result.task_id,
+                            result.agent,
+                            f"{result.agent.value} 步骤执行失败。",
+                        )
+                    )
 
         # Dict insertion order is normalized to the plan, not completion timing.
         return events, {
