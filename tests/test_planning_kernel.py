@@ -25,6 +25,7 @@ from backend.core.plan_validator import (
     validate_execution_plan,
 )
 from backend.core.workflow_executor import WorkflowExecutor
+from backend.services.ark_client import ArkClientError, ArkErrorKind
 
 
 class MockArkClient:
@@ -33,6 +34,7 @@ class MockArkClient:
     def __init__(self, *responses: str, error: Exception | None = None) -> None:
         self.responses = list(responses)
         self.prompts: list[str] = []
+        self.json_requests: list[Any] = []
         self.error = error
 
     def chat(self, prompt: str, model: str | None = None) -> str:
@@ -42,6 +44,17 @@ class MockArkClient:
         if not self.responses:
             raise AssertionError("Unexpected ArkClient call")
         return self.responses.pop(0)
+
+    def chat_json(self, request: Any) -> Any:
+        self.json_requests.append(request)
+        raw = self.chat(request.prompt)
+        try:
+            return request.response_model.model_validate_json(raw)
+        except Exception as exc:
+            raise ArkClientError(
+                str(exc),
+                kind=ArkErrorKind.SCHEMA_VALIDATION,
+            ) from None
 
 
 class MockPandaData:
@@ -155,6 +168,15 @@ def test_registry_exposes_only_enabled_experts_to_manager() -> None:
     assert registry.get(AgentId.QUANT).enabled is True
 
 
+def test_production_task_interpreter_factory_injects_ark_client() -> None:
+    fake_client = object()
+
+    assert hasattr(main_module, "_build_task_interpreter")
+    interpreter = main_module._build_task_interpreter(lambda: fake_client)
+
+    assert interpreter._ark_client is fake_client
+
+
 def test_manager_stops_after_one_invalid_json_repair_attempt() -> None:
     client = MockArkClient("not-json", "still-not-json", "unused")
 
@@ -163,6 +185,65 @@ def test_manager_stops_after_one_invalid_json_repair_attempt() -> None:
 
     assert len(client.prompts) == 2
     assert client.responses == ["unused"]
+
+
+def test_manager_uses_structured_json_for_initial_plan() -> None:
+    client = MockArkClient(json.dumps(_plan_payload(["research"])))
+
+    plan = ManagerAgent(client=client).create_plan("分析 000001.SZ 的价格表现")
+
+    assert plan.steps[0].agent == AgentId.RESEARCH
+    assert len(client.json_requests) == 1
+    assert client.json_requests[0].response_model is ExecutionPlan
+    assert client.json_requests[0].purpose == "manager_plan"
+    assert len(client.prompts) == 1
+
+
+def test_quant_cross_check_plan_requires_explicit_analysis_mode() -> None:
+    payload = _plan_payload(["quant"])
+    payload["steps"][0]["covers_dimensions"] = ["quantitative_cross_check"]
+    client = MockArkClient(json.dumps(payload), json.dumps(payload))
+
+    with pytest.raises(ManagerAgentError):
+        ManagerAgent(client=client).create_plan("分析 002594.SZ 的历史波动")
+
+    assert len(client.prompts) == 2
+    assert "analysis_mode=historical_cross_check" in client.prompts[1]
+
+
+def test_quant_thesis_validation_requires_upstream_dependency() -> None:
+    payload = _plan_payload(["quant"])
+    payload["steps"][0]["inputs"] = {
+        "analysis_mode": "thesis_validation",
+        "symbols": ["002594.SZ"],
+        "start_date": "20240101",
+        "end_date": "20241231",
+        "fields": [],
+    }
+    payload["steps"][0]["covers_dimensions"] = ["quantitative_cross_check"]
+    plan = ExecutionPlan.model_validate(payload)
+
+    with pytest.raises(PlanValidationError, match="dependency"):
+        validate_execution_plan(plan, AgentRegistry())
+
+
+def test_manager_accepts_dependent_quant_thesis_validation() -> None:
+    payload = _plan_payload(["research", "quant"])
+    payload["steps"][1]["inputs"] = {
+        "analysis_mode": "thesis_validation",
+        "symbols": ["002594.SZ"],
+        "start_date": "20240101",
+        "end_date": "20241231",
+        "fields": [],
+    }
+    payload["steps"][1]["covers_dimensions"] = ["quantitative_cross_check"]
+
+    plan = ManagerAgent(
+        client=MockArkClient(json.dumps(payload, ensure_ascii=False))
+    ).create_plan("综合研究并用量化证据校验观点")
+
+    assert plan.steps[1].inputs["analysis_mode"] == "thesis_validation"
+    assert plan.steps[1].depends_on == ["research_1"]
 
 
 def test_manager_prompt_uses_registry_and_minimal_sufficient_principle() -> None:
@@ -176,6 +257,16 @@ def test_manager_prompt_uses_registry_and_minimal_sufficient_principle() -> None
     assert '"id": "quant"' in prompt
     assert "绝不能选择、编排或写入专家内部的底层 Skill" in prompt
     assert "report 不是默认必经节点" in prompt
+
+
+def test_manager_prompt_allows_company_symbol_for_industry_competition() -> None:
+    client = MockArkClient(json.dumps(_plan_payload(["research"])))
+
+    ManagerAgent(client=client).create_plan("分析比亚迪 002594.SZ 的行业竞争格局")
+
+    prompt = client.prompts[0]
+    assert "单公司行业竞争时应同时提供单数 symbol" in prompt
+    assert "不得提供 symbols 或财报 scope" in prompt
 
 
 @pytest.mark.parametrize(
@@ -204,7 +295,7 @@ def test_manager_accepts_five_distinct_dynamic_graphs(
     assert [step.agent.value for step in plan.steps] == path
 
 
-def test_manager_accepts_quant_and_rejects_still_disabled_expert() -> None:
+def test_manager_accepts_quant_and_rejects_removed_expert() -> None:
     quant_plan = json.dumps(_plan_payload(["quant"]))
     quant_manager = ManagerAgent(client=MockArkClient(quant_plan))
 
@@ -235,6 +326,7 @@ def test_manager_repairs_research_input_contract_once() -> None:
     )
 
     assert len(client.prompts) == 2
+    assert len(client.json_requests) == 2
     assert plan.steps[0].inputs["symbols"] == ["000001.SZ"]
     assert "must use inputs.symbols as a list" in client.prompts[1]
     assert "不要为了修复契约而增加不需要的专家" in client.prompts[1]
@@ -686,24 +778,6 @@ def test_executor_passes_complete_expert_result_to_downstream() -> None:
     assert dependency.evidence == [{"metric": 42}]
     assert dependency.assumptions == ["assumption"]
     assert dependency.metadata == {"complete": True}
-
-
-def test_still_disabled_expert_never_returns_placeholder_success() -> None:
-    called = False
-
-    def handler(task: ExpertTask) -> ExpertResult:
-        nonlocal called
-        called = True
-        return _completed(task)
-
-    events, results = WorkflowExecutor(
-        handlers={AgentId.PORTFOLIO: handler}
-    ).execute(_plan(["portfolio"]))
-
-    assert not called
-    assert results["portfolio_1"].status == "failed"
-    assert "disabled" in (results["portfolio_1"].error or "")
-    assert events[-1].type == "step_failed"
 
 
 def test_dependency_failure_blocks_all_descendants() -> None:

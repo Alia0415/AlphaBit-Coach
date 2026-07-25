@@ -131,7 +131,13 @@ def _comprehensive_plan() -> ExecutionPlan:
                 id="step-quant",
                 agent=AgentId.QUANT,
                 objective="量化交叉验证",
-                inputs={"symbols": ["002594.SZ"], "start_date": "20240101", "end_date": "20241231", "fields": []},
+                inputs={
+                    "analysis_mode": "historical_cross_check",
+                    "symbols": ["002594.SZ"],
+                    "start_date": "20240101",
+                    "end_date": "20241231",
+                    "fields": [],
+                },
                 dependencies=[
                     DependencyRef(step_id="step-fundamentals", requirement="optional"),
                     DependencyRef(step_id="step-industry", requirement="optional"),

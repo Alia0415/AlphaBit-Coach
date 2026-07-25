@@ -70,10 +70,6 @@ const PUBLIC_RESEARCH_METHODS = Object.freeze({
     name: "公司事件风险核查",
     description: "核查可能影响研究结论的公司事件，并区分已发生风险与待验证信号。",
   },
-  portfolio_liquidity_stress: {
-    name: "组合流动性压力测试",
-    description: "评估持仓集中度、变现能力和压力情景下的风险承受范围。",
-  },
 });
 
 const PUBLIC_AGENT_CAPABILITIES = Object.freeze({
@@ -81,7 +77,6 @@ const PUBLIC_AGENT_CAPABILITIES = Object.freeze({
   quant: ["量化研究假设", "样本与因子分析", "收益风险评估", "过拟合与成本检查"],
   macro: ["经济周期判断", "利率与流动性分析", "政策传导研究", "行业景气观察"],
   risk: ["反对证据核查", "缺失证据识别", "结论强度控制", "事件风险验证"],
-  portfolio: ["资产配置", "集中度分析", "流动性评估", "情景压力测试"],
   report: ["多专家证据整合", "冲突观点处理", "结论措辞校准", "研究局限说明"],
 });
 
@@ -2305,12 +2300,10 @@ function buildExpertsLive(experts) {
       });
       else body.appendChild(el("div", "op-note", "该专家当前没有对外展示的分析方法。"));
     } else if (liveExpertTab === "config") {
-      const isPortfolio = e.id === "portfolio";
       const enable = el("div", "op-enable");
-      enable.innerHTML = `<div><strong>启用该专家</strong><div class="op-note">${isPortfolio ? "Portfolio 专家当前产品阶段暂未开放。" : "停用后，研究经理将不再把该专家纳入后续任务。设置实时生效。"}</div></div>`;
-      const sw = el("button", `switch${e.enabled ? " on" : ""}${isPortfolio ? " disabled" : ""}`);
+      enable.innerHTML = `<div><strong>启用该专家</strong><div class="op-note">停用后，研究经理将不再把该专家纳入后续任务。设置实时生效。</div></div>`;
+      const sw = el("button", `switch${e.enabled ? " on" : ""}`);
       sw.addEventListener("click", () => {
-        if (isPortfolio) { toast("Portfolio 专家暂不可启用"); return; }
         const next = !e.enabled;
         sw.classList.toggle("on", next);
         liveSetExpertEnabled(e.id, next)

@@ -2,6 +2,6 @@ fastapi
 numpy
 openai
 pandas
-panda_data
+panda_data==0.0.12
 python-dotenv
 uvicorn

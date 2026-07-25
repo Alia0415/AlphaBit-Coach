@@ -39,14 +39,11 @@ The expert pool is exactly:
 - `research`
 - `quant`
 - `risk`
-- `portfolio`
 - `macro`
 - `report`
 
 Current availability is `research`, `quant`, `risk`, `macro`, and `report`
-enabled; `portfolio` remains registered but disabled. Manager
-prompts must be generated from the enabled Registry entries and must not carry
-a separate handwritten expert list.
+enabled. Manager prompts must be generated from the enabled Registry entries and must not carry a separate handwritten expert list.
 
 The Manager is not an expert and must never appear in `selected_agents` or as a
 task-graph step. Do not implement fixed workflows or keyword-based A→B→C
@@ -96,8 +93,7 @@ validation succeed.
   `r020_volume_expansion`, owned exclusively by `quant`;
   `a_share_stock_dossier`, owned exclusively by `research`;
   `macro_monitor`, owned exclusively by `macro`; `event_risk_alert`, owned
-  exclusively by `risk`; and `portfolio_liquidity_stress`, owned exclusively
-  by the currently disabled `portfolio` expert.
+  exclusively by `risk`.
 - A Codex-installed Skill is not an AlphaOS Runtime Skill. Runtime code may
   load only entries installed under `QUANTSKILLS_HOME` and recorded in
   `skills.lock.json`.
@@ -118,11 +114,6 @@ validation succeed.
   their pinned methodology, maps PandaData through the existing controlled
   client, and executes no documentation commands or arbitrary model-selected
   methods.
-- Portfolio Liquidity Stress may load only its pinned and hashed
-  `scripts/stress_liquidity.py` entrypoint. The adapter calls `analyze`
-  directly with caller-supplied holdings and never invokes the upstream CLI or
-  demo dataset. Portfolio remains disabled until account/holdings governance
-  is explicitly approved.
 - Factor ideas must remain `unverified`; R020 output is
   `computed_not_validated`. Neither status may be presented as IC, backtest,
   performance, or trading evidence.

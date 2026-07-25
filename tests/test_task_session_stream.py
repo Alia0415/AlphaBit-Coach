@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 from backend import main as main_module
 from backend.agents.manager_agent import ManagerAgent
 from backend.core.contracts import AgentId, ExpertResult, ExpertTask
+from backend.core.policy_contracts import PolicyDecision
+from backend.core.task_interpreter import TaskInterpreter
 from backend.core.workflow_executor import WorkflowExecutor
 
 
@@ -98,6 +100,43 @@ def test_session_creates_plan_and_persists_without_executing() -> None:
     assert detail["status"] == "planned"
     assert [e["type"] for e in detail["events"]] == ["plan_created"]
     assert detail["aggregation"] is None
+
+
+def test_session_passes_interpreted_task_spec_to_manager() -> None:
+    prompt = "分析 000001.SZ 在 2024 年的价格表现。"
+    policy = PolicyDecision(
+        decision="allowed_research",
+        allowed=True,
+        domain="quant_investment_research",
+        policy_tags=[],
+        reason="test",
+    )
+    task_spec = TaskInterpreter().interpret(prompt, policy)
+    calls: list[tuple[object, ...]] = []
+
+    class StubInterpreter:
+        def interpret(self, raw_prompt: str, raw_policy: object) -> object:
+            return task_spec
+
+    class RecordingManager:
+        def create_plan(self, *args: object) -> object:
+            calls.append(args)
+            return ManagerAgent(
+                client=MockArkClient(
+                    json.dumps(_research_plan_payload(), ensure_ascii=False)
+                )
+            ).create_plan(task_spec, prompt)
+
+    with (
+        patch.object(main_module, "task_interpreter", StubInterpreter()),
+        patch.object(main_module, "manager", RecordingManager()),
+    ):
+        response = TestClient(main_module.app).post(
+            "/api/tasks/sessions", json={"prompt": prompt}
+        )
+
+    assert response.status_code == 200
+    assert calls == [(task_spec, prompt)]
 
 
 def test_stream_executes_plan_and_persists_events_and_report() -> None:

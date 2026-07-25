@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from backend.agents.quant_cross_check import (
+    CrossCheckResult,
+    MarketAlignment,
+    PriceRow,
+    assess_market_alignment,
+    run_cross_check,
+)
 from backend.core.contracts import AgentId, ExpertResult, ExpertTask
-from backend.services.ark_client import ArkClient, ArkClientError
+from backend.services.ark_client import ArkClient, ArkClientError, ArkJsonRequest
 from backend.services.pandadata_client import PandaDataClient
 from backend.skills.contracts import (
     SkillInvocation,
@@ -21,7 +29,15 @@ from backend.skills.skill_registry import SkillRegistry
 
 
 MAX_SKILL_STEPS = 3
-PANDADATA_FIELDS = ["open", "high", "low", "close", "volume"]
+PANDADATA_FIELDS = [
+    "trade_date",
+    "symbol",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+]
 
 
 class SelectedSkill(BaseModel):
@@ -56,6 +72,15 @@ class QuantSkillPlan(BaseModel):
     clarification_question: str | None = None
 
 
+class ThesisClaimSelection(BaseModel):
+    claim_id: str = Field(min_length=1)
+    direction: Literal["positive", "negative", "risk", "neutral"]
+
+
+class ThesisSelectionPlan(BaseModel):
+    claims: list[ThesisClaimSelection] = Field(min_length=1, max_length=3)
+
+
 class QuantAgent:
     """Plan and execute the minimal sufficient subset of Quant-owned skills."""
 
@@ -73,6 +98,10 @@ class QuantAgent:
     def execute(self, task: ExpertTask) -> ExpertResult:
         if task.agent != AgentId.QUANT:
             return _failed(task, "Quant Agent 收到了不匹配的任务类型。")
+        if task.inputs.get("analysis_mode") == "historical_cross_check":
+            return self._execute_cross_check(task)
+        if task.inputs.get("analysis_mode") == "thesis_validation":
+            return self._execute_thesis_validation(task)
         try:
             plan = self.create_skill_plan(task)
         except QuantAgentError as exc:
@@ -238,6 +267,253 @@ class QuantAgent:
             tool_calls,
             agent_events,
         )
+
+    def _execute_cross_check(self, task: ExpertTask) -> ExpertResult:
+        symbols = _symbols(task.inputs.get("symbols"))
+        missing = [
+            name
+            for name in ("symbols", "start_date", "end_date")
+            if task.inputs.get(name) in (None, "", [], {})
+        ]
+        if missing:
+            question = "请补充以下 Quant 输入：" + "、".join(missing) + "。"
+            return _failed(
+                task,
+                question,
+                metadata={
+                    "needs_clarification": True,
+                    "clarification_question": question,
+                    "execution_path": "deterministic_cross_check",
+                },
+            )
+        if _requests_cross_section(task.original_user_request) and len(symbols) < 2:
+            question = "横截面排序至少需要两个 symbol；请补充标的池。"
+            return _failed(
+                task,
+                question,
+                metadata={
+                    "needs_clarification": True,
+                    "clarification_question": question,
+                    "execution_path": "deterministic_cross_check",
+                },
+            )
+
+        start_date = str(task.inputs["start_date"])
+        end_date = str(task.inputs["end_date"])
+        validation_error = _validate_market_request(
+            symbols,
+            start_date,
+            end_date,
+        )
+        if validation_error:
+            return _failed(
+                task,
+                validation_error,
+                metadata={"execution_path": "deterministic_cross_check"},
+            )
+        tool_call = {
+            "tool": "pandadata_market_data",
+            "status": "started",
+            "arguments": {
+                "symbols": symbols,
+                "start_date": start_date,
+                "end_date": end_date,
+                "fields": PANDADATA_FIELDS,
+            },
+        }
+        try:
+            raw_rows = self._data_client.get_market_data(
+                symbols=symbols,
+                start_date=start_date,
+                end_date=end_date,
+                fields=PANDADATA_FIELDS,
+                indicator="000300",
+                st=True,
+            )
+            grouped = _price_rows_by_symbol(raw_rows, symbols)
+        except Exception:
+            tool_call["status"] = "failed"
+            return _failed(
+                task,
+                "PandaData OHLCV 获取失败。",
+                metadata={"execution_path": "deterministic_cross_check"},
+            ).model_copy(update={"tool_calls": [tool_call]})
+        tool_call["status"] = "completed"
+
+        evidence: list[dict[str, Any]] = []
+        for symbol in symbols:
+            target = grouped.get(symbol, [])
+            peers = {
+                peer: rows
+                for peer, rows in grouped.items()
+                if peer != symbol and rows
+            }
+            for metric in run_cross_check(
+                target,
+                peer_prices=peers if _requests_cross_section(
+                    task.original_user_request
+                ) else None,
+            ):
+                evidence.append(
+                    {
+                        "type": "quant_cross_check",
+                        "symbol": symbol,
+                        **asdict(metric),
+                        "validation_status": "historical_computation",
+                    }
+                )
+        if not evidence:
+            return _failed(
+                task,
+                "PandaData 未返回足够的有效行情数据。",
+                metadata={"execution_path": "deterministic_cross_check"},
+            ).model_copy(update={"tool_calls": [tool_call]})
+
+        return ExpertResult(
+            task_id=task.task_id,
+            agent=AgentId.QUANT,
+            status="completed",
+            summary=(
+                f"Quant Agent 基于 PandaData 完成 {len(symbols)} 个标的的"
+                f" {len(evidence)} 项历史量化交叉验证。"
+            ),
+            evidence=evidence,
+            risks=["历史统计不代表未来表现，不能单独作为投资决策依据。"],
+            limitations=[
+                "未计算 IC，未运行回测，未生成交易信号或未来收益预测。"
+            ],
+            recommendations=["结合基本面、宏观和风险证据进行综合判断。"],
+            tool_calls=[tool_call],
+            data_sources=[
+                {
+                    "name": "PandaData",
+                    "symbols": symbols,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "fields": PANDADATA_FIELDS,
+                }
+            ],
+            metadata={
+                "execution_path": "deterministic_cross_check",
+                "actual_skills": [],
+                "validation_status": "historical_computation",
+                "calculation_engine": "quant_cross_check",
+                "agent_events": [],
+            },
+        )
+
+    def _execute_thesis_validation(self, task: ExpertTask) -> ExpertResult:
+        candidates = _dependency_claim_candidates(task.dependency_results)
+        if not candidates:
+            return _failed(
+                task,
+                "Quant 观点校验需要至少一个已完成的上游 Research 或 Macro 结论。",
+                metadata={"execution_path": "thesis_validation"},
+            )
+
+        selections, fallback_used = self._select_thesis_claims(task, candidates)
+        market_task = task.model_copy(
+            update={
+                "inputs": {
+                    **task.inputs,
+                    "analysis_mode": "historical_cross_check",
+                }
+            }
+        )
+        market_result = self._execute_cross_check(market_task)
+        if market_result.status != "completed":
+            return market_result.model_copy(
+                update={
+                    "metadata": {
+                        **market_result.metadata,
+                        "execution_path": "thesis_validation",
+                        "claim_selection_fallback_used": fallback_used,
+                    }
+                }
+            )
+
+        metrics_by_symbol = _cross_check_results_by_symbol(market_result.evidence)
+        validations: list[dict[str, Any]] = []
+        for selection in selections:
+            claim = candidates[selection.claim_id]
+            for symbol, metrics in metrics_by_symbol.items():
+                alignment = assess_market_alignment(selection.direction, metrics)
+                validations.append(
+                    _thesis_validation_evidence(
+                        claim=claim,
+                        direction=selection.direction,
+                        symbol=symbol,
+                        metrics=metrics,
+                        alignment=alignment,
+                    )
+                )
+
+        return market_result.model_copy(
+            update={
+                "summary": (
+                    f"Quant Agent 对 {len(selections)} 条上游观点完成历史市场"
+                    f"一致性校验，形成 {len(validations)} 条量化决策证据。"
+                ),
+                "evidence": [*market_result.evidence, *validations],
+                "limitations": list(
+                    dict.fromkeys(
+                        [
+                            *market_result.limitations,
+                            "历史市场一致性不能证明基本面或宏观观点成立。",
+                        ]
+                    )
+                ),
+                "metadata": {
+                    **market_result.metadata,
+                    "execution_path": "thesis_validation",
+                    "claim_selection_fallback_used": fallback_used,
+                    "validated_claim_ids": [
+                        selection.claim_id for selection in selections
+                    ],
+                },
+            }
+        )
+
+    def _select_thesis_claims(
+        self,
+        task: ExpertTask,
+        candidates: dict[str, dict[str, str]],
+    ) -> tuple[list[ThesisClaimSelection], bool]:
+        prompt = _thesis_selection_prompt(task, candidates)
+        try:
+            client = self._get_client()
+            structured_chat = getattr(client, "chat_json", None)
+            if callable(structured_chat):
+                plan = structured_chat(
+                    ArkJsonRequest[ThesisSelectionPlan](
+                        prompt=prompt,
+                        response_model=ThesisSelectionPlan,
+                        temperature=0.0,
+                        max_output_tokens=800,
+                        timeout_seconds=45.0,
+                        purpose="quant_thesis_selection",
+                        prompt_version="quant-thesis-mvp-v1",
+                    )
+                )
+            else:
+                plan = ThesisSelectionPlan.model_validate(
+                    _extract_json(client.chat(prompt))
+                )
+            if any(item.claim_id not in candidates for item in plan.claims):
+                raise ValueError("Thesis selector returned an unknown claim ID")
+            return plan.claims, False
+        except Exception:
+            fallback = [
+                ThesisClaimSelection(claim_id=claim_id, direction="neutral")
+                for claim_id, claim in candidates.items()
+                if claim["kind"] == "summary"
+            ][:3]
+            if not fallback:
+                fallback = [
+                    ThesisClaimSelection(claim_id=claim_id, direction="neutral")
+                    for claim_id in list(candidates)[:3]
+                ]
+            return fallback, True
 
     def __call__(self, task: ExpertTask) -> ExpertResult:
         return self.execute(task)
@@ -524,10 +800,181 @@ def _extract_json(value: str) -> Any:
     return json.loads(text)
 
 
+def _dependency_claim_candidates(
+    dependencies: dict[str, ExpertResult],
+) -> dict[str, dict[str, str]]:
+    candidates: dict[str, dict[str, str]] = {}
+    for step_id, result in dependencies.items():
+        if result.status != "completed":
+            continue
+        summary = result.summary.strip()
+        if summary:
+            claim_id = f"{step_id}:summary"
+            candidates[claim_id] = {
+                "claim_id": claim_id,
+                "source_step": step_id,
+                "text": summary[:1_000],
+                "kind": "summary",
+            }
+        for index, risk in enumerate(result.risks[:3], start=1):
+            text = str(risk).strip()
+            if text:
+                claim_id = f"{step_id}:risk:{index}"
+                candidates[claim_id] = {
+                    "claim_id": claim_id,
+                    "source_step": step_id,
+                    "text": text[:1_000],
+                    "kind": "risk",
+                }
+        if len(candidates) >= 12:
+            break
+    return dict(list(candidates.items())[:12])
+
+
+def _thesis_selection_prompt(
+    task: ExpertTask,
+    candidates: dict[str, dict[str, str]],
+) -> str:
+    payload = [
+        {
+            "claim_id": claim_id,
+            "source_step": claim["source_step"],
+            "kind": claim["kind"],
+            "text": claim["text"],
+        }
+        for claim_id, claim in candidates.items()
+    ]
+    return f"""
+你是 AlphaOS Quant Agent 的观点校验选择器。
+从给定候选中选择最多 3 条最值得用历史市场数据校准的观点，并标注方向：
+positive、negative、risk 或 neutral。
+
+只能原样返回候选中的 claim_id，不得生成新观点或改写 ID。
+这里只选择观点，不计算指标，不判断观点真伪，不输出投资建议。
+只返回符合 JSON Schema 的严格 JSON。
+
+任务目标：
+{task.objective}
+
+候选观点：
+{json.dumps(payload, ensure_ascii=False)}
+
+JSON Schema：
+{json.dumps(ThesisSelectionPlan.model_json_schema(), ensure_ascii=False)}
+""".strip()
+
+
+def _cross_check_results_by_symbol(
+    evidence: list[dict[str, Any]],
+) -> dict[str, list[CrossCheckResult]]:
+    grouped: dict[str, list[CrossCheckResult]] = {}
+    for item in evidence:
+        if item.get("type") != "quant_cross_check":
+            continue
+        symbol = str(item.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        grouped.setdefault(symbol, []).append(
+            CrossCheckResult(
+                metric_id=str(item["metric_id"]),
+                method=str(item["method"]),
+                description=str(item["description"]),
+                value=item.get("value"),
+                unit=item.get("unit"),
+                window=str(item.get("window") or ""),
+                sample_count=int(item.get("sample_count") or 0),
+                benchmark=item.get("benchmark"),
+                direction=item.get("direction"),
+                limitations=list(item.get("limitations") or []),
+            )
+        )
+    return grouped
+
+
+def _thesis_validation_evidence(
+    *,
+    claim: dict[str, str],
+    direction: Literal["positive", "negative", "risk", "neutral"],
+    symbol: str,
+    metrics: list[CrossCheckResult],
+    alignment: MarketAlignment,
+) -> dict[str, Any]:
+    labels = {
+        "aligned": "方向一致",
+        "divergent": "方向背离",
+        "mixed": "窗口结论混合",
+        "inconclusive": "证据不足",
+    }
+    metric_snapshot = [
+        {
+            "metric_id": item.metric_id,
+            "value": item.value,
+            "unit": item.unit,
+            "window": item.window,
+        }
+        for item in metrics
+        if item.metric_id in set(alignment.metric_ids)
+    ]
+    text = (
+        f"{claim['text']}：历史市场校验为“{labels[alignment.assessment]}”。"
+        f"{alignment.reason}该结果只描述历史市场一致性，不证明观点本身成立。"
+    )
+    return {
+        "type": "quant_thesis_validation",
+        "claim_id": claim["claim_id"],
+        "claim_source_step": claim["source_step"],
+        "claim_text": claim["text"],
+        "claim_direction": direction,
+        "symbol": symbol,
+        "assessment": alignment.assessment,
+        "assessment_scope": "historical_market_alignment",
+        "metric_ids": alignment.metric_ids,
+        "metric_snapshot": metric_snapshot,
+        "reason": alignment.reason,
+        "text": text,
+        "falsification_conditions": alignment.falsification_conditions,
+        "limitations": ["历史价格表现不能验证基本面因果或预测未来收益。"],
+        "validation_status": "historical_computation",
+    }
+
+
 def _symbols(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip().upper() for item in value if str(item).strip()]
+
+
+def _price_rows_by_symbol(
+    raw_rows: Any,
+    requested_symbols: list[str],
+) -> dict[str, list[PriceRow]]:
+    if not isinstance(raw_rows, list):
+        raise ValueError("PandaData market data must be a list")
+    grouped: dict[str, list[PriceRow]] = {symbol: [] for symbol in requested_symbols}
+    default_symbol = requested_symbols[0] if len(requested_symbols) == 1 else ""
+    for row in raw_rows:
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("symbol") or default_symbol).strip().upper()
+        date = str(row.get("trade_date") or row.get("date") or "").strip()
+        if symbol not in grouped or not date:
+            continue
+        try:
+            grouped[symbol].append(
+                PriceRow(
+                    date=date,
+                    close=float(row["close"]),
+                    volume=float(row.get("volume") or 0),
+                    high=float(row.get("high") or 0),
+                    low=float(row.get("low") or 0),
+                    open=float(row.get("open") or 0),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    for rows in grouped.values():
+        rows.sort(key=lambda item: item.date)
+    return grouped
 
 
 def _validate_market_request(

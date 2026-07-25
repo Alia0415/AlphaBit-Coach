@@ -11,12 +11,11 @@ def _client() -> TestClient:
     return TestClient(main_module.app)
 
 
-def test_experts_expose_full_pool_with_enabled_flags() -> None:
+def test_experts_expose_only_current_pool_with_enabled_flags() -> None:
     body = _client().get("/api/experts").json()
 
     by_id = {expert["id"]: expert for expert in body}
-    assert set(by_id) == {"research", "quant", "risk", "portfolio", "macro", "report"}
-    assert by_id["portfolio"]["enabled"] is False
+    assert set(by_id) == {"research", "quant", "risk", "macro", "report"}
     assert by_id["research"]["enabled"] is True
     assert "a_share_stock_dossier" in by_id["research"]["skills"]
     assert set(by_id["quant"]) == {
@@ -34,7 +33,13 @@ def test_skills_are_read_only_and_owned() -> None:
     body = _client().get("/api/skills").json()
 
     by_id = {skill["id"]: skill for skill in body}
-    assert {"factor_idea_generation", "r020_volume_expansion", "a_share_stock_dossier"} <= set(by_id)
+    assert set(by_id) == {
+        "factor_idea_generation",
+        "r020_volume_expansion",
+        "a_share_stock_dossier",
+        "macro_monitor",
+        "event_risk_alert",
+    }
     assert by_id["factor_idea_generation"]["owner_agents"] == ["quant"]
     assert by_id["a_share_stock_dossier"]["owner_agents"] == ["research"]
     assert set(by_id["r020_volume_expansion"]) == {
@@ -52,7 +57,7 @@ def test_overview_reports_real_counts() -> None:
     body = _client().get("/api/overview").json()
 
     assert body["enabled_experts"] == 5
-    assert body["enabled_skills"] == 6
+    assert body["enabled_skills"] == 5
     assert body["total_tasks"] == 0
     assert body["completed_tasks"] == 0
     assert body["report_count"] == 0
@@ -74,9 +79,9 @@ def test_toggle_expert_persists_and_reflects_in_reads() -> None:
     assert reenabled.json()["enabled"] is True
 
 
-def test_enabling_portfolio_is_rejected() -> None:
+def test_removed_portfolio_toggle_returns_404() -> None:
     response = _client().post("/api/experts/portfolio/enabled", json={"enabled": True})
-    assert response.status_code == 409
+    assert response.status_code == 404
 
 
 def test_unknown_expert_toggle_returns_404() -> None:
