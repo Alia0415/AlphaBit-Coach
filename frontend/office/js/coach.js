@@ -73,6 +73,7 @@ function renderCoachMessage(m) {
 
   if (Array.isArray(m.concept_notes) && m.concept_notes.length) {
     const cards = el("div", "coach-terms");
+    cards.appendChild(el("div", "coach-inline-title", "术语解释"));
     m.concept_notes.forEach((n) => {
       cards.appendChild(el(
         "div",
@@ -203,12 +204,16 @@ export function buildCoachSidebar(options) {
   panel.appendChild(head);
 
   // guide slot
+  panel.appendChild(el("div", "coach-section-label", "研究复盘"));
   const guideSlot = el("div", "coach-guide-slot");
   panel.appendChild(guideSlot);
 
   // chat stream
+  const chatSection = el("div", "coach-chat-section");
+  chatSection.appendChild(el("div", "coach-section-label", "对话记录"));
   const scroll = el("div", "coach-scroll");
-  panel.appendChild(scroll);
+  chatSection.appendChild(scroll);
+  panel.appendChild(chatSection);
   const toBottom = () => { scroll.scrollTop = scroll.scrollHeight; };
   const push = (m) => {
     const node = renderCoachMessage(m);
@@ -227,6 +232,8 @@ export function buildCoachSidebar(options) {
 
   // quote chip bar
   let quotedText = null;
+  const compose = el("div", "coach-compose");
+  compose.appendChild(el("div", "coach-section-label", "提问区"));
   const quoteBar = el("div", "coach-quotebar");
   quoteBar.style.display = "none";
   const setQuote = (text) => {
@@ -266,7 +273,8 @@ export function buildCoachSidebar(options) {
   input.type = "text";
   const send = el("button", "btn btn-primary", "➤");
   inputBar.append(input, send);
-  panel.append(quoteBar, modeBar, inputBar);
+  compose.append(quoteBar, modeBar, inputBar);
+  panel.appendChild(compose);
   applyMode("coach");
 
   let busy = false;
