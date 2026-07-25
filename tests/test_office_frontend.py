@@ -119,6 +119,48 @@ def test_office_wires_the_coach_layer_into_reports_and_war_room() -> None:
     assert ".classroom-panel" in styles
 
 
+def test_report_page_uses_dynamic_sections_scrollspy_and_sticky_coach() -> None:
+    script = client.get("/static/office/js/app.js").text
+    coach_script = client.get("/static/office/js/coach.js").text
+    styles = client.get("/static/office/css/office.css").text
+    companion_styles = client.get("/static/office/css/companion.css").text
+    presentation = client.get(
+        "/static/presentation/build-research-view-model.js"
+    ).text
+
+    # Body and navigation are driven by the actual view-model chapters.
+    assert "(vm.chapters || []).forEach" in script
+    assert "vm.learningSummary.evidenceBoundary.length" in script
+    assert "chapters," in presentation
+    assert "navigation," in presentation
+    assert "actualAgentIds" in presentation
+    assert 'label: "宏观与政策"' not in script
+    assert 'label: "量化验证"' not in script
+
+    # Navigation, progress and Coach context stay synchronized while reading.
+    assert "new IntersectionObserver" in script
+    assert 'scrollIntoView({ behavior: "smooth"' in script
+    assert "coach?.setContext?.(id)" in script
+    assert "sectionContexts" in coach_script
+    assert "setContext" in coach_script
+    assert "一句话读懂" in coach_script
+    assert "本节学习重点" in coach_script
+    assert "相关追问建议" in coach_script
+
+    # Desktop is approximately 68/32 with a sticky, viewport-height Coach.
+    assert "minmax(0, 68fr) minmax(310px, 32fr)" in styles
+    assert ".coach-side { position: sticky" in styles
+    assert "height:calc(100vh - 92px)" in styles
+    assert ".coach-scroll { flex: 1; overflow-y: auto" in styles
+    assert ".coach-compose {" in styles
+
+    # Small screens use a fixed bottom drawer, while chapter Coach cards remain.
+    assert "@media (max-width: 900px)" in styles
+    assert "position:fixed;" in styles
+    assert ".section-coach-card" in companion_styles
+    assert ".coach-reading-slot" in companion_styles
+
+
 def test_live_war_room_uses_real_plan_flow_and_event_driven_office_motion() -> None:
     script = client.get("/static/office/js/app.js").text
     styles = client.get("/static/office/css/office.css").text

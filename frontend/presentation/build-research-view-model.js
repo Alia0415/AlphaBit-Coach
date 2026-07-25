@@ -10,6 +10,13 @@
     manager: { name: "Manager Agent", role: "研究经理" },
   };
 
+  const PUBLIC_SECTION_TITLES = {
+    macro: "宏观与政策",
+    quant: "量化验证",
+    risk: "风险审查",
+    report: "整合报告",
+  };
+
   const METRICS = {
     revenue_yoy: {
       label: "营业收入同比增长率",
@@ -547,8 +554,25 @@
 
   function buildPlan(task, aggregation) {
     const rawPlan = object(task.plan);
-    const steps = planSteps(rawPlan);
+    const execution = object(aggregation.execution_summary);
+    const plannedSteps = planSteps(rawPlan);
+    const executedSteps = array(execution.analysis_path).map((step) => ({
+      id: String(step && step.step_id || ""),
+      agent: String(step && step.agent || ""),
+      objective: publicText(step && step.objective, "完成对应专业研究"),
+      expectedOutput: "",
+      dependsOn: [],
+    })).filter((step) => step.id && step.agent);
+    const steps = plannedSteps.length ? plannedSteps : executedSteps;
     const selections = array(rawPlan.selected_agents);
+    const selectionByAgent = new Map(
+      selections.map((selection) => [String(selection && selection.agent || ""), selection]),
+    );
+    const selectedAgentIds = unique([
+      ...array(execution.selected_agents).map(String),
+      ...executedSteps.map((step) => step.agent),
+      ...selections.map((selection) => String(selection && selection.agent || "")),
+    ]).filter((id) => id && id !== "manager");
     const byId = Object.fromEntries(steps.map((step) => [step.id, step]));
     const dependencies = steps.flatMap((step) =>
       step.dependsOn.map((dependency) => ({
@@ -584,11 +608,18 @@
         role: agentInfo(step.agent).role,
         output: step.expectedOutput,
       })),
-      agents: selections.map((selection) => ({
-        id: String(selection.agent || ""),
-        ...agentInfo(selection.agent),
-        reason: publicText(selection.reason, "本次研究需要该专家的专业能力。"),
-      })),
+      agents: selectedAgentIds.map((id) => {
+        const selection = selectionByAgent.get(id);
+        const firstStep = steps.find((step) => step.agent === id);
+        return {
+          id,
+          ...agentInfo(id),
+          reason: publicText(
+            selection && selection.reason,
+            firstStep && firstStep.objective || "本次实际任务图安排了该专业研究。",
+          ),
+        };
+      }),
       dependencies,
       parallelGroups: layers
         .filter((layer) => layer && layer.length > 1)
@@ -599,6 +630,60 @@
         || "由结果整合层仅根据本次已完成的真实证据形成统一报告。",
       rawSteps: steps,
     };
+  }
+
+  function evidenceText(item) {
+    const value = object(item);
+    return publicText(
+      value.text
+      || value.title
+      || value.explanation
+      || value.reason
+      || value.summary,
+    );
+  }
+
+  function hasResultContent(result) {
+    const item = object(result);
+    const metadata = object(item.metadata);
+    const summary = publicText(item.summary);
+    return item.status === "completed" && Boolean(
+      (summary && !genericHeadline(summary))
+      || array(item.evidence).some((entry) => evidenceText(entry))
+      || array(item.assumptions).length
+      || array(item.risks).length
+      || array(item.limitations).length
+      || array(item.recommendations).length
+      || publicText(metadata.report),
+    );
+  }
+
+  function researchSectionTitle(aggregation, results, steps) {
+    const understanding = object(aggregation.task_understanding);
+    const taskType = String(understanding.task_type || "");
+    const resultMode = results.map((result) => String(object(result.metadata).mode || "")).join(" ");
+    const objectives = steps.map((step) => step.objective).join(" ");
+    const evidenceTypes = results.flatMap((result) =>
+      array(result.evidence).map((item) => String(object(item).type || ""))
+    ).join(" ");
+    const context = `${resultMode} ${objectives} ${evidenceTypes}`.toLowerCase();
+    if (/industry|行业|竞争|产业链/.test(context)) return "行业与竞争";
+    if (taskType === "company_research" || /财务|盈利|公司/.test(context)) {
+      return "公司与财务";
+    }
+    if (
+      ["market_research", "historical_analysis"].includes(taskType)
+      || /market|price|return|volatility|行情|价格|波动|收益/.test(context)
+    ) {
+      return "市场表现";
+    }
+    return "专题研究";
+  }
+
+  function sectionTitleForAgent(agentId, aggregation, results, steps) {
+    return agentId === "research"
+      ? researchSectionTitle(aggregation, results, steps)
+      : PUBLIC_SECTION_TITLES[agentId] || "专题研究";
   }
 
   function buildAgents(plan, aggregation, results, metrics, coverage) {
@@ -613,92 +698,197 @@
     const globalActions = resultItems(aggregation, "next_research_steps", "research_action");
     const globalRisks = resultItems(aggregation, "risks", "risk");
     const globalLimitations = resultItems(aggregation, "limitations", "limitation");
+    const aggregatedReportText = collectReportText(aggregation);
+    const missingEvidence = array(object(aggregation.technical_evidence).missing_evidence);
+    const resultEntries = Object.entries(results).filter(([, result]) =>
+      object(result).agent && object(result).agent !== "manager"
+    );
+    const actualAgentIds = unique(
+      resultEntries
+        .filter(([, result]) =>
+          hasResultContent(result)
+          || (
+            result.status === "completed"
+            && result.agent === "report"
+            && aggregatedReportText
+          )
+        )
+        .map(([, result]) => String(result.agent)),
+    );
+    const planAgents = new Map(plan.agents.map((agent) => [agent.id, agent]));
+    const includeUnscoped = actualAgentIds.length === 1;
 
-    return plan.agents.map((agent) => {
+    return actualAgentIds.map((agentId) => {
+      const agent = planAgents.get(agentId) || {
+        id: agentId,
+        ...agentInfo(agentId),
+        reason: "本次实际执行结果包含该专业研究。",
+      };
       const steps = plan.rawSteps.filter((step) => step.agent === agent.id);
-      const stepIds = steps.map((step) => step.id);
-      const matchingResults = stepIds.map((id) => results[id]).filter(Boolean);
-      const result = matchingResults[matchingResults.length - 1] || null;
-      const agentCoverage = array(result && result.data_sources).map(coverageItem);
+      const matchingEntries = resultEntries.filter(([, result]) =>
+        String(result.agent) === agent.id
+        && (
+          hasResultContent(result)
+          || (agent.id === "report" && result.status === "completed" && aggregatedReportText)
+        )
+      );
+      const matchingResults = matchingEntries.map(([, result]) => result);
+      const stepIds = unique([
+        ...steps.map((step) => step.id),
+        ...matchingEntries.map(([stepId]) => stepId),
+      ]);
+      const agentCoverage = matchingResults.flatMap((result) =>
+        array(result.data_sources).map(coverageItem)
+      );
       const agentMetrics = metrics.filter((metric) =>
-        !metric.sourceSteps.length || intersects(metric.sourceSteps, stepIds)
+        (includeUnscoped && !metric.sourceSteps.length)
+        || intersects(metric.sourceSteps, stepIds)
       );
       const agentFacts = facts.filter((item) =>
-        !item.sourceSteps.length || intersects(item.sourceSteps, stepIds)
+        (includeUnscoped && !item.sourceSteps.length)
+        || intersects(item.sourceSteps, stepIds)
       );
       const agentFindings = findings.filter((item) =>
-        !item.sourceSteps.length || intersects(item.sourceSteps, stepIds)
+        (includeUnscoped && !item.sourceSteps.length)
+        || intersects(item.sourceSteps, stepIds)
       );
       const limitations = unique([
-        ...array(result && result.limitations).map((text) => publicText(text)),
+        ...matchingResults.flatMap((result) =>
+          array(result.limitations).map((text) => publicText(text))
+        ),
         ...globalLimitations
-          .filter((item) => !item.sourceSteps.length || intersects(item.sourceSteps, stepIds))
+          .filter((item) =>
+            (includeUnscoped && !item.sourceSteps.length)
+            || intersects(item.sourceSteps, stepIds)
+          )
           .map((item) => item.text),
+        ...missingEvidence
+          .filter((text) => includeUnscoped || stepIds.some((id) => String(text).includes(id)))
+          .map((text) => publicText(text)),
       ]).filter(Boolean);
       const nextChecks = unique([
-        ...array(result && result.recommendations).map((text) => publicText(text)),
+        ...matchingResults.flatMap((result) =>
+          array(result.recommendations).map((text) => publicText(text))
+        ),
         ...globalActions
-          .filter((item) => !item.sourceSteps.length || intersects(item.sourceSteps, stepIds))
+          .filter((item) =>
+            (includeUnscoped && !item.sourceSteps.length)
+            || intersects(item.sourceSteps, stepIds)
+          )
           .map((item) => item.text),
         ...limitations.map((item) => `进一步验证：${item}`),
       ]).filter(Boolean);
       const assumptions = unique([
-        ...array(result && result.assumptions).map((text) => publicText(text)),
+        ...matchingResults.flatMap((result) =>
+          array(result.assumptions).map((text) => publicText(text))
+        ),
         ...resultItems(aggregation, "assumptions", "assumption")
-          .filter((item) => !item.sourceSteps.length || intersects(item.sourceSteps, stepIds))
+          .filter((item) =>
+            (includeUnscoped && !item.sourceSteps.length)
+            || intersects(item.sourceSteps, stepIds)
+          )
           .map((item) => item.text),
       ]).filter(Boolean);
       const riskChallenges = unique([
-        ...array(result && result.risks).map((text) => publicText(text)),
+        ...matchingResults.flatMap((result) =>
+          array(result.risks).map((text) => publicText(text))
+        ),
         ...globalRisks
-          .filter((item) => !item.sourceSteps.length || intersects(item.sourceSteps, stepIds))
+          .filter((item) =>
+            (includeUnscoped && !item.sourceSteps.length)
+            || intersects(item.sourceSteps, stepIds)
+          )
           .map((item) => item.text),
       ]).filter(Boolean);
-      const rawSummary = publicText(result && result.summary);
+      const resultEvidence = unique(matchingResults.flatMap((result) =>
+        array(result.evidence).map((item) => evidenceText(item)).filter(Boolean)
+      ));
+      const summaries = matchingResults
+        .map((result) => publicText(result.summary))
+        .filter(Boolean);
+      const reportContent = matchingResults
+        .map((result) => publicText(object(result.metadata).report))
+        .filter(Boolean);
+      if (agent.id === "report" && aggregatedReportText) {
+        reportContent.push(aggregatedReportText);
+      }
+      const rawSummary = summaries[summaries.length - 1] || "";
       const summary = agent.id === "report" && rawSummary.length > 500
         ? "已综合本次实际完成的专家证据并形成正式研究报告。"
         : snippet(rawSummary, 520);
-      const misconceptions = limitations.slice(0, 3).map((limitation) => ({
+      const boundaries = unique([...limitations, ...riskChallenges]).filter(Boolean);
+      const misconceptionSeeds = boundaries.length
+        ? boundaries
+        : ["本节结论只覆盖已经展示的事实、数据与研究范围。"];
+      const misconceptions = misconceptionSeeds.slice(0, 3).map((limitation) => ({
         wrong: summary
           ? `把“${summary.slice(0, 48)}${summary.length > 48 ? "…" : ""}”理解为无条件成立`
           : "把本次阶段性结果理解为已经完全证实",
         correct: limitation,
       }));
-      const status = resultStatus(result, agentCoverage);
+      const methods = unique([
+        ...agentMetrics
+          .filter((metric) => metric.formula)
+          .map((metric) => `${metric.label}：${metric.formula}`),
+        ...steps.map((step) =>
+          step.expectedOutput
+            ? `${step.objective}；研究产出：${step.expectedOutput}`
+            : step.objective
+        ),
+      ]).filter(Boolean);
+      const interpretations = unique([
+        ...agentFindings.map((item) => item.text),
+        ...summaries,
+        ...reportContent.map((text) => snippet(text, 520)),
+      ]).filter(Boolean);
+      const factsForAgent = unique([
+        ...agentMetrics.map((metric) => ({
+          text: `${metric.label}：${metric.value}${metric.subject ? `（${metric.subject}）` : ""}`,
+          type: "fact",
+        })),
+        ...agentFacts.map((item) => ({ text: item.text, type: item.type || "fact" })),
+        ...resultEvidence.map((text) => ({ text, type: "fact" })),
+      ]);
+      const researchQuestion = steps.map((step) => step.objective).join("；")
+        || publicText(object(aggregation.task_understanding).research_goal)
+        || publicText(aggregation.user_goal);
+      const title = sectionTitleForAgent(agent.id, aggregation, matchingResults, steps);
+      const status = resultStatus(matchingResults[matchingResults.length - 1], agentCoverage);
       return {
         id: agent.id,
+        title,
         name: agent.name,
         role: agent.role,
         reason: agent.reason,
         status,
         statusLabel: (STATUS[status] || STATUS.waiting).label,
-        researchQuestion: steps.map((step) => step.objective).join("；")
-          || "完成本次分配的专业研究问题",
+        researchQuestion,
         analysisDimensions: unique(
           steps.flatMap((step) => [step.objective, step.expectedOutput]).filter(Boolean),
         ),
-        facts: unique([
-          ...agentMetrics.map((metric) => ({
-            text: `${metric.label}：${metric.value}${metric.subject ? `（${metric.subject}）` : ""}`,
-            type: "fact",
-          })),
-          ...agentFacts.map((item) => ({ text: item.text, type: item.type || "fact" })),
-        ]),
+        facts: factsForAgent,
         metrics: agentMetrics,
-        interpretations: unique([
-          ...agentFindings.map((item) => item.text),
-          ...(summary ? [summary] : []),
-        ]),
+        methods,
+        interpretations,
         hypotheses: assumptions,
+        boundaries,
         nextChecks,
         misconceptions,
         challenges: riskChallenges,
         terms: agentMetrics,
-        emptyReason: !result
-          ? "该专家本次尚未返回结果，因此不展示推测性内容。"
-          : "",
+        coach: {
+          oneLine: snippet(interpretations[0] || summary, 120),
+          learningFocus: snippet(methods[0] || researchQuestion, 120),
+          misconception: misconceptions[0] && misconceptions[0].correct || "",
+          questions: nextChecks.slice(0, 3),
+        },
       };
-    });
+    }).filter((agent) =>
+      agent.facts.length
+      || agent.interpretations.length
+      || agent.methods.length
+      || agent.boundaries.length
+    );
   }
 
   function buildEvidenceChains(aggregation, metrics) {
@@ -909,7 +1099,7 @@
 
   function genericHeadline(value) {
     const supplied = finalText(value);
-    if (/(?:已完成|分析完成|计算完成|已生成|任务已执行|已形成研究结果)/.test(supplied)) {
+    if (/(?:已完成|分析完成|计算完成|已生成|任务已执行|已形成研究结果|综合结论已形成|综合结果已形成)/.test(supplied)) {
       return true;
     }
     let text = supplied.replace(/[\s，,。.!！；;：:、\-—_（）()《》“”"'`]+/g, "");
@@ -1101,6 +1291,75 @@
     }));
     const { rawSteps, ...publicPlan } = plan;
     const finalSummary = buildFinalSummary(aggregation, results);
+    const evidenceBoundary = unique([
+      ...limitations.map((item) => item.text),
+      ...risks.map((item) => item.text),
+      ...coverage
+        .filter((item) => item.status !== "available")
+        .map((item) => item.impact),
+      ...array(object(aggregation.technical_evidence).missing_evidence)
+        .map((item) => publicText(item)),
+    ]).filter(Boolean);
+    const professionalQuestions = unique([
+      ...resultItems(aggregation, "next_research_steps", "research_action")
+        .map((item) => item.text),
+      ...publicAgents.flatMap((agent) => agent.nextChecks),
+    ]).filter(Boolean);
+    const framework = unique(publicAgents.map((agent) =>
+      agent.methods[0] || agent.researchQuestion
+    )).filter(Boolean);
+    const terms = unique(metrics.map((metric) => metric.label)).filter(Boolean);
+    const chapters = publicAgents.map((agent, index) => ({
+      ...agent,
+      sectionId: `report-section-${index + 1}`,
+    }));
+    const learningSummary = {
+      framework,
+      terms,
+      evidenceBoundary,
+      professionalQuestions,
+      quiz: learningQuiz(metrics, limitations, findings),
+    };
+    const navigation = [
+      {
+        id: "report-overview",
+        label: "结论速览",
+        summary: finalSummary.conclusion.headline,
+        learningFocus: publicPlan.goal || publicPlan.originalQuestion,
+        misconception: evidenceBoundary[0] || "",
+        questions: professionalQuestions.slice(0, 3),
+      },
+      ...chapters.map((agent) => ({
+        id: agent.sectionId,
+        label: agent.title,
+        summary: agent.coach.oneLine,
+        learningFocus: agent.coach.learningFocus,
+        misconception: agent.coach.misconception,
+        questions: agent.coach.questions,
+      })),
+    ];
+    if (evidenceBoundary.length) {
+      navigation.push({
+        id: "report-evidence-boundary",
+        label: "证据边界",
+        summary: evidenceBoundary[0],
+        learningFocus: "区分已经验证的范围与仍需补充的证据。",
+        misconception: "不要把未覆盖的维度理解为已经得到验证。",
+        questions: professionalQuestions.slice(0, 3),
+      });
+    }
+    if (framework.length || terms.length || evidenceBoundary.length || professionalQuestions.length) {
+      navigation.push({
+        id: "report-learning-summary",
+        label: "学习总结",
+        summary: framework[0] || evidenceBoundary[0] || professionalQuestions[0],
+        learningFocus: terms.length
+          ? `回顾本次涉及的专业术语：${terms.slice(0, 4).join("、")}`
+          : framework[0] || "",
+        misconception: evidenceBoundary[0] || "",
+        questions: professionalQuestions.slice(0, 3),
+      });
+    }
     return {
       finalSummary,
       summary: {
@@ -1112,6 +1371,8 @@
       },
       researchPlan: publicPlan,
       agents: publicAgents,
+      chapters,
+      navigation,
       metrics: publicMetrics,
       evidenceChains: buildEvidenceChains(aggregation, metrics),
       expertDisagreements: conflicts,
@@ -1120,13 +1381,7 @@
       coverage,
       limitations: limitations.map((item) => item.text),
       reportText: collectReportText(aggregation),
-      learningSummary: {
-        framework: plan.researchQuestions.map((item) =>
-          `第 ${item.order} 步：${item.question}`
-        ),
-        terms: unique(metrics.map((metric) => metric.label)),
-        quiz: learningQuiz(metrics, limitations, findings),
-      },
+      learningSummary,
       participation: completed.map((agent) => ({
         name: agent.name,
         role: agent.role,

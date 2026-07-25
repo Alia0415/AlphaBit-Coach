@@ -202,8 +202,21 @@ function reportBundle() {
   const vm = buildResearchViewModel(reportBundle());
   assert.equal(vm.summary.confidence, "中等");
   assert.equal(vm.researchPlan.originalQuestion, "分析这家公司的基本面是否正在改善。");
-  assert.deepEqual(vm.agents.map((agent) => agent.id), ["research", "risk", "report"]);
+  assert.deepEqual(vm.agents.map((agent) => agent.id), ["research", "risk"]);
   assert.equal(vm.agents.some((agent) => agent.id === "macro"), false);
+  assert.deepEqual(vm.chapters.map((chapter) => chapter.title), ["公司与财务", "风险审查"]);
+  assert.deepEqual(
+    vm.navigation.map((section) => section.label),
+    ["结论速览", "公司与财务", "风险审查", "证据边界", "学习总结"],
+  );
+  vm.chapters.forEach((chapter) => {
+    assert.ok(chapter.researchQuestion);
+    assert.ok(chapter.methods.length);
+    assert.ok(chapter.interpretations.length);
+    assert.ok(chapter.boundaries.length);
+    assert.ok(chapter.misconceptions.length);
+    assert.ok(chapter.coach.oneLine);
+  });
   assert.equal(vm.metrics[0].value, "-9.70%");
   assert.match(vm.metrics[0].formula, /本期营业收入/);
   assert.equal(vm.coverage.some((item) => item.status === "missing"), true);
@@ -257,6 +270,89 @@ function reportBundle() {
   ["PandaData", "API", "prompt", "task_id", "skill_id", "source_step"].forEach((forbidden) => {
     assert.equal(visibleFinalText.includes(forbidden), false, `leaked ${forbidden}`);
   });
+}
+
+{
+  const bundle = reportBundle();
+  bundle.task.plan.selected_agents = [
+    { agent: "research", reason: "只需要核对本次公司的财务事实" },
+  ];
+  bundle.task.plan.steps = [bundle.task.plan.steps[0]];
+  bundle.report.aggregation.risks = [];
+  bundle.report.aggregation.technical_evidence.conflicts = [];
+  bundle.report.aggregation.technical_evidence.source_results = {
+    research_1: bundle.report.aggregation.technical_evidence.source_results.research_1,
+  };
+  const vm = buildResearchViewModel(bundle);
+  assert.deepEqual(vm.chapters.map((chapter) => chapter.title), ["公司与财务"]);
+  assert.equal(vm.navigation.some((section) => section.label === "风险审查"), false);
+  assert.equal(vm.navigation.some((section) => section.label === "量化验证"), false);
+  assert.equal(vm.navigation.some((section) => section.label === "整合报告"), false);
+}
+
+{
+  const bundle = reportBundle();
+  const aggregation = bundle.report.aggregation;
+  aggregation.task_understanding.task_type = "factor_research";
+  bundle.task.plan.selected_agents = [
+    { agent: "quant", reason: "计算本次量化指标" },
+    { agent: "risk", reason: "检查量化结论边界" },
+  ];
+  bundle.task.plan.steps = [
+    {
+      id: "quant_1",
+      agent: "quant",
+      objective: "计算样本内指标",
+      expected_output: "量化计算结果",
+      depends_on: [],
+    },
+    {
+      id: "risk_2",
+      agent: "risk",
+      objective: "检查计算结果不能说明什么",
+      expected_output: "风险与验证边界",
+      depends_on: ["quant_1"],
+    },
+  ];
+  aggregation.key_findings = [{
+    text: "样本内指标已经完成计算，但尚未验证有效性。",
+    evidence_type: "judgment",
+    source_steps: ["quant_1"],
+  }];
+  aggregation.evidence_summary = [{
+    text: "本次样本包含 120 个有效观察。",
+    evidence_type: "fact",
+    source_steps: ["quant_1"],
+  }];
+  aggregation.content_blocks[0].source_steps = ["quant_1"];
+  aggregation.risks = [{
+    text: "样本内结果不能外推为未来收益。",
+    evidence_type: "risk",
+    source_steps: ["risk_2"],
+  }];
+  aggregation.technical_evidence.source_results = {
+    quant_1: {
+      agent: "quant",
+      status: "completed",
+      summary: "样本内指标已经完成计算，但尚未验证有效性。",
+      evidence: [{ text: "本次样本包含 120 个有效观察。" }],
+      limitations: ["尚未完成样本外验证。"],
+      recommendations: ["补充样本外检验。"],
+    },
+    risk_2: {
+      agent: "risk",
+      status: "completed",
+      summary: "当前计算结果不能证明未来收益。",
+      risks: ["样本内结果不能外推为未来收益。"],
+      limitations: ["缺少样本外验证。"],
+      recommendations: ["检查不同市场阶段的稳定性。"],
+    },
+  };
+  const vm = buildResearchViewModel(bundle);
+  assert.deepEqual(vm.chapters.map((chapter) => chapter.title), ["量化验证", "风险审查"]);
+  assert.equal(vm.navigation.some((section) => section.label === "公司与财务"), false);
+  assert.equal(vm.navigation.some((section) => section.label === "宏观与政策"), false);
+  assert.equal(vm.navigation.some((section) => section.label === "整合报告"), false);
 }
 
 {
