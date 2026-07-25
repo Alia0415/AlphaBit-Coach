@@ -70,6 +70,7 @@ class ArkTextRequest(BaseModel):
     execution_id: str | None = None
     step_id: str | None = None
     attempt: int = 1
+    json_mode: bool = False
 
 
 class ArkJsonRequest(BaseModel, Generic[T]):
@@ -202,6 +203,8 @@ class ArkClient:
                 }
                 if request.max_output_tokens is not None:
                     request_options["max_tokens"] = request.max_output_tokens
+                if request.json_mode:
+                    request_options["response_format"] = {"type": "json_object"}
                 response = self._client.chat.completions.create(
                     **request_options,
                 )
@@ -293,6 +296,7 @@ class ArkClient:
             execution_id=request.execution_id,
             step_id=request.step_id,
             attempt=request.attempt,
+            json_mode=True,
         )
         response = self.chat_text(text_request, budget_remaining_seconds)
         raw_text = response.text.strip()
@@ -335,6 +339,7 @@ class ArkClient:
                 execution_id=request.execution_id,
                 step_id=request.step_id,
                 attempt=request.attempt + 1,
+                json_mode=True,
             )
             try:
                 repair_response = self.chat_text(
