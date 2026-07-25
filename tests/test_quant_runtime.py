@@ -297,9 +297,7 @@ def test_skill_registry_exposes_only_each_agents_owned_skills() -> None:
     assert {spec.id for spec in registry.allowed_for_agent("macro")} == {
         "macro_monitor"
     }
-    assert {spec.id for spec in registry.allowed_for_agent("portfolio")} == {
-        "portfolio_liquidity_stress"
-    }
+    assert registry.allowed_for_agent("portfolio") == ()
     assert {item["id"] for item in registry.prompt_payload("quant")} == {
         "factor_idea_generation",
         "r020_volume_expansion",
@@ -531,6 +529,187 @@ def test_quant_agent_can_call_only_r020_with_mocked_pandadata() -> None:
     assert panda.calls[0]["st"] is True
     assert len(r020_adapter.calls[0].inputs["market_data"]) == 25
     assert any(call["tool"] == "pandadata_market_data" for call in result.tool_calls)
+
+
+def test_quant_agent_runs_historical_cross_check_without_ark() -> None:
+    panda = MockPandaData(_market_rows(("002594.SZ",)))
+    agent = QuantAgent(
+        ark_client=MockArk(),
+        data_client=panda,
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+
+    result = agent.execute(
+        _quant_task(
+            {
+                "analysis_mode": "historical_cross_check",
+                "symbols": ["002594.SZ"],
+                "start_date": "20240101",
+                "end_date": "20240125",
+            }
+        )
+    )
+
+    assert result.status == "completed"
+    assert len(panda.calls) == 1
+    assert result.metadata["execution_path"] == "deterministic_cross_check"
+    assert result.metadata["actual_skills"] == []
+    metric_ids = {item["metric_id"] for item in result.evidence}
+    assert {
+        "period_return",
+        "annualized_volatility",
+        "maximum_drawdown",
+    }.issubset(metric_ids)
+    assert all(item["type"] == "quant_cross_check" for item in result.evidence)
+    serialized = result.model_dump_json().lower()
+    assert "trading_signal" not in serialized
+    assert "backtest_performance" not in serialized
+    assert "ic_calculated" not in serialized
+
+
+def test_quant_cross_check_reports_missing_dates_without_ark() -> None:
+    agent = QuantAgent(
+        ark_client=MockArk(),
+        data_client=MockPandaData(error=AssertionError("must not fetch data")),
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+
+    result = agent.execute(
+        _quant_task(
+            {
+                "analysis_mode": "historical_cross_check",
+                "symbols": ["002594.SZ"],
+            }
+        )
+    )
+
+    assert result.status == "failed"
+    assert result.metadata["needs_clarification"] is True
+    assert "start_date" in result.error
+    assert "end_date" in result.error
+
+
+def test_quant_cross_check_requires_peer_pool_for_cross_section() -> None:
+    agent = QuantAgent(
+        ark_client=MockArk(),
+        data_client=MockPandaData(error=AssertionError("must not fetch data")),
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+    task = _quant_task(
+        {
+            "analysis_mode": "historical_cross_check",
+            "symbols": ["002594.SZ"],
+            "start_date": "20240101",
+            "end_date": "20240125",
+        }
+    )
+    task.original_user_request = "请做横截面排名"
+
+    result = agent.execute(task)
+
+    assert result.status == "failed"
+    assert result.metadata["needs_clarification"] is True
+    assert "至少需要两个 symbol" in result.error
+
+
+def test_quant_thesis_validation_calibrates_upstream_claim() -> None:
+    selection = json.dumps(
+        {
+            "claims": [
+                {
+                    "claim_id": "research_1:summary",
+                    "direction": "positive",
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    panda = MockPandaData(_market_rows(("002594.SZ",)))
+    agent = QuantAgent(
+        ark_client=MockArk(selection),
+        data_client=panda,
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+    task = _quant_task(
+        {
+            "analysis_mode": "thesis_validation",
+            "symbols": ["002594.SZ"],
+            "start_date": "20240101",
+            "end_date": "20240125",
+        }
+    )
+    task.dependency_results = {
+        "research_1": ExpertResult(
+            task_id="research_1",
+            agent=AgentId.RESEARCH,
+            status="completed",
+            summary="公司的竞争优势正在扩大。",
+        )
+    }
+
+    result = agent.execute(task)
+
+    assert result.status == "completed"
+    assert len(panda.calls) == 1
+    assert result.metadata["execution_path"] == "thesis_validation"
+    validations = [
+        item
+        for item in result.evidence
+        if item["type"] == "quant_thesis_validation"
+    ]
+    assert len(validations) == 1
+    assert validations[0]["claim_source_step"] == "research_1"
+    assert validations[0]["claim_text"] == "公司的竞争优势正在扩大。"
+    assert validations[0]["assessment"] == "aligned"
+    assert validations[0]["assessment_scope"] == "historical_market_alignment"
+    assert "period_return" in validations[0]["metric_ids"]
+
+
+def test_quant_thesis_validation_falls_back_to_bounded_dependency_summary() -> None:
+    unknown_selection = json.dumps(
+        {
+            "claims": [
+                {
+                    "claim_id": "invented:claim",
+                    "direction": "positive",
+                }
+            ]
+        }
+    )
+    agent = QuantAgent(
+        ark_client=MockArk(unknown_selection),
+        data_client=MockPandaData(_market_rows(("002594.SZ",))),
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+    task = _quant_task(
+        {
+            "analysis_mode": "thesis_validation",
+            "symbols": ["002594.SZ"],
+            "start_date": "20240101",
+            "end_date": "20240125",
+        }
+    )
+    task.dependency_results = {
+        "macro_1": ExpertResult(
+            task_id="macro_1",
+            agent=AgentId.MACRO,
+            status="completed",
+            summary="流动性环境仍存在不确定性。",
+        )
+    }
+
+    result = agent.execute(task)
+
+    validation = next(
+        item
+        for item in result.evidence
+        if item["type"] == "quant_thesis_validation"
+    )
+    assert result.status == "completed"
+    assert validation["claim_id"] == "macro_1:summary"
+    assert validation["claim_direction"] == "neutral"
+    assert validation["assessment"] == "inconclusive"
+    assert result.metadata["claim_selection_fallback_used"] is True
 
 
 def test_quant_agent_repairs_false_market_data_skill_clarification() -> None:

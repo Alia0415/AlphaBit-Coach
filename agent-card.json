@@ -1,6 +1,21 @@
 {
-  "name": "AlphaOS",
-  "description": "Autonomous multi-agent AI quant research organization",
-  "version": "0.1.0",
-  "protocol": "A2A"
+  "name": "AlphaOS Quant Research Organization",
+  "description": "Autonomous multi-agent AI quant research organization with dynamic expert selection, validated DAG execution, and evidence-bounded result aggregation.",
+  "version": "0.4.0",
+  "protocolVersion": "0.3.0",
+  "url": "/a2a",
+  "preferredTransport": "JSONRPC",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "defaultInputModes": ["text/plain", "application/json"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    {
+      "id": "multi_agent_quant_research",
+      "name": "multi_agent_quant_research",
+      "description": "Handle natural-language quant, market, company, macro, factor, and risk research tasks through dynamic expert selection and DAG execution."
+    }
+  ]
 }

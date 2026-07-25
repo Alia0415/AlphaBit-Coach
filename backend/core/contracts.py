@@ -24,7 +24,6 @@ class AgentId(str, Enum):
     RESEARCH = "research"
     QUANT = "quant"
     RISK = "risk"
-    PORTFOLIO = "portfolio"
     MACRO = "macro"
     REPORT = "report"
 

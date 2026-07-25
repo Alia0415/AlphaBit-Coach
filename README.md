@@ -44,7 +44,6 @@ The enabled expert pool is:
 | `risk` | yes | Independent/dependency review plus PandaData event-risk scans |
 | `macro` | yes | Pinned macro methodology plus PandaData-backed macro analysis |
 | `report` | yes | Optional integration of declared upstream results |
-| `portfolio` | no | Pinned liquidity stress capability deployed; Manager execution remains disabled |
 
 Quant is never automatically added to a request. Risk and Report are never
 automatically appended to Quant. Macro is never automatically appended either;
@@ -85,7 +84,6 @@ Test commands:
 | `a_share_stock_dossier` | instruction | `research` | `quantskills/skill-a-share-stock-dossier` | GPL-3.0-only | disclosed financial data calculated; future performance not validated |
 | `macro_monitor` | instruction | `macro` | `quantskills/skill-macro-monitor` | GPL-3.0 | methodology verified; facts must come from PandaData |
 | `event_risk_alert` | instruction | `risk` | `quantskills/skill-event-risk-alert` | GPL-3.0-only | observed disclosure records are leads, not causal conclusions |
-| `portfolio_liquidity_stress` | executable | `portfolio` | `quantskills/skill-portfolio-liquidity-stress-test` | GPL-3.0-only | deterministic scenario estimate, not execution evidence |
 
 An installed Codex Skill is not automatically installed for the AlphaOS
 service. AlphaOS reads runtime Skills only from `QUANTSKILLS_HOME`, verifies
@@ -113,9 +111,6 @@ Macro Agent
 
 Risk Agent
 └─ event_risk_alert
-
-Portfolio Agent (registered, disabled)
-└─ portfolio_liquidity_stress
 ```
 
 `a_share_stock_dossier` answers questions about one company's financial
@@ -136,10 +131,12 @@ It does not call the upstream `generate_signals`, use bundled validation data,
 or modify external Skill source.
 
 Macro Monitor and Event Risk Alert load only pinned instruction files and
-route real data calls through AlphaOS's controlled PandaData client. The
-portfolio adapter loads only the pinned `scripts/stress_liquidity.py` entrypoint
-and calls `analyze` with caller-supplied holdings; it never invokes the
-upstream CLI or demo dataset.
+route real data calls through AlphaOS's controlled PandaData client.
+
+Reviewed snapshots of Macro Monitor and Event Risk Alert are committed under
+`vendor/quantskills`. Application startup verifies their pinned hashes and
+copies only a missing runtime directory into `QUANTSKILLS_HOME`. Startup never
+downloads Skill code and never overwrites an existing runtime directory.
 
 ## Install
 
@@ -148,7 +145,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Installs only the six fixed, pinned repositories and refreshes skills.lock.json.
+# Optional setup/refresh path for all six fixed, pinned repositories.
 python scripts\install_selected_skills.py
 
 $env:ARK_API_KEY = "your-volcano-ark-key"
@@ -182,7 +179,9 @@ deterministic presentations of the same response; no research evidence is
 generated in the browser.
 
 The default runtime directory is `AlphaOS/.runtime_skills`, which is ignored
-by Git. Override it with an absolute path or a path relative to `AlphaOS`:
+by Git. Macro Monitor and Event Risk Alert are bootstrapped there automatically
+from the bundled, hash-verified snapshots. Override the runtime directory with
+an absolute path or a path relative to `AlphaOS`:
 
 ```powershell
 $env:QUANTSKILLS_HOME = "D:\runtime\quantskills"
@@ -365,7 +364,6 @@ Not currently supported:
 
 - Complete factor backtesting
 - Multidimensional IC diagnostics
-- Portfolio Agent
 - Automatic trading, order placement, or buy/sell recommendations
 - Dynamic execution of unknown GitHub code
 

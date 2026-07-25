@@ -13,7 +13,12 @@ from backend.core.plan_validator import PlanValidationError, validate_execution_
 from backend.core.policy_contracts import PolicyDecision
 from backend.core.task_interpreter import TaskInterpreter
 from backend.core.task_spec import TaskSpec
-from backend.services.ark_client import ArkClient, ArkClientError
+from backend.services.ark_client import (
+    ArkClient,
+    ArkClientError,
+    ArkErrorKind,
+    ArkJsonRequest,
+)
 
 
 class ManagerAgentError(RuntimeError):
@@ -58,25 +63,37 @@ class ManagerAgent:
             profile_context,
         )
         try:
-            raw_response = self._get_client().chat(prompt)
-        except ArkClientError as exc:
-            raise ManagerAgentError(str(exc)) from None
-
-        try:
-            return self._parse_and_validate(raw_response, normalized_spec)
-        except (json.JSONDecodeError, ValidationError, PlanValidationError, ValueError) as exc:
+            candidate = self._request_plan(prompt, purpose="manager_plan")
+            return self._validate(candidate, normalized_spec)
+        except (
+            json.JSONDecodeError,
+            ValidationError,
+            PlanValidationError,
+            ValueError,
+            ArkClientError,
+        ) as exc:
+            if isinstance(exc, ArkClientError) and exc.kind != ArkErrorKind.SCHEMA_VALIDATION:
+                raise ManagerAgentError(str(exc)) from None
             repair_prompt = self._repair_prompt(
                 request=request,
                 task_spec=normalized_spec,
                 profile_context=profile_context,
-                invalid_response=raw_response,
+                invalid_response=candidate.model_dump_json() if "candidate" in locals() else "",
                 error=str(exc),
             )
             try:
-                repaired_response = self._get_client().chat(repair_prompt)
-                return self._parse_and_validate(repaired_response, normalized_spec)
+                repaired = self._request_plan(
+                    repair_prompt,
+                    purpose="manager_plan_repair",
+                    attempt=2,
+                )
+                return self._validate(repaired, normalized_spec)
             except ArkClientError as repair_exc:
-                raise ManagerAgentError(str(repair_exc)) from None
+                if repair_exc.kind != ArkErrorKind.SCHEMA_VALIDATION:
+                    raise ManagerAgentError(str(repair_exc)) from None
+                raise ManagerAgentError(
+                    "Manager Agent 在一次修复后仍未返回有效的执行计划。"
+                ) from None
             except (
                 json.JSONDecodeError,
                 ValidationError,
@@ -87,6 +104,30 @@ class ManagerAgent:
                     "Manager Agent 在一次修复后仍未返回有效的执行计划。"
                 ) from None
 
+    def _request_plan(
+        self,
+        prompt: str,
+        *,
+        purpose: str,
+        attempt: int = 1,
+    ) -> ExecutionPlan:
+        client = self._get_client()
+        request = ArkJsonRequest[ExecutionPlan](
+            prompt=prompt,
+            response_model=ExecutionPlan,
+            temperature=0.0,
+            max_output_tokens=4_000,
+            timeout_seconds=90.0,
+            purpose=purpose,
+            prompt_version="manager-v0.3",
+            attempt=attempt,
+            allow_repair=False,
+        )
+        structured_chat = getattr(client, "chat_json", None)
+        if callable(structured_chat):
+            return structured_chat(request)
+        return ExecutionPlan.model_validate(_extract_json(client.chat(prompt)))
+
     def resume(
         self,
         user_request: str,
@@ -96,13 +137,7 @@ class ManagerAgent:
 
         return self.create_plan(_fold_answers(user_request, answers))
 
-    def _parse_and_validate(
-        self,
-        raw_response: str,
-        task_spec: TaskSpec,
-    ) -> ExecutionPlan:
-        payload = _extract_json(raw_response)
-        plan = ExecutionPlan.model_validate(payload)
+    def _validate(self, plan: ExecutionPlan, task_spec: TaskSpec) -> ExecutionPlan:
         if plan.task_type not in {None, task_spec.task_type}:
             raise ValueError("Manager cannot modify TaskSpec.task_type")
         if plan.expected_result_type not in {
@@ -184,7 +219,7 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
 做这件事，plan 中不得出现 skill_id 或 a_share_stock_dossier。
 根据 task_type、research_goal 和 evidence_requirements 选择最小充分专家集合。
 不得修改 expected_result_type，不得扩展当前任务的研究目标，不得输出买入、卖出、
-持有、目标收益或当前仓位建议。Portfolio 当前禁用且不得出现在计划中。
+持有、目标收益或当前仓位建议。
 若 task_type=personal_investment_decision，只能规划支持决策所需的事实研究与风险分析；
 不得把个人资金情况转写成证券、行业或仓位建议，也不得绕过 TaskSpec 的澄清要求。
 用户画像不是 Expert，不得加入 selected_agents、steps 或 AgentRegistry。
@@ -211,13 +246,21 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
 - 单公司财报、基本面、尽调和财务风险问题只选择 research；应提取 symbol、
   period、scope、focus 和 research_goal。只问财报时 scope=financials，全面尽调时
   scope=full_dossier。Manager 仍然只能选择 research，绝不能写入底层 Skill；
-- 行业 Research 使用 industry、time_range、research_goal 和可选 focus；不得同时
-  提供 symbol、symbols 或财报 scope，也不要求市场 Research 的日期和 fields；
+- 行业 Research 使用 industry、time_range、research_goal 和可选 focus。
+  单公司行业竞争时应同时提供单数 symbol，以便查询公司行业分类和可比公司；
+  不得提供 symbols 或财报 scope，也不要求市场 Research 的日期和 fields；
 - 行业 Research 负责行业需求、产业链、竞争、技术成本和估值预期研究。Macro 负责
   宏观、政策、周期和流动性；只有当前目标确实同时需要两者时才选择两个专家。若两项
   分析互不依赖，应将两个 depends_on 都留空以并行执行，不得写成固定流水线；
 - Quant 因子实际计算同样必须提取 symbols、start_date、end_date；缺少任一项时
   必须要求澄清，不能猜测。因子创意任务不要求先获取市场数据；
+- Quant 的普通历史收益、波动、回撤、成交量与横截面交叉验证，inputs 必须设置
+  analysis_mode=historical_cross_check，并提取 symbols、start_date、end_date；
+- 当综合研究需要用历史市场证据校准 Research 或 Macro 的上游结论时，Quant inputs
+  设置 analysis_mode=thesis_validation，并对需要读取的上游步骤声明 dependency；
+  该模式只评估历史市场一致性，不得声称价格表现证明基本面或预测未来收益；
+  明确的因子创意或 R020 研究设置 analysis_mode=skill_research，由 Quant 自行动态
+  选择授权 Skill。analysis_mode 只描述分析目标，不得写入任何 Skill ID；
 - 不得因为 Quant 可用就强制加入所有任务，也不得为 Quant 任务自动追加 risk 或
   report。只有用户明确要求风险审查或报告时才选相应专家并建立业务依赖。
 - 当任务明确要求评估经济周期、利率、流动性、政策或行业宏观环境时，可以选择
@@ -300,7 +343,8 @@ Agent 输入契约：
 - 财报/尽调 Research 才能使用 symbol，并必须提供 financials、financial_risk
   或 full_dossier scope；
 - 行业 Research 必须使用非空 industry；time_range、research_goal、focus 如提供
-  必须为非空字符串；不得同时提供 symbol、symbols 或财报 scope；
+  必须为非空字符串；单公司行业竞争时应同时提供单数 symbol；不得提供 symbols 或
+  财报 scope；
 - Macro 必须使用非空 industry、time_range、research_goal；若提供历史区间必须同时
   给出合法 YYYYMMDD 的 start_date 与 end_date 且不倒置，不得只给其一；纯个股价格、
   财务或因子任务不需要 macro，不要为修复契约而保留缺输入的 macro，可直接移除；

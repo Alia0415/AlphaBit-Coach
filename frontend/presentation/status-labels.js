@@ -44,7 +44,6 @@
     quant: "量化研究员",
     risk: "风险审查员",
     report: "报告整理员",
-    portfolio: "组合研究员",
     macro: "宏观研究员",
   };
 

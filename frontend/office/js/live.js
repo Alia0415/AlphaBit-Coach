@@ -14,7 +14,6 @@ const PRESENTATION = {
   research: { role: "行业研究员", specialty: "行业研究 · 公司分析 · 估值建模", desk: 2 },
   quant: { role: "量化分析师", specialty: "量化建模 · 因子研究 · 统计学习", desk: 3 },
   risk: { role: "风险分析师", specialty: "风险管理 · 压力测试 · 组合风控", desk: 4 },
-  portfolio: { role: "组合经理", specialty: "组合构建 · 仓位配置 · 再平衡", desk: 0 },
   macro: { role: "宏观分析师", specialty: "宏观经济 · 政策分析 · 全球大势", desk: 1 },
   report: { role: "研究报告专员", specialty: "报告撰写 · 证据整合 · 结论呈现", desk: 5 },
 };

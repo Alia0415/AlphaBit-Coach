@@ -105,9 +105,11 @@ class ResearchAgent:
         tool_calls: list[dict[str, Any]] = []
         evidence: list[dict[str, Any]] = []
         limitations: list[str] = []
+        start_date, end_date = _industry_date_range(task)
 
         # 1. Get stock industry classification
         industry_data = None
+        industry_code = ""
         try:
             industry_data = self._data_client.get_stock_industry(symbol=symbol)
             tool_calls.append({
@@ -126,6 +128,9 @@ class ResearchAgent:
                 if not industry and isinstance(industry_data, list) and industry_data:
                     row = industry_data[0] if isinstance(industry_data[0], dict) else {}
                     industry = row.get("industry_name", "") or industry
+                if isinstance(industry_data, list) and industry_data:
+                    row = industry_data[0] if isinstance(industry_data[0], dict) else {}
+                    industry_code = str(row.get("industry_code", "")).strip()
         except Exception as exc:
             tool_calls.append({
                 "tool": "get_stock_industry",
@@ -138,7 +143,10 @@ class ResearchAgent:
         competitors: list[str] = []
         try:
             comp_data = self._data_client.get_stock_competitor(
-                symbol=symbol, max_results=10
+                symbol=symbol,
+                start_date=start_date,
+                end_date=end_date,
+                max_results=10,
             )
             tool_calls.append({
                 "tool": "get_stock_competitor",
@@ -147,14 +155,12 @@ class ResearchAgent:
             })
             if isinstance(comp_data, list):
                 for item in comp_data:
-                    if isinstance(item, dict) and item.get("symbol"):
-                        competitors.append(str(item["symbol"]))
-                evidence.append({
-                    "type": "competitor_candidates",
-                    "symbol": symbol,
-                    "competitors": competitors[:10],
-                    "source": "pandadata",
-                })
+                    if isinstance(item, dict):
+                        competitor = _dossier_symbol({
+                            "symbol": item.get("competitor_stock_code")
+                        })
+                        if competitor and competitor != symbol and competitor not in competitors:
+                            competitors.append(competitor)
         except Exception as exc:
             tool_calls.append({
                 "tool": "get_stock_competitor",
@@ -163,20 +169,20 @@ class ResearchAgent:
             })
 
         # 3. If competitors insufficient, use industry constituents
-        if len(competitors) < 3 and industry:
+        if len(competitors) < 3 and industry_code:
             try:
                 constituents = self._data_client.get_industry_constituents(
-                    industry=industry, level="L1", max_results=20
+                    industry_code=industry_code, level="L1", max_results=20
                 )
                 tool_calls.append({
                     "tool": "get_industry_constituents",
                     "status": "completed",
-                    "arguments": {"industry": industry, "level": "L1"},
+                    "arguments": {"industry_code": industry_code, "level": "L1"},
                 })
                 if isinstance(constituents, list):
                     for item in constituents:
-                        if isinstance(item, dict) and item.get("symbol"):
-                            sym = str(item["symbol"])
+                        if isinstance(item, dict) and item.get("stock_symbol"):
+                            sym = str(item["stock_symbol"])
                             if sym != symbol and sym not in competitors:
                                 competitors.append(sym)
                     evidence.append({
@@ -193,16 +199,25 @@ class ResearchAgent:
                 })
                 limitations.append("同行业成分股查询失败")
 
+        if competitors:
+            evidence.append({
+                "type": "competitor_candidates",
+                "symbol": symbol,
+                "competitors": competitors[:10],
+                "source": "pandadata",
+            })
+
         # 4. Get industry detail
         if industry:
             try:
+                detail_filter = industry_code or industry
                 detail = self._data_client.get_industry_detail(
-                    industry=industry, level="L1"
+                    industry=detail_filter, level="L1"
                 )
                 tool_calls.append({
                     "tool": "get_industry_detail",
                     "status": "completed",
-                    "arguments": {"industry": industry},
+                    "arguments": {"industry": detail_filter},
                 })
                 if detail:
                     evidence.append({
@@ -1231,6 +1246,28 @@ def _dossier_symbol(inputs: Mapping[str, Any]) -> str | None:
         if value.startswith(("000", "001", "002", "003", "300", "301")):
             return f"{value}.SZ"
     return None
+
+
+def _industry_date_range(task: ExpertTask) -> tuple[str, str]:
+    start = str(task.inputs.get("start_date", "")).strip()
+    end = str(task.inputs.get("end_date", "")).strip()
+    if re.fullmatch(r"\d{8}", start) and re.fullmatch(r"\d{8}", end) and start <= end:
+        return start, end
+
+    date_context = " ".join(
+        str(value)
+        for value in (
+            task.inputs.get("time_range", ""),
+            task.inputs.get("period", ""),
+            task.original_user_request,
+        )
+    )
+    years = [int(value) for value in re.findall(r"(?<!\d)(20\d{2})(?!\d)", date_context)]
+    if years:
+        return f"{min(years):04d}0101", f"{max(years):04d}1231"
+
+    today = datetime.now()
+    return f"{today.year - 2:04d}0101", today.strftime("%Y%m%d")
 
 
 def _financial_period_range(inputs: Mapping[str, Any]) -> tuple[str, str]:

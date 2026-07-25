@@ -6,7 +6,6 @@
     macro: { name: "Macro Agent", role: "宏观研究专家" },
     quant: { name: "Quant Agent", role: "量化研究专家" },
     risk: { name: "Risk Agent", role: "风险质疑专家" },
-    portfolio: { name: "Portfolio Agent", role: "组合管理专家" },
     report: { name: "Report Agent", role: "研究整合专家" },
     manager: { name: "Manager Agent", role: "研究经理" },
   };
@@ -245,7 +244,7 @@
     /(api|prompt|token|request|url|database|stack|trace|workflow|task.?id|skill.?id|source.?step|runtime|file.?path|local.?path|method|model|section|row.?count|record.?count|raw|sse|tool.?calls?)/i;
   const FORBIDDEN_TEXT =
     /(PandaData|get_fina_[A-Za-z0-9_]+|get_stock_[A-Za-z0-9_]+|pandadata_[A-Za-z0-9_]+|source_step|skill[_ -]?id|workflow[_ -]?id|task[_ -]?id|result_aggregator|https?:\/\/\S+|\/api\/[A-Za-z0-9_/?=&.-]+|\bAPI\b|\bprompt\b|\btoken\b|\bdatabase\b|\brequest[ _-]?url\b|\bmethod\b|\bmodel\b|\bDeepSeek\b|\bVolcano Ark\b|\bSSE\b)/gi;
-  const INTERNAL_STEP = /\b(?:research|macro|quant|risk|portfolio|report)_[A-Za-z0-9_-]*\d+\b/gi;
+  const INTERNAL_STEP = /\b(?:research|macro|quant|risk|report)_[A-Za-z0-9_-]*\d+\b/gi;
 
   function agentInfo(id) {
     return AGENTS[String(id || "").toLowerCase()] || {
