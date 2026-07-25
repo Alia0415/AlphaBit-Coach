@@ -447,7 +447,6 @@ function avatar(agentOrSheet, sizePx = 40, wrapCls = "pix-ava") {
 const NAV = [
   { route: "hall", ico: "🏛", label: "投研大厅" },
   { route: "war", ico: "🛰", label: "多 Agent 作战室" },
-  { route: "tasks", ico: "🗂", label: "任务中心" },
   { route: "experts", ico: "👥", label: "专家中心" },
   { route: "reports", ico: "📑", label: "研究报告" },
   { route: "profile", ico: "🪪", label: "用户画像" },
@@ -456,6 +455,22 @@ const NAV = [
 
 let currentRoute = "reports";
 let routeParam = null;
+const CURRENT_REPORT_KEY = "alphabit-coach.current-report-id";
+let currentReportId = null;
+try {
+  currentReportId = window.sessionStorage.getItem(CURRENT_REPORT_KEY);
+} catch (_) {
+  currentReportId = null;
+}
+function rememberCurrentReport(reportId) {
+  currentReportId = reportId || null;
+  try {
+    if (currentReportId) window.sessionStorage.setItem(CURRENT_REPORT_KEY, currentReportId);
+    else window.sessionStorage.removeItem(CURRENT_REPORT_KEY);
+  } catch (_) {
+    // The current page still works when browser storage is unavailable.
+  }
+}
 // teardown hook for pages that own timers / animation frames (war room, live scenes)
 let activeTeardown = null;
 function registerTeardown(fn) { activeTeardown = fn; }
@@ -528,7 +543,7 @@ function renderTopbar() {
   modeBtn.addEventListener("click", () => setMode(live ? "demo" : "live"));
   bar.append(modeBtn);
 
-  const history = el("button", "pill", "🕘 历史任务");
+  const history = el("button", "pill", "🕘 历史记录");
   history.addEventListener("click", () => navigate("tasks"));
   bar.append(history);
 
@@ -769,23 +784,9 @@ function renderPage() {
 // page: report list
 // ---------------------------------------------------------------------------
 function pageReportList() {
-  const wrap = el("div");
-  const panel = el("div", "panel");
-  panel.appendChild(el("div", "panel-title", "研究报告 <span class='title-extra'>已完成报告一览</span>"));
-  const list = el("div", "report-list");
-  REPORTS.forEach((r) => {
-    const item = el("button", "report-item");
-    item.appendChild(el("span", "ri-ico", "📄"));
-    item.appendChild(el("div", "", `
-      <div style="font-weight:600">${esc(r.title)}</div>
-      <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(r.doneAt)} · ${esc(r.horizon)}</div>
-    `));
-    item.appendChild(el("div", "ri-score", `<strong>${r.score}</strong><span style="color:var(--text-2);font-size:11px">评分</span>`));
-    item.addEventListener("click", () => navigate("reports", r.id));
-    list.appendChild(item);
-  });
-  panel.appendChild(list);
-  wrap.appendChild(panel);
+  if (REPORTS.length) return pageReportDetail(REPORTS[0].id);
+  const wrap = el("div", "panel");
+  wrap.appendChild(stateBox("empty", "暂无当前研究报告", "完成一次研究后，报告会在这里直接打开。"));
   return wrap;
 }
 
@@ -1809,6 +1810,7 @@ function pageWarRoom() {
         badge.className = "badge done";
         badge.innerHTML = '<span class="dot"></span>已完成';
         appendLog("系统", "AlphaBit Coach 任务处理完成", "#7fa3c7", cs);
+        setTimeout(() => navigate("reports", REPORTS[0].id), 0);
         break;
     }
   }
@@ -2153,7 +2155,7 @@ function renderExpertDetail(panel) {
 // ---------------------------------------------------------------------------
 function pageTasks() {
   const wrap = el("div", "panel");
-  wrap.appendChild(el("div", "panel-title", "任务中心 <span class='title-extra'>历史任务</span>"));
+  wrap.appendChild(el("div", "panel-title", "历史记录 <span class='title-extra'>历史报告</span>"));
   const list = el("div", "task-list");
   REPORTS.forEach((r) => {
     const item = el("button", "task-item");
@@ -2359,13 +2361,35 @@ function pageSkillsLive() {
 // ---- live: tasks center ---------------------------------------------------
 function pageTasksLive() {
   const host = el("div");
-  return renderLive(host, fetchTasks, (tasks) => {
+  return renderLive(host, () => Promise.all([fetchTasks(), fetchReports()]), ([tasks, reports]) => {
     const wrap = el("div", "panel");
-    wrap.appendChild(el("div", "panel-title", "任务中心 <span class='title-extra'>实时任务记录</span>"));
-    if (!tasks.length) {
-      wrap.appendChild(stateBox("empty", "暂无任务记录", "完成研究服务配置后，可从投研大厅提交研究请求。"));
+    wrap.appendChild(el("div", "panel-title", "历史记录 <span class='title-extra'>报告与任务</span>"));
+    if (!tasks.length && !reports.length) {
+      wrap.appendChild(stateBox("empty", "暂无历史记录", "从投研大厅完成研究后，报告和任务记录会保存在这里。"));
       return wrap;
     }
+    if (reports.length) {
+      wrap.appendChild(el("div", "follow-sec-title", "历史报告"));
+      const reportList = el("div", "report-list");
+      reports.forEach((r) => {
+        const publicTitle = researchPresentation
+          ? researchPresentation.publicText(r.title, "未命名研究报告")
+          : r.title;
+        const item = el("button", "report-item");
+        item.appendChild(el("span", "ri-ico", "📄"));
+        const ratio = r.completeness ? Math.round((r.completeness.completion_ratio || 0) * 100) : null;
+        item.appendChild(el("div", "", `
+          <div style="font-weight:600">${esc(publicTitle)}</div>
+          <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(r.created_at)} · 真实研究结果</div>
+        `));
+        if (ratio != null) item.appendChild(el("div", "ri-score", `<strong>${ratio}%</strong><span style="color:var(--text-2);font-size:11px">完成度</span>`));
+        item.addEventListener("click", () => navigate("reports", r.id));
+        reportList.appendChild(item);
+      });
+      wrap.appendChild(reportList);
+    }
+    if (!tasks.length) return wrap;
+    wrap.appendChild(el("div", "follow-sec-title", "历史任务"));
     const list = el("div", "task-list");
     tasks.forEach((t) => {
       const item = el("div", "task-item");
@@ -2392,33 +2416,31 @@ function pageTasksLive() {
 // ---- live: reports list ---------------------------------------------------
 function pageReportListLive() {
   const host = el("div");
-  return renderLive(host, fetchReports, (reports) => {
-    const wrap = el("div");
-    const panel = el("div", "panel");
-    panel.appendChild(el("div", "panel-title", "研究报告 <span class='title-extra'>实时报告库</span>"));
-    if (!reports.length) {
-      panel.appendChild(stateBox("empty", "暂无已生成的研究报告", "报告会在任务执行完成后由 Result Aggregator 落库。"));
-      wrap.appendChild(panel);
-      return wrap;
+  const loadCurrentReport = async () => {
+    if (currentReportId) {
+      try {
+        return await fetchReport(currentReportId);
+      } catch (_) {
+        rememberCurrentReport(null);
+      }
     }
-    const list = el("div", "report-list");
-    reports.forEach((r) => {
-      const publicTitle = researchPresentation
-        ? researchPresentation.publicText(r.title, "未命名研究报告")
-        : r.title;
-      const item = el("button", "report-item");
-      item.appendChild(el("span", "ri-ico", "📄"));
-      const ratio = r.completeness ? Math.round((r.completeness.completion_ratio || 0) * 100) : null;
-      item.appendChild(el("div", "", `
-        <div style="font-weight:600">${esc(publicTitle)}</div>
-        <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(r.created_at)} · 真实研究结果</div>
-      `));
-      if (ratio != null) item.appendChild(el("div", "ri-score", `<strong>${ratio}%</strong><span style="color:var(--text-2);font-size:11px">完成度</span>`));
-      item.addEventListener("click", () => navigate("reports", r.id));
-      list.appendChild(item);
-    });
-    panel.appendChild(list);
-    wrap.appendChild(panel);
+    if (liveSession.prompt && liveSession.phase !== "idle") return null;
+    const reports = await fetchReports();
+    if (!reports.length) return null;
+    rememberCurrentReport(reports[0].id);
+    return fetchReport(reports[0].id);
+  };
+  return renderLive(host, loadCurrentReport, (report) => {
+    if (report) return buildReportDetailLive(report);
+    const wrap = el("div", "panel");
+    const running = liveSession.prompt && liveSession.phase !== "idle";
+    wrap.appendChild(stateBox(
+      "empty",
+      running ? "本次研究报告正在生成" : "暂无当前研究报告",
+      running
+        ? "Multi-Agent 完成研究后会自动跳转到本次报告。"
+        : "完成一次研究后，最新报告会在这里直接打开；历史报告请前往历史记录。",
+    ));
     return wrap;
   });
 }
@@ -2426,22 +2448,24 @@ function pageReportListLive() {
 // ---- live: report detail + real evidence-bounded follow-up ----------------
 function pageReportDetailLive(reportId) {
   const host = el("div");
-  return renderLive(host, () => fetchReport(reportId), (report) => {
-    const layout = el("div", "report-layout");
-    layout.appendChild(buildReportMainLive(report));
-    layout.appendChild(buildFollowPanelLive(report));
-    extractReportGlossary(report.id)
-      .then((terms) => registerGlossaryTerms(terms, layout))
-      .catch(() => {});
-    return layout;
-  });
+  return renderLive(host, () => fetchReport(reportId), buildReportDetailLive);
+}
+
+function buildReportDetailLive(report) {
+  const layout = el("div", "report-layout");
+  layout.appendChild(buildReportMainLive(report));
+  layout.appendChild(buildFollowPanelLive(report));
+  extractReportGlossary(report.id)
+    .then((terms) => registerGlossaryTerms(terms, layout))
+    .catch(() => {});
+  return layout;
 }
 
 function buildReportMainLive(report) {
   const col = el("div", "glossary-scope research-report final-report");
   const toolbar = el("div", "rpt-toolbar");
-  const back = el("button", "btn-ghost", "‹ 返回报告列表");
-  back.addEventListener("click", () => navigate("reports"));
+  const back = el("button", "btn-ghost", "‹ 返回历史记录");
+  back.addEventListener("click", () => navigate("tasks"));
   toolbar.appendChild(back);
   toolbar.appendChild(el("span", "research-truth-label", "仅展示本次真实研究"));
   col.appendChild(toolbar);
@@ -3336,6 +3360,7 @@ function pageHallLive() {
     startBtn.disabled = true;
     startBtn.textContent = "Manager 规划中…";
     resetLiveSession();
+    rememberCurrentReport(null);
     setLiveSession({ prompt, phase: "planning" });
     navigate("war");
     liveCreateSession(prompt)
@@ -4038,11 +4063,15 @@ function pageWarRoomLive() {
           : "任务失败，可查看失败说明",
         succeeded || partial ? "done" : "fail",
       );
+      if (finalReport) {
+        rememberCurrentReport(finalReport);
+        setLiveSession({ phase: "completed" });
+        navigate("reports", finalReport);
+        return;
+      }
       reportBtn.style.display = "";
-      reportBtn.textContent = finalReport ? "查看报告 →" : "查看任务记录 →";
-      reportBtn.addEventListener("click", () => {
-        navigate(finalReport ? "reports" : "tasks", finalReport);
-      }, { once: true });
+      reportBtn.textContent = "查看历史记录 →";
+      reportBtn.addEventListener("click", () => navigate("tasks"), { once: true });
     },
     onError: (info) => {
       clearInterval(elapsedTimer);

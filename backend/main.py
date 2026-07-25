@@ -71,7 +71,7 @@ from backend.skills.runtime_bootstrap import ensure_bundled_instruction_skills
 from backend.skills.skill_registry import SkillRegistry
 
 
-app = FastAPI(title="AlphaOS API", version="0.4.0")
+app = FastAPI(title="AlphaBit Coach API", version="0.4.0")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = REPO_ROOT / "frontend"
 PUBLIC_DIR = REPO_ROOT / "public"
@@ -650,12 +650,12 @@ async def stream_task(task_id: str) -> StreamingResponse:
         completed = ExecutionEvent(
             type="task_completed",
             message={
-                "completed": "AlphaOS 任务成功完成。",
-                "partially_completed": "AlphaOS 任务部分完成。",
-                "failed": "AlphaOS 任务执行失败。",
-                "needs_clarification": "AlphaOS 任务需要补充信息。",
-                "rejected": "AlphaOS 任务已拒绝执行。",
-            }.get(aggregation.completion_status, "AlphaOS 任务处理结束。"),
+                "completed": "AlphaBit Coach 任务成功完成。",
+                "partially_completed": "AlphaBit Coach 任务部分完成。",
+                "failed": "AlphaBit Coach 任务执行失败。",
+                "needs_clarification": "AlphaBit Coach 任务需要补充信息。",
+                "rejected": "AlphaBit Coach 任务已拒绝执行。",
+            }.get(aggregation.completion_status, "AlphaBit Coach 任务处理结束。"),
             metadata={
                 "status": aggregation.completion_status,
                 "completed_steps": sum(
@@ -769,7 +769,7 @@ async def execute_task(request: RouteRequest) -> TaskExecutionResponse:
             events = [
                 ExecutionEvent(
                     type="policy_checked",
-                    message="AlphaOS 已完成请求边界判断。",
+                    message="AlphaBit Coach 已完成请求边界判断。",
                     metadata={
                         "decision": policy.decision,
                         "allowed": False,
@@ -778,12 +778,12 @@ async def execute_task(request: RouteRequest) -> TaskExecutionResponse:
                 ),
                 ExecutionEvent(
                     type="result_policy_checked",
-                    message="AlphaOS 已完成最终结果合规检查。",
+                    message="AlphaBit Coach 已完成最终结果合规检查。",
                     metadata={"policy_rewrite": aggregation.metadata["policy_rewrite"]},
                 ),
                 ExecutionEvent(
                     type="task_completed",
-                    message="AlphaOS 已返回能力边界说明。",
+                    message="AlphaBit Coach 已返回能力边界说明。",
                     metadata={"completed_steps": 0, "failed_steps": 0},
                 ),
             ]
@@ -846,7 +846,7 @@ async def execute_task(request: RouteRequest) -> TaskExecutionResponse:
                 ),
                 ExecutionEvent(
                     type="task_completed",
-                    message="AlphaOS 已返回澄清请求。",
+                    message="AlphaBit Coach 已返回澄清请求。",
                     metadata={"completed_steps": 0, "failed_steps": 0},
                 ),
             ]
@@ -958,7 +958,7 @@ async def execute_task(request: RouteRequest) -> TaskExecutionResponse:
         events.append(
             ExecutionEvent(
                 type="task_completed",
-                message="AlphaOS 任务处理完成。",
+                message="AlphaBit Coach 任务处理完成。",
                 metadata={
                     "completed_steps": sum(
                         result.status == "completed"
@@ -1673,7 +1673,7 @@ def _profile_action_task_response(
         ),
         ExecutionEvent(
             type="task_completed",
-            message="AlphaOS 已在创建任务图前暂停个人投资决策。",
+            message="AlphaBit Coach 已在创建任务图前暂停个人投资决策。",
             metadata={"completed_steps": 0, "failed_steps": 0},
         ),
     ]

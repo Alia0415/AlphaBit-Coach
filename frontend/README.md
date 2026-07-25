@@ -1,4 +1,4 @@
-# AlphaOS Demo Frontend
+# AlphaBit Coach Demo Frontend
 
 The demo console is a zero-build-dependency static frontend served directly by
 FastAPI.

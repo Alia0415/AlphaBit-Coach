@@ -673,7 +673,7 @@ class ResultAggregator:
             _block(
                 "task-understanding",
                 "task_understanding",
-                "AlphaOS 如何理解本次任务",
+                "AlphaBit Coach 如何理解本次任务",
                 [],
                 understanding.model_dump(mode="json"),
                 "primary",
@@ -896,7 +896,7 @@ class ResultAggregator:
                 _block(
                     "boundary",
                     "boundary_response",
-                    "AlphaOS 的能力范围",
+                    "AlphaBit Coach 的能力范围",
                     [],
                     {
                         "reason": policy.reason,
@@ -962,7 +962,7 @@ class ResultAggregator:
                 _block(
                     "task-understanding",
                     "task_understanding",
-                    "AlphaOS 如何理解本次任务",
+                    "AlphaBit Coach 如何理解本次任务",
                     [],
                     understanding.model_dump(mode="json"),
                     "primary",

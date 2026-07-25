@@ -112,15 +112,15 @@ class PolicyGate:
             return _blocked(
                 "trading_execution",
                 ["trading_execution"],
-                "请求要求 AlphaOS 代为执行或自动执行证券交易。",
-                "AlphaOS 不执行下单、调仓或任何代客交易。可以改为研究指定标的的历史数据、方法假设和风险。",
+                "请求要求 AlphaBit Coach 代为执行或自动执行证券交易。",
+                "AlphaBit Coach 不执行下单、调仓或任何代客交易。可以改为研究指定标的的历史数据、方法假设和风险。",
             )
         if any(marker in text for marker in _GUARANTEED_RETURN):
             return _blocked(
                 "guaranteed_return",
                 ["guaranteed_return", "securities_recommendation"],
                 "请求包含确定上涨或保证收益要求。",
-                "AlphaOS 不提供证券推荐或收益保证。可以改为分析指定行业、公司或量化因子的历史数据、风险和验证状态。",
+                "AlphaBit Coach 不提供证券推荐或收益保证。可以改为分析指定行业、公司或量化因子的历史数据、风险和验证状态。",
             )
         if (
             any(marker in text for marker in _PERSONALIZED_RECOMMENDATION)
@@ -130,7 +130,7 @@ class PolicyGate:
                 "personalized_recommendation",
                 ["securities_recommendation"],
                 "请求要求形成具体证券买卖或持有建议。",
-                "AlphaOS 不提供个性化证券推荐。可以改为公司研究、行业研究、风险审查或因子历史验证。",
+                "AlphaBit Coach 不提供个性化证券推荐。可以改为公司研究、行业研究、风险审查或因子历史验证。",
             )
 
         research_related = any(marker in text for marker in _RESEARCH_MARKERS)
@@ -147,7 +147,7 @@ class PolicyGate:
                 policy_tags=["out_of_domain"],
                 reason="请求属于日常信息查询，不是量化投资研究问题。",
                 safe_response=(
-                    "AlphaOS 专注于量化投资研究，暂不提供日常天气等通用查询。"
+                    "AlphaBit Coach 专注于量化投资研究，暂不提供日常天气等通用查询。"
                     "你可以让我研究高温、降雨或极端天气对农业、能源、航运等行业的历史影响。"
                 ),
                 suggested_research_tasks=[

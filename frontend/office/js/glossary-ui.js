@@ -41,7 +41,7 @@ function ensureGlossaryShell() {
   panel.innerHTML = `
     <header class="glossary-panel-head">
       <div>
-        <span class="glossary-kicker">ALPHAOS REFERENCE</span>
+        <span class="glossary-kicker">ALPHABIT COACH REFERENCE</span>
         <h2>投研知识库</h2>
       </div>
       <button class="glossary-close" type="button" title="关闭术语库" aria-label="关闭术语库">×</button>
