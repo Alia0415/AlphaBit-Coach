@@ -193,6 +193,7 @@ class CoachService:
         goal: str,
         recent_events: list[dict[str, Any]],
         milestone: str,
+        profile: UserInvestmentProfile | None = None,
     ) -> CoachNarrationDraft:
         """Narrate one execution milestone for teaching purposes.
 
@@ -207,6 +208,7 @@ class CoachService:
         prompt = _NARRATION_PROMPT_TEMPLATE.format(
             goal=goal,
             milestone=milestone,
+            experience_guidance=_experience_guidance(profile),
             event_lines=_format_event_lines(recent_events),
         )
         try:
@@ -527,6 +529,7 @@ _NARRATION_PROMPT_TEMPLATE = """\
 你是 AlphaBit Coach 的投研课堂解说员。一个多 Agent AI 投研团队正在执行用户的研究任务，
 你要在关键节点向旁观的用户解说"现在发生了什么"，以及"真实投研中这一步意味着什么"。
 
+用户画像分层要求：{experience_guidance}
 用户的研究目标：{goal}
 当前里程碑：{milestone}
 自上一里程碑以来的真实执行事件：

@@ -637,6 +637,7 @@ async def stream_task(task_id: str) -> StreamingResponse:
     prompt = task["prompt"]
     already_executed = task["status"] not in {"planned"}
     persisted_events = task["events"]
+    profile = _profile_service().get()
 
     async def event_stream() -> Any:
         for event in persisted_events:
@@ -661,7 +662,11 @@ async def stream_task(task_id: str) -> StreamingResponse:
         ) -> None:
             try:
                 draft = await run_in_threadpool(
-                    coach_service.narrate_milestone, prompt, context, milestone
+                    coach_service.narrate_milestone,
+                    prompt,
+                    context,
+                    milestone,
+                    profile,
                 )
             except CoachServiceError:
                 return  # 解说失败只跳过，绝不影响任务执行与聚合
