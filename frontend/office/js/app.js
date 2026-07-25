@@ -57,9 +57,10 @@ import {
   registerGlossaryTerms,
 } from "./glossary-ui.js?v=20260725-p12";
 import {
+  buildStockResearchPrompt,
   mountStockChartPage,
   mountStockLibraryPage,
-} from "../../stock-workspace.js?v=20260726-mono3";
+} from "../../stock-workspace.js?v=20260726-auto-analysis1";
 
 const researchPresentation = globalThis.AlphaResearchPresentation;
 
@@ -157,6 +158,43 @@ function resetLiveSession() {
     phase: "idle",
     error: null,
   };
+}
+
+function beginLiveResearch(prompt) {
+  const normalizedPrompt = String(prompt || "").trim();
+  if (!normalizedPrompt) {
+    toast("请先描述你的研究意向");
+    return;
+  }
+  const switchedToLive = !isLive();
+  if (switchedToLive) store.set({ mode: "live" });
+  resetLiveSession();
+  rememberCurrentReport(null);
+  setLiveSession({ prompt: normalizedPrompt, phase: "planning" });
+  navigate("war");
+  if (switchedToLive) {
+    refreshServiceStatus().finally(() => {
+      renderTopbar();
+      renderStatusbar();
+    });
+  }
+  liveCreateSession(normalizedPrompt)
+    .then(({ taskId, plan }) => {
+      setLiveSession({
+        taskId,
+        prompt: normalizedPrompt,
+        plan,
+        phase: plan && plan.needsClarification ? "clarification" : "planned",
+        error: null,
+      });
+      navigate(plan && plan.needsClarification ? "clarify" : "war");
+    })
+    .catch(() => {
+      const message = "研究服务暂时无法完成任务规划，请稍后重试。";
+      setLiveSession({ phase: "failed", error: message });
+      navigate("war");
+      toast(`规划失败：${message}`);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -829,6 +867,8 @@ function renderPage() {
           initialStock: routeParam,
           notify: toast,
           onChooseStock: () => navigate("stock-library"),
+          onAnalyzeStock: (stock) =>
+            beginLiveResearch(buildStockResearchPrompt(stock)),
         }),
       );
       break;
@@ -3977,27 +4017,7 @@ function pageHallLive() {
     if (!prompt) { toast("请先描述你的研究意向"); ta.focus(); return; }
     startBtn.disabled = true;
     startBtn.textContent = "正在规划…";
-    resetLiveSession();
-    rememberCurrentReport(null);
-    setLiveSession({ prompt, phase: "planning" });
-    navigate("war");
-    liveCreateSession(prompt)
-      .then(({ taskId, plan }) => {
-        setLiveSession({
-          taskId,
-          prompt,
-          plan,
-          phase: plan && plan.needsClarification ? "clarification" : "planned",
-          error: null,
-        });
-        navigate(plan && plan.needsClarification ? "clarify" : "war");
-      })
-      .catch((err) => {
-        const message = "研究服务暂时无法完成任务规划，请稍后重试。";
-        setLiveSession({ phase: "failed", error: message });
-        navigate("war");
-        toast(`规划失败：${message}`);
-      });
+    beginLiveResearch(prompt);
   };
   startBtn.addEventListener("click", submit);
   foot.append(count, startBtn);

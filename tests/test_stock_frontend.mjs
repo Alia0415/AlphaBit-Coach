@@ -13,6 +13,7 @@ import {
 } from "../frontend/stock-library.js";
 import {
   buildCoachCopy,
+  buildStockResearchPrompt,
   normalizeSelectedStock,
   SELECTED_STOCK_STORAGE_KEY,
 } from "../frontend/stock-workspace.js";
@@ -89,5 +90,25 @@ const copy = buildCoachCopy({
 assert.match(copy.trend, /整体上涨/);
 assert.match(copy.trend, /MA20 上方/);
 assert.doesNotMatch(Object.values(copy).join(""), /建议买入|建议卖出|目标价/);
+
+const researchPrompt = buildStockResearchPrompt({
+  symbol: "300750.SZ",
+  name: "宁德时代",
+});
+assert.match(researchPrompt, /宁德时代（300750\.SZ/);
+assert.match(researchPrompt, /价格趋势、均线、成交量/);
+assert.match(researchPrompt, /公司基本面、重要公告或事件/);
+assert.match(researchPrompt, /行业与宏观环境以及主要风险/);
+assert.match(researchPrompt, /研究报告/);
+assert.match(researchPrompt, /不提供买卖指令、目标价或收益承诺/);
+assert.equal(buildStockResearchPrompt({ symbol: "invalid", name: "无效" }), "");
+
+const indexPrompt = buildStockResearchPrompt({
+  symbol: "000300.SH",
+  name: "沪深300",
+});
+assert.match(indexPrompt, /主要行业与风格暴露/);
+assert.match(indexPrompt, /市场流动性、宏观与政策环境/);
+assert.doesNotMatch(indexPrompt, /公司基本面/);
 
 console.log("stock frontend state tests passed");
