@@ -116,6 +116,21 @@ export const api = {
       },
       { timeoutMs: PLANNING_TIMEOUT_MS },
     ),
+  createResearchRun: (prompt, queryContext = {}) =>
+    postJSON(
+      "/api/research/runs",
+      {
+        prompt,
+        original_query: queryContext.originalQuery || prompt,
+        rewritten_query: queryContext.rewrittenQuery || prompt,
+        final_query: queryContext.finalQuery || prompt,
+      },
+      { timeoutMs: 10000 },
+    ),
+  researchRunStatus: (runId) =>
+    getJSON(`/api/research/runs/${encodeURIComponent(runId)}/status`),
+  researchRunEventsUrl: (runId) =>
+    apiBase() + `/api/research/runs/${encodeURIComponent(runId)}/events`,
   clarifySession: (taskId, answers) =>
     postJSON(
       `/api/tasks/${encodeURIComponent(taskId)}/clarify`,

@@ -3,7 +3,7 @@
 // enabled, capabilities, tools, skills, counts, statuses) come from the API;
 // only cosmetic fields (sprite / role label / specialty) are overlaid from the
 // static presentation map. It never invents research facts.
-import { api } from "./api.js?v=20260726-query-refine";
+import { api } from "./api.js?v=20260726-research-run";
 import { store } from "./store.js";
 
 export const isLive = () => store.state.mode === "live";
@@ -215,6 +215,75 @@ export async function rewriteResearchQuery(originalQuery) {
 export async function createSession(prompt, queryContext = {}) {
   const res = await api.createSession(prompt, queryContext);
   return { taskId: res.task_id, plan: mapPlan(res.plan), rawPlan: res.plan };
+}
+
+export function mapResearchRunState(value) {
+  const state = value && typeof value === "object" ? value : {};
+  return {
+    runId: state.run_id || "",
+    status: state.status || "running",
+    currentStage: state.current_stage || "received",
+    progress: Number.isFinite(state.progress) ? state.progress : 0,
+    startedAt: state.started_at || "",
+    selectedAgents: Array.isArray(state.selected_agents) ? state.selected_agents : [],
+    dag: state.dag && typeof state.dag === "object" ? state.dag : null,
+    elapsedMs: Number.isFinite(state.elapsed_ms) ? state.elapsed_ms : 0,
+    estimatedRemainingMs: Number.isFinite(state.estimated_remaining_ms)
+      ? state.estimated_remaining_ms
+      : null,
+    error: state.error || null,
+    failedStage: state.failed_stage || null,
+    message: state.message || "",
+  };
+}
+
+export async function startResearchRun(prompt, queryContext = {}) {
+  const res = await api.createResearchRun(prompt, queryContext);
+  return { runId: res.run_id };
+}
+
+export async function fetchResearchRunStatus(runId) {
+  return mapResearchRunState(await api.researchRunStatus(runId));
+}
+
+// EventSource reconnects natively. On every transport error we also query the
+// persisted status endpoint so a dropped final event cannot strand the page.
+export function openResearchRunStream(runId, handlers = {}) {
+  const src = new EventSource(api.researchRunEventsUrl(runId));
+  let terminal = false;
+  let recovering = false;
+
+  const deliver = (raw) => {
+    const state = mapResearchRunState(raw);
+    terminal = state.status === "plan_ready" || state.status === "failed";
+    handlers.onState && handlers.onState(state);
+    if (terminal) {
+      try { src.close(); } catch { /* already closed */ }
+    }
+  };
+
+  src.onmessage = (event) => {
+    if (!event.data) return;
+    try { deliver(JSON.parse(event.data)); } catch { /* ignore malformed event */ }
+  };
+  src.addEventListener("done", (event) => {
+    if (!event.data) return;
+    try { deliver(JSON.parse(event.data)); } catch { /* ignore malformed event */ }
+  });
+  src.onerror = async () => {
+    if (terminal || recovering) return;
+    recovering = true;
+    handlers.onDisconnect && handlers.onDisconnect();
+    try {
+      deliver(await api.researchRunStatus(runId));
+      if (!terminal) handlers.onRecovering && handlers.onRecovering();
+    } catch (error) {
+      handlers.onRecoveryError && handlers.onRecoveryError(error);
+    } finally {
+      recovering = false;
+    }
+  };
+  return src;
 }
 
 export async function clarifySession(taskId, answers) {
