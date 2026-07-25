@@ -44,7 +44,7 @@ const SCENARIOS = {
         event("skill_completed", "quant_1", "quant", "factor_idea_generation 执行完成。", 682),
         event("step_completed", "quant_1", "quant", "quant 步骤执行完成。", 704),
         event("synthesis_started", null, null, "Result Aggregator 开始整理实际执行结果。", 722),
-        event("task_completed", null, null, "AlphaOS 任务处理完成。", 861),
+        event("task_completed", null, null, "AlphaBit Coach 任务处理完成。", 861),
       ],
       results: {
         quant_1: {
@@ -126,7 +126,7 @@ const SCENARIOS = {
         event("step_started", "risk_1", "risk", "Risk Agent 开始执行任务。", 851),
         event("step_completed", "risk_1", "risk", "risk 步骤执行完成。", 1124),
         event("synthesis_started", null, null, "Result Aggregator 开始整理实际执行结果。", 1140),
-        event("task_completed", null, null, "AlphaOS 任务处理完成。", 1284),
+        event("task_completed", null, null, "AlphaBit Coach 任务处理完成。", 1284),
       ],
       results: {
         quant_1: {
@@ -232,7 +232,7 @@ const SCENARIOS = {
         event("step_started", "report_1", "report", "Report Agent 开始执行任务。", 621),
         event("step_completed", "report_1", "report", "report 步骤执行完成。", 879),
         event("synthesis_started", null, null, "Result Aggregator 开始整理实际执行结果。", 895),
-        event("task_completed", null, null, "AlphaOS 任务处理完成。", 1023),
+        event("task_completed", null, null, "AlphaBit Coach 任务处理完成。", 1023),
       ],
       results: {
         research_1: {
@@ -396,7 +396,7 @@ function setMode(mode) {
   elements.modeNote.textContent =
     state.mode === "demo"
       ? "演示示例使用明确标注的本地数据，不会发起真实研究。"
-      : "真实研究由 AlphaOS 服务端统一调用模型和数据源，用户无需填写任何 API Key。";
+      : "真实研究由 AlphaBit Coach 服务端统一调用模型和数据源，用户无需填写任何 API Key。";
 }
 
 function selectScenario(scenario) {
@@ -533,7 +533,7 @@ function renderTimeline(events) {
       : item.metadata?.component === "result_aggregator"
         ? "结果整理器"
         : item.type === "task_completed"
-          ? "AlphaOS"
+          ? "AlphaBit Coach"
           : "研究经理";
     message.append(type);
     const time = document.createElement("time");

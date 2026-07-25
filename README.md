@@ -1,4 +1,4 @@
-# AlphaBit Coach (AlphaOS runtime) v0.3 + Skill Runtime
+# AlphaBit Coach v0.4 + Skill Runtime
 
 > 一支看得见的 AI 投研团队，一位真正帮助你成长的金融教练。
 
@@ -104,8 +104,8 @@ Test commands:
 | `macro_monitor` | instruction | `macro` | `quantskills/skill-macro-monitor` | GPL-3.0 | methodology verified; facts must come from PandaData |
 | `event_risk_alert` | instruction | `risk` | `quantskills/skill-event-risk-alert` | GPL-3.0-only | observed disclosure records are leads, not causal conclusions |
 
-An installed Codex Skill is not automatically installed for the AlphaOS
-service. AlphaOS reads runtime Skills only from `QUANTSKILLS_HOME`, verifies
+An installed Codex Skill is not automatically installed for the AlphaBit Coach
+service. AlphaBit Coach reads runtime Skills only from `QUANTSKILLS_HOME`, verifies
 them against `skills.lock.json`, and loads only the expected entrypoint.
 Local folders and user-supplied repositories are not auto-discovered.
 
@@ -138,7 +138,7 @@ fundamental or market factor Skills answer a different question: whether a
 defined metric could become a testable stock-selection hypothesis. Financial
 performance is never presented as validated predictive return evidence.
 
-The dossier's upstream `skill-pandadata-api` dependency is mapped to AlphaOS's
+The dossier's upstream `skill-pandadata-api` dependency is mapped to AlphaBit Coach's
 existing controlled `backend.services.pandadata_client.PandaDataClient`; no
 second credential client is installed. The lock verifies `SKILL.md`,
 `references/dossier-guide.md`, and the GPL license file at the pinned commit.
@@ -150,7 +150,7 @@ It does not call the upstream `generate_signals`, use bundled validation data,
 or modify external Skill source.
 
 Macro Monitor and Event Risk Alert load only pinned instruction files and
-route real data calls through AlphaOS's controlled PandaData client.
+route real data calls through AlphaBit Coach's controlled PandaData client.
 
 Reviewed snapshots of Macro Monitor and Event Risk Alert are committed under
 `vendor/quantskills`. Application startup verifies their pinned hashes and
@@ -197,10 +197,10 @@ states, provenance, and technical execution events. Both views are
 deterministic presentations of the same response; no research evidence is
 generated in the browser.
 
-The default runtime directory is `AlphaOS/.runtime_skills`, which is ignored
+The default runtime directory is `AlphaBit-Coach/.runtime_skills`, which is ignored
 by Git. Macro Monitor and Event Risk Alert are bootstrapped there automatically
 from the bundled, hash-verified snapshots. Override the runtime directory with
-an absolute path or a path relative to `AlphaOS`:
+an absolute path or a path relative to `AlphaBit-Coach`:
 
 ```powershell
 $env:QUANTSKILLS_HOME = "D:\runtime\quantskills"

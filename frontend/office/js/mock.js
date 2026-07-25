@@ -327,7 +327,7 @@ export const WAR_SCRIPT = [
   { t: 58, type: "skill", name: "估值建模", n: 15 },
   { t: 58, type: "skill", name: "财务分析", n: 12 },
   { t: 60, type: "finish" },
-  { t: 60, type: "log", agent: "系统", text: "AlphaOS 任务处理完成", color: "#7fa3c7" },
+  { t: 60, type: "log", agent: "系统", text: "AlphaBit Coach 任务处理完成", color: "#7fa3c7" },
 ];
 
 export const SKILL_FINAL_COUNTS = { 财务分析: 12, 行业对比: 8, 估值建模: 15, 风险扫描: 6, 舆情监控: 9 };
