@@ -49,7 +49,7 @@ import {
   attachSelectionQuoting,
   buildCoachSidebar,
   createClassroomPanel,
-} from "./coach.js?v=20260725-c01";
+} from "./coach.js?v=20260725-report-dynamic";
 import {
   highlightGlossaryScope,
   initOfficeGlossary,
@@ -876,6 +876,7 @@ function pageReportDetail(reportId) {
   const coach = buildCoachSidebar({
     demo: true,
     seedMessages: DEMO_COACH.seedMessages || [],
+    sectionContexts: main.reportNavigation || [],
     loadGuide: () => Promise.resolve(DEMO_COACH.guide),
     ask: (question, quoted) => new Promise((resolve) => {
       setTimeout(() => resolve({ ...DEMO_COACH.reply, quoted_text: quoted || null }), 600);
@@ -890,8 +891,12 @@ function pageReportDetail(reportId) {
     onCollapseChange: (c) => layout.classList.toggle("coach-collapsed", c),
   });
   layout.appendChild(coach.root);
+  const reading = wireReportReading(main, coach);
   const quoting = attachSelectionQuoting(main, (text) => coach.setQuote(text));
-  registerTeardown(() => quoting.destroy());
+  registerTeardown(() => {
+    reading.destroy();
+    quoting.destroy();
+  });
   return layout;
 }
 
@@ -2848,15 +2853,20 @@ function buildReportDetailLive(report) {
   layout.appendChild(main);
   const coach = buildCoachSidebar({
     seedMessages: report.coach_messages || [],
+    sectionContexts: main.reportNavigation || [],
     loadGuide: (refresh) => fetchCoachGuide(report.id, refresh),
     ask: (question, quoted) => askCoach(report.id, question, quoted),
     evidence: (question) => submitReportFollowup(report.id, question),
     onCollapseChange: (c) => layout.classList.toggle("coach-collapsed", c),
   });
   layout.appendChild(coach.root);
+  const reading = wireReportReading(main, coach);
   // 选字引用：报告正文选区 → 侧边栏引用 chip（导航离开时清理监听）
   const quoting = attachSelectionQuoting(main, (text) => coach.setQuote(text));
-  registerTeardown(() => quoting.destroy());
+  registerTeardown(() => {
+    reading.destroy();
+    quoting.destroy();
+  });
   extractReportGlossary(report.id)
     .then((terms) => registerGlossaryTerms(terms, layout))
     .catch(() => {});
@@ -2897,38 +2907,318 @@ function buildReportMainLive(report) {
     ));
     return col;
   }
-  col.appendChild(renderResearchHero(report, vm));
-  if (vm.finalSummary.evidence.length) {
-    col.appendChild(renderFinalEvidence(vm.finalSummary.evidence));
-  }
-  if (vm.finalSummary.uncertainties.length) {
-    col.appendChild(renderFinalList(
-      "UNCERTAINTY",
-      "哪些地方还不能确定",
-      vm.finalSummary.uncertainties,
-      "final-uncertainties",
-    ));
-  }
-  col.appendChild(renderFinalLearning(vm.finalSummary.learning));
-  if (vm.finalSummary.nextSteps.length) {
-    col.appendChild(renderFinalList(
-      "NEXT",
-      "下一步研究",
-      vm.finalSummary.nextSteps,
-      "final-next-questions",
-    ));
-  }
+  col.reportNavigation = vm.navigation || [];
+  col.appendChild(renderReportNavigation(col.reportNavigation));
+  const hero = renderResearchHero(report, vm);
+  hero.id = "report-overview";
+  hero.dataset.reportSection = "report-overview";
+  hero.appendChild(renderResearchTrace(vm));
+  col.appendChild(hero);
   connectReportKnowledge(vm.metrics);
-  col.appendChild(renderParticipants(vm));
-  col.appendChild(renderResearchPlan(vm.researchPlan));
-  col.appendChild(renderMetricOverview(vm.metrics));
-  col.appendChild(renderEvidenceChains(vm.evidenceChains));
-  col.appendChild(renderAgentWorkbenches(vm.agents));
-  col.appendChild(renderSignals(vm));
-  col.appendChild(renderCoverage(vm.coverage));
-  col.appendChild(renderLearningSummary(vm.learningSummary));
+  (vm.chapters || []).forEach((chapter) => {
+    col.appendChild(renderDynamicAgentChapter(chapter));
+  });
+  if (vm.learningSummary.evidenceBoundary.length) {
+    col.appendChild(renderDynamicEvidenceBoundary(vm));
+  }
+  if (
+    vm.learningSummary.framework.length
+    || vm.learningSummary.terms.length
+    || vm.learningSummary.evidenceBoundary.length
+    || vm.learningSummary.professionalQuestions.length
+  ) {
+    col.appendChild(renderDynamicLearningSummary(vm.learningSummary));
+  }
   if (vm.disclaimer) col.appendChild(el("div", "op-note research-disclaimer", esc(vm.disclaimer)));
   return col;
+}
+
+function renderReportNavigation(items) {
+  const nav = el("nav", "report-section-nav");
+  nav.setAttribute("aria-label", "本次报告章节");
+  const progress = el("div", "report-reading-progress");
+  const track = el("span", "report-reading-progress-track");
+  track.appendChild(el("i", "report-reading-progress-fill"));
+  progress.append(
+    el("span", "report-reading-progress-label", "阅读进度 0%"),
+    track,
+  );
+  const links = el("div", "report-section-nav-links");
+  (items || []).forEach((item, index) => {
+    const button = el("button", `report-section-link${index === 0 ? " active" : ""}`, esc(item.label));
+    button.type = "button";
+    button.dataset.sectionTarget = item.id;
+    if (index === 0) button.setAttribute("aria-current", "true");
+    links.appendChild(button);
+  });
+  nav.append(progress, links);
+  return nav;
+}
+
+function renderResearchTrace(vm) {
+  const trace = el("div", "research-trace");
+  const questions = vm.researchPlan?.researchQuestions || [];
+  if (questions.length) {
+    const path = el("div", "research-trace-block");
+    path.appendChild(el("strong", "", "本次研究路径"));
+    const list = el("ol", "research-trace-list");
+    questions.forEach((item) => {
+      const row = el("li");
+      row.appendChild(el("span", "", esc(item.question)));
+      row.appendChild(el("small", "", esc(item.role)));
+      list.appendChild(row);
+    });
+    path.appendChild(list);
+    trace.appendChild(path);
+  }
+  if (vm.participation?.length) {
+    const team = el("div", "research-trace-block research-trace-team");
+    team.appendChild(el("strong", "", "实际参与"));
+    const tags = el("div", "research-trace-tags");
+    vm.participation.forEach((item) => {
+      tags.appendChild(el("span", "", esc(item.role)));
+    });
+    team.appendChild(tags);
+    trace.appendChild(team);
+  }
+  return trace;
+}
+
+function teachingSection(title, items, cls = "") {
+  const values = (items || []).filter((item) => {
+    const text = typeof item === "string" ? item : item?.text;
+    return Boolean(text);
+  });
+  if (!values.length) return null;
+  const section = el("section", `teaching-block ${cls}`.trim());
+  section.appendChild(el("h3", "", esc(title)));
+  section.appendChild(researchList(values));
+  return section;
+}
+
+function renderDynamicAgentChapter(agent) {
+  const panel = researchPanel(
+    agent.role,
+    agent.title,
+    agent.researchQuestion,
+    "dynamic-agent-chapter",
+  );
+  panel.id = agent.sectionId;
+  panel.dataset.reportSection = agent.sectionId;
+
+  const boundaries = agent.boundaries?.length
+    ? agent.boundaries
+    : ["本节结论只覆盖上方已经展示的事实、数据与研究范围。"];
+  const facts = agent.facts?.length
+    ? agent.facts
+    : ["本节没有返回可单独展示的事实或数值，因此不把专业判断改写成数据。"];
+  const methods = agent.methods?.length
+    ? agent.methods
+    : ["本次结果未单独记录可展示的分析方法，页面不补造方法说明。"];
+  const reasoning = agent.interpretations?.length
+    ? agent.interpretations
+    : ["本次结果未返回可单独展示的判断，页面仅保留已有研究边界。"];
+  const misconceptions = agent.misconceptions?.length
+    ? agent.misconceptions.map((item) =>
+      `误区：${item.wrong}。正确边界：${item.correct}`
+    )
+    : ["不要把本节的阶段性判断扩大到已展示证据之外。"];
+  const nextChecks = agent.nextChecks?.length
+    ? agent.nextChecks
+    : boundaries.map((item) => `继续补充能够验证“${item}”的真实证据。`);
+  const blocks = [
+    teachingSection("本节研究什么", [agent.researchQuestion], "teaching-question"),
+    teachingSection("事实与数据", facts, "teaching-facts"),
+    teachingSection("使用了什么分析方法", methods, "teaching-methods"),
+    teachingSection("为什么得出这个判断", reasoning, "teaching-reasoning"),
+    teachingSection("这个结论不能说明什么", boundaries, "teaching-boundary"),
+    teachingSection("常见误区", misconceptions, "teaching-mistake"),
+    teachingSection("下一步如何验证", nextChecks, "teaching-next"),
+  ].filter(Boolean);
+  const grid = el("div", "teaching-grid");
+  blocks.forEach((block) => grid.appendChild(block));
+  panel.appendChild(grid);
+  panel.appendChild(renderSectionCoachCard(agent, misconceptions[0]));
+  return panel;
+}
+
+function renderSectionCoachCard(agent, fallbackMisconception) {
+  const card = el("aside", "section-coach-card");
+  const head = el("div", "section-coach-card-head");
+  head.appendChild(el("span", "section-coach-avatar", "教"));
+  head.appendChild(el("div", "", "<strong>陪练解读</strong><small>跟着专业研究者读这一节</small>"));
+  card.appendChild(head);
+  const rows = [
+    ["专业人员在看什么", [
+      agent.researchQuestion,
+      ...(agent.metrics || []).slice(0, 3).map((metric) => metric.label),
+    ].filter(Boolean).join("；")],
+    ["用户应该记住什么", agent.coach?.oneLine || agent.interpretations?.[0]],
+    ["最容易犯的错误", agent.coach?.misconception || fallbackMisconception],
+  ].filter(([, value]) => value);
+  const body = el("div", "section-coach-card-body");
+  rows.forEach(([label, value]) => {
+    const row = el("div", "section-coach-card-row");
+    row.appendChild(el("strong", "", esc(label)));
+    row.appendChild(el("p", "", esc(value)));
+    body.appendChild(row);
+  });
+  card.appendChild(body);
+  return card;
+}
+
+function renderDynamicEvidenceBoundary(vm) {
+  const panel = researchPanel(
+    "证据边界",
+    "风险、限制与数据范围",
+    "只展示本次真实结果中已经出现的风险、缺口和覆盖范围。",
+    "dynamic-boundary-section",
+  );
+  panel.id = "report-evidence-boundary";
+  panel.dataset.reportSection = panel.id;
+  const grid = el("div", "dynamic-boundary-grid");
+  if (vm.riskSignals.length) {
+    grid.appendChild(teachingSection("需要关注的风险", vm.riskSignals, "real-risk"));
+  }
+  if (vm.limitations.length) {
+    grid.appendChild(teachingSection("结论限制", vm.limitations));
+  }
+  const coverage = (vm.coverage || [])
+    .filter((item) => item.status !== "available")
+    .map((item) => `${item.type}：${item.impact}`);
+  if (coverage.length) {
+    grid.appendChild(teachingSection("数据范围", coverage));
+  }
+  const remaining = vm.learningSummary.evidenceBoundary.filter((item) =>
+    !vm.riskSignals.includes(item)
+    && !vm.limitations.includes(item)
+    && !coverage.some((text) => text.includes(item))
+  );
+  if (remaining.length) {
+    grid.appendChild(teachingSection("仍需验证", remaining));
+  }
+  panel.appendChild(grid);
+  return panel;
+}
+
+function renderDynamicLearningSummary(summary) {
+  const panel = researchPanel(
+    "学习总结",
+    "把这次研究方法带到下一次",
+    "以下总结仅由本次实际研究路径、术语、证据边界和后续问题组成。",
+    "dynamic-learning-summary",
+  );
+  panel.id = "report-learning-summary";
+  panel.dataset.reportSection = panel.id;
+  const grid = el("div", "dynamic-learning-grid");
+  if (summary.framework.length) {
+    grid.appendChild(teachingSection("本次可复用的研究框架", summary.framework));
+  }
+  if (summary.terms.length) {
+    const terms = el("section", "teaching-block learning-terms-block");
+    terms.appendChild(el("h3", "", "本次涉及的专业术语"));
+    const wrap = el("div", "learning-terms");
+    summary.terms.forEach((term) => wrap.appendChild(el("span", "", esc(term))));
+    terms.appendChild(wrap);
+    grid.appendChild(terms);
+  }
+  if (summary.evidenceBoundary.length) {
+    grid.appendChild(teachingSection("本次结论的证据边界", summary.evidenceBoundary));
+  }
+  if (summary.professionalQuestions.length) {
+    grid.appendChild(teachingSection(
+      "下次可以提出的更专业问题",
+      summary.professionalQuestions,
+      "learning-question-block",
+    ));
+  }
+  panel.appendChild(grid);
+  return panel;
+}
+
+function wireReportReading(main, coach) {
+  let destroyed = false;
+  let connection = { destroy() {} };
+  const frame = requestAnimationFrame(() => {
+    if (!destroyed) connection = connectReportReading(main, coach);
+  });
+  return {
+    destroy() {
+      destroyed = true;
+      cancelAnimationFrame(frame);
+      connection.destroy();
+    },
+  };
+}
+
+function connectReportReading(main, coach) {
+  const nav = main.querySelector(".report-section-nav");
+  const sections = [...main.querySelectorAll("[data-report-section]")];
+  const buttons = [...main.querySelectorAll("[data-section-target]")];
+  const progressFill = main.querySelector(".report-reading-progress-fill");
+  const progressLabel = main.querySelector(".report-reading-progress-label");
+  const scrollRoot = main.closest(".page-outlet");
+  if (!nav || !sections.length || !scrollRoot) {
+    return { destroy() {} };
+  }
+
+  const activate = (id) => {
+    buttons.forEach((button) => {
+      const active = button.dataset.sectionTarget === id;
+      button.classList.toggle("active", active);
+      if (active) button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
+    });
+    coach?.setContext?.(id);
+  };
+
+  const onClick = (event) => {
+    const button = event.currentTarget;
+    const target = main.querySelector(`#${CSS.escape(button.dataset.sectionTarget)}`);
+    if (!target) return;
+    activate(button.dataset.sectionTarget);
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  buttons.forEach((button) => button.addEventListener("click", onClick));
+
+  const updateProgress = () => {
+    const rootRect = scrollRoot.getBoundingClientRect();
+    const mainRect = main.getBoundingClientRect();
+    const readable = Math.max(1, main.scrollHeight - rootRect.height * 0.7);
+    const read = Math.max(0, rootRect.top + rootRect.height * 0.2 - mainRect.top);
+    const percent = Math.max(0, Math.min(100, Math.round((read / readable) * 100)));
+    if (progressFill) progressFill.style.width = `${percent}%`;
+    if (progressLabel) progressLabel.textContent = `阅读进度 ${percent}%`;
+
+    const marker = rootRect.top + Math.min(180, rootRect.height * 0.24);
+    let current = sections[0];
+    sections.forEach((section) => {
+      if (section.getBoundingClientRect().top <= marker) current = section;
+    });
+    activate(current.id);
+  };
+  scrollRoot.addEventListener("scroll", updateProgress, { passive: true });
+
+  const observer = new IntersectionObserver((entries) => {
+    const visible = entries
+      .filter((entry) => entry.isIntersecting)
+      .sort((left, right) => right.intersectionRatio - left.intersectionRatio);
+    if (visible[0]) activate(visible[0].target.id);
+  }, {
+    root: scrollRoot,
+    rootMargin: "-18% 0px -62% 0px",
+    threshold: [0.05, 0.25, 0.6],
+  });
+  sections.forEach((section) => observer.observe(section));
+  requestAnimationFrame(updateProgress);
+
+  return {
+    destroy() {
+      observer.disconnect();
+      scrollRoot.removeEventListener("scroll", updateProgress);
+      buttons.forEach((button) => button.removeEventListener("click", onClick));
+    },
+  };
 }
 
 function connectReportKnowledge(metrics) {

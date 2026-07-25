@@ -184,24 +184,39 @@ function renderGuide(guide, { demo, onPick, onRefresh }) {
 //   ask(question, quotedText) -> Promise<CoachMessage>
 //   evidence(question) -> Promise<{text, evidence, created_at}> | null（关闭次级通道）
 //   demo : true 时所有产出标注「示例」
+//   sectionContexts : 当前报告的动态章节，只包含本次真实研究生成的内容
 //   onCollapseChange(collapsed) : 页面据此调整栅格布局
 export function buildCoachSidebar(options) {
-  const { seedMessages = [], loadGuide, ask, evidence, demo = false } = options;
+  const {
+    seedMessages = [],
+    sectionContexts = [],
+    loadGuide,
+    ask,
+    evidence,
+    demo = false,
+  } = options;
   const wrap = el("div", "coach-side");
   const panel = el("aside", "panel coach-panel glossary-scope");
   wrap.appendChild(panel);
 
   // header
   const head = el("div", "coach-head");
-  head.appendChild(el(
+  const headTitle = el(
     "div",
     "coach-head-title",
-    `<strong>🎓 AI 金融陪练</strong><small>基于本次报告证据讲解 · 不构成投资建议</small>`,
-  ));
+    "<strong>🎓 AlphaBit Coach 陪练</strong>",
+  );
+  const readingLabel = el("small", "coach-reading-label", "正在陪练 · 结论速览");
+  headTitle.appendChild(readingLabel);
+  head.appendChild(headTitle);
   const collapseBtn = el("button", "coach-collapse-btn", "⇥");
   collapseBtn.title = "折叠陪练侧边栏";
   head.appendChild(collapseBtn);
   panel.appendChild(head);
+
+  // current report section: deterministic teaching cues from the real view model
+  const contextSlot = el("div", "coach-reading-slot");
+  panel.appendChild(contextSlot);
 
   // guide slot
   panel.appendChild(el("div", "coach-section-label", "研究复盘"));
@@ -234,6 +249,11 @@ export function buildCoachSidebar(options) {
   let quotedText = null;
   const compose = el("div", "coach-compose");
   compose.appendChild(el("div", "coach-section-label", "提问区"));
+  compose.appendChild(el(
+    "p",
+    "coach-quote-hint",
+    "选中左侧报告文字，可带着原文一起提问。",
+  ));
   const quoteBar = el("div", "coach-quotebar");
   quoteBar.style.display = "none";
   const setQuote = (text) => {
@@ -276,6 +296,49 @@ export function buildCoachSidebar(options) {
   compose.append(quoteBar, modeBar, inputBar);
   panel.appendChild(compose);
   applyMode("coach");
+
+  const contexts = new Map(
+    sectionContexts
+      .filter((item) => item && item.id)
+      .map((item) => [item.id, item]),
+  );
+  let currentContextId = "";
+  const setContext = (id) => {
+    const context = contexts.get(id) || sectionContexts[0];
+    if (!context || (currentContextId === context.id && contextSlot.childElementCount)) return;
+    currentContextId = context.id;
+    readingLabel.textContent = `正在陪练 · ${context.label}`;
+    contextSlot.innerHTML = "";
+    const card = el("section", "coach-reading-card");
+    const rows = [
+      ["一句话读懂", context.summary],
+      ["本节学习重点", context.learningFocus],
+      ["常见误区", context.misconception],
+    ].filter(([, value]) => value);
+    rows.forEach(([label, value]) => {
+      const row = el("div", "coach-reading-row");
+      row.appendChild(el("strong", "", esc(label)));
+      row.appendChild(el("p", "", esc(value)));
+      card.appendChild(row);
+    });
+    const questions = (context.questions || []).filter(Boolean).slice(0, 3);
+    if (questions.length) {
+      const questionWrap = el("div", "coach-reading-questions");
+      questionWrap.appendChild(el("strong", "", "相关追问建议"));
+      questions.forEach((question) => {
+        const chip = el("button", "coach-reading-question", esc(question));
+        chip.type = "button";
+        chip.addEventListener("click", () => {
+          input.value = question;
+          input.focus();
+        });
+        questionWrap.appendChild(chip);
+      });
+      card.appendChild(questionWrap);
+    }
+    contextSlot.appendChild(card);
+  };
+  setContext(sectionContexts[0]?.id);
 
   let busy = false;
   const fire = () => {
@@ -367,7 +430,7 @@ export function buildCoachSidebar(options) {
   fab.addEventListener("click", () => setCollapsed(false));
 
   requestAnimationFrame(toBottom);
-  return { root: wrap, setQuote };
+  return { root: wrap, setQuote, setContext };
 }
 
 // ---- selection quoting（类 IDE「add selection to chat」）-----------------------
