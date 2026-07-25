@@ -141,6 +141,11 @@ portfolio adapter loads only the pinned `scripts/stress_liquidity.py` entrypoint
 and calls `analyze` with caller-supplied holdings; it never invokes the
 upstream CLI or demo dataset.
 
+Reviewed snapshots of Macro Monitor and Event Risk Alert are committed under
+`vendor/quantskills`. Application startup verifies their pinned hashes and
+copies only a missing runtime directory into `QUANTSKILLS_HOME`. Startup never
+downloads Skill code and never overwrites an existing runtime directory.
+
 ## Install
 
 ```powershell
@@ -148,7 +153,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Installs only the six fixed, pinned repositories and refreshes skills.lock.json.
+# Optional setup/refresh path for all six fixed, pinned repositories.
 python scripts\install_selected_skills.py
 
 $env:ARK_API_KEY = "your-volcano-ark-key"
@@ -182,7 +187,9 @@ deterministic presentations of the same response; no research evidence is
 generated in the browser.
 
 The default runtime directory is `AlphaOS/.runtime_skills`, which is ignored
-by Git. Override it with an absolute path or a path relative to `AlphaOS`:
+by Git. Macro Monitor and Event Risk Alert are bootstrapped there automatically
+from the bundled, hash-verified snapshots. Override the runtime directory with
+an absolute path or a path relative to `AlphaOS`:
 
 ```powershell
 $env:QUANTSKILLS_HOME = "D:\runtime\quantskills"
