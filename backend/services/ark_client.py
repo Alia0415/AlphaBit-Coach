@@ -12,7 +12,7 @@ import random
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from dotenv import load_dotenv
 from openai import APIConnectionError, APIStatusError, DefaultHttpxClient, OpenAI
@@ -73,6 +73,8 @@ class ArkTextRequest(BaseModel):
     execution_id: str | None = None
     step_id: str | None = None
     attempt: int = 1
+    response_format: Literal["text", "json_object"] = "text"
+    thinking_mode: Literal["enabled", "disabled"] | None = None
 
 
 class ArkJsonRequest(BaseModel, Generic[T]):
@@ -90,6 +92,7 @@ class ArkJsonRequest(BaseModel, Generic[T]):
     step_id: str | None = None
     attempt: int = 1
     allow_repair: bool = True
+    thinking_mode: Literal["enabled", "disabled"] | None = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -210,6 +213,12 @@ class ArkClient:
                 }
                 if request.max_output_tokens is not None:
                     request_options["max_tokens"] = request.max_output_tokens
+                if request.response_format == "json_object":
+                    request_options["response_format"] = {"type": "json_object"}
+                if request.thinking_mode is not None:
+                    request_options["extra_body"] = {
+                        "thinking": {"type": request.thinking_mode}
+                    }
                 response = self._client.chat.completions.create(
                     **request_options,
                 )
@@ -305,6 +314,8 @@ class ArkClient:
             execution_id=request.execution_id,
             step_id=request.step_id,
             attempt=request.attempt,
+            response_format="json_object",
+            thinking_mode=request.thinking_mode,
         )
         response = self.chat_text(text_request, budget_remaining_seconds)
         raw_text = response.text.strip()
@@ -349,6 +360,8 @@ class ArkClient:
                 execution_id=request.execution_id,
                 step_id=request.step_id,
                 attempt=request.attempt + 1,
+                response_format="json_object",
+                thinking_mode=request.thinking_mode,
             )
             try:
                 repair_response = self.chat_text(

@@ -47,8 +47,10 @@ def _plan() -> ExecutionPlan:
 class FakeArkClient:
     def __init__(self, payload: dict | Exception) -> None:
         self.payload = payload
+        self.requests = []
 
     def chat_json(self, request):
+        self.requests.append(request)
         if isinstance(self.payload, Exception):
             raise self.payload
         return request.response_model.model_validate(self.payload)
@@ -79,22 +81,22 @@ def test_colloquial_query_is_rewritten_with_one_light_clarification() -> None:
 
 def test_professional_query_proceeds_unchanged_without_confirmation() -> None:
     original = "分析贵州茅台（600519.SH）近三个财年的盈利能力与财务质量"
-    refiner = ResearchQueryRefiner(
-        FakeArkClient(
-            {
-                "rewritten_query": "模型不应静默替换这个专业问题",
-                "requires_confirmation": False,
-                "need_clarification": False,
-                "clarification_type": None,
-            }
-        )
+    ark = FakeArkClient(
+        {
+            "rewritten_query": "模型不应静默替换这个专业问题",
+            "requires_confirmation": False,
+            "need_clarification": False,
+            "clarification_type": None,
+        }
     )
+    refiner = ResearchQueryRefiner(ark)
 
     result = refiner.refine(original)
 
     assert result.rewritten_query == original
     assert result.requires_confirmation is False
     assert result.options == []
+    assert ark.requests[0].thinking_mode == "disabled"
 
 
 def test_refiner_failure_is_explicit_and_safe() -> None:
