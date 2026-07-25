@@ -81,6 +81,9 @@ _DIMENSION_PROMPT_TEMPLATE = """你是 AlphaOS TaskInterpreter 的维度分析�
 - "财报分析""基本面"→ focused，仅 company_fundamentals
 - "财务质量""盈利质量""利润质量""盈余质量"→ focused，同时包含
   company_fundamentals 与 risk_assessment，由事实研究和独立审查协作
+- 单公司同时要求"成长性/成长能力/增长能力/业绩增长"和"估值/估值水平/贵不贵"
+  → focused，同时包含 company_fundamentals、industry_competition、
+  quantitative_cross_check 与 risk_assessment
 - "行业研究""竞争格局"→ focused，仅 industry_competition
 - "事件风险""风险扫描"→ focused，仅 risk_assessment
 - "宏观分析""经济环境"→ focused，仅 macro_environment
@@ -202,6 +205,23 @@ class TaskInterpreter:
                 request_scope = "focused"
                 required_dimensions = [
                     "company_fundamentals",
+                    "risk_assessment",
+                ]
+                optional_dimensions = [
+                    dimension
+                    for dimension in optional_dimensions
+                    if dimension not in required_dimensions
+                ]
+            elif _requires_growth_valuation_review(
+                task_type,
+                subject_type,
+                lowered,
+            ):
+                request_scope = "focused"
+                required_dimensions = [
+                    "company_fundamentals",
+                    "industry_competition",
+                    "quantitative_cross_check",
                     "risk_assessment",
                 ]
                 optional_dimensions = [
@@ -461,6 +481,8 @@ _FINANCIAL_QUALITY_REVIEW = (
     "利润质量",
     "盈余质量",
 )
+_GROWTH_REVIEW = ("成长性", "成长能力", "增长能力", "业绩增长")
+_VALUATION_REVIEW = ("估值", "估值水平", "贵不贵")
 
 # Comprehensive triggers
 _COMPREHENSIVE_TRIGGERS = (
@@ -477,6 +499,19 @@ def _requires_financial_quality_review(
         subject_type == "company"
         and task_type == "company_research"
         and any(marker in lowered for marker in _FINANCIAL_QUALITY_REVIEW)
+    )
+
+
+def _requires_growth_valuation_review(
+    task_type: TaskType,
+    subject_type: SubjectType,
+    lowered: str,
+) -> bool:
+    return (
+        subject_type == "company"
+        and task_type == "company_research"
+        and any(marker in lowered for marker in _GROWTH_REVIEW)
+        and any(marker in lowered for marker in _VALUATION_REVIEW)
     )
 
 
@@ -506,6 +541,14 @@ def _deterministic_dimensions(
 
     if _requires_financial_quality_review(task_type, subject_type, lowered):
         return "focused", ["company_fundamentals", "risk_assessment"]
+
+    if _requires_growth_valuation_review(task_type, subject_type, lowered):
+        return "focused", [
+            "company_fundamentals",
+            "industry_competition",
+            "quantitative_cross_check",
+            "risk_assessment",
+        ]
 
     explicit_dimensions: list[ResearchDimension] = []
     for dimension, markers in (
