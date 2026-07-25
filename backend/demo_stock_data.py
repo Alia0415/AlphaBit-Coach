@@ -28,10 +28,28 @@ DEMO_STOCK_CONFIG: dict[str, dict[str, float]] = {
 }
 
 
+def _demo_config(symbol: str) -> dict[str, float] | None:
+    configured = DEMO_STOCK_CONFIG.get(symbol)
+    if configured is not None:
+        return configured
+    if len(symbol) != 9 or symbol[6:] not in {".SH", ".SZ"}:
+        return None
+    try:
+        numeric = int(symbol[:6])
+    except ValueError:
+        return None
+    return {
+        "base": 8.0 + (numeric % 24_000) / 100,
+        "trend": ((numeric % 19) - 9) / 12_000,
+        "phase": (numeric % 31) / 5,
+        "volume": float(8_000_000 + (numeric % 72_000_000)),
+    }
+
+
 def demo_daily_rows(symbol: str) -> list[dict[str, float | str]]:
     """Return a fixed set of weekday OHLCV rows for a supported symbol."""
 
-    config = DEMO_STOCK_CONFIG.get(symbol)
+    config = _demo_config(symbol)
     if config is None:
         return []
     days = _weekdays_ending(DEMO_END_DATE, 390)
@@ -67,7 +85,7 @@ def demo_daily_rows(symbol: str) -> list[dict[str, float | str]]:
 def demo_intraday_rows(symbol: str) -> list[dict[str, float | int]]:
     """Return one fixed trading day with 240 one-minute close/volume points."""
 
-    config = DEMO_STOCK_CONFIG.get(symbol)
+    config = _demo_config(symbol)
     if config is None:
         return []
     daily = demo_daily_rows(symbol)

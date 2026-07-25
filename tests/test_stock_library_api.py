@@ -15,11 +15,19 @@ def test_default_stock_list_endpoint_succeeds() -> None:
 
     assert response.status_code == 200
     stocks = response.json()["stocks"]
-    assert len(stocks) == 10
+    assert len(stocks) == 38
     assert stocks[0] == {
-        "symbol": "000001.SZ",
-        "name": "平安银行",
-        "market": "SZ",
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "market": "SH",
+        "board": "沪市主板",
+    }
+    assert {stock["board"] for stock in stocks} == {
+        "沪市主板",
+        "深市主板",
+        "创业板",
+        "科创板",
+        "宽基指数",
     }
 
 
@@ -35,8 +43,22 @@ def test_search_by_default_stock_name_succeeds() -> None:
 
     assert response.status_code == 200
     assert response.json()["stocks"] == [
-        {"symbol": "600519.SH", "name": "贵州茅台", "market": "SH"}
+        {
+            "symbol": "600519.SH",
+            "name": "贵州茅台",
+            "market": "SH",
+            "board": "沪市主板",
+        }
     ]
+
+
+def test_search_by_board_returns_board_members() -> None:
+    response = client.get("/api/stocks/search", params={"q": "科创板"})
+
+    assert response.status_code == 200
+    stocks = response.json()["stocks"]
+    assert len(stocks) == 8
+    assert {stock["board"] for stock in stocks} == {"科创板"}
 
 
 def test_search_unknown_stock_returns_empty_list() -> None:
