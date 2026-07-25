@@ -12,22 +12,22 @@ client = TestClient(app)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_frontend_entrypoint_is_served() -> None:
-    response = client.get("/")
+def test_root_redirects_to_office_entrypoint() -> None:
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code in (307, 308)
+    assert response.headers["location"] == "/office"
+
+
+def test_office_entrypoint_is_served() -> None:
+    response = client.get("/office")
 
     assert response.status_code == 200
-    assert "<title>AlphaOS · AI 投资研究操作系统</title>" in response.text
+    assert "<title>AlphaBit Coach · AI 投资研究操作系统</title>" in response.text
     assert '<link rel="icon" href="data:," />' in response.text
     assert 'href="/static/office/css/office.css?v=' in response.text
     assert 'src="/static/office/js/app.js?v=' in response.text
     assert "Research Console" not in response.text
-
-
-def test_office_path_redirects_to_primary_root_entrypoint() -> None:
-    response = client.get("/office", follow_redirects=False)
-
-    assert response.status_code in (307, 308)
-    assert response.headers["location"] == "/"
 
 
 def test_frontend_assets_are_served() -> None:
@@ -143,3 +143,16 @@ def test_office_capability_pages_do_not_render_runtime_internals() -> None:
     assert "后端拒绝" not in source
     assert "配置 ARK 凭证" not in source
     assert "Skill 来源" not in source
+
+
+def test_office_separates_current_report_from_history() -> None:
+    source = (REPO_ROOT / "frontend" / "office" / "js" / "app.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert '{ route: "tasks", ico: "🗂", label: "任务中心" }' not in source
+    assert 'el("button", "pill", "🕘 历史记录")' in source
+    assert "Promise.all([fetchTasks(), fetchReports()])" in source
+    assert "实时报告库" not in source
+    assert "rememberCurrentReport(finalReport);" in source
+    assert 'navigate("reports", finalReport);' in source

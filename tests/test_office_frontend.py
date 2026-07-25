@@ -19,13 +19,14 @@ def test_office_keeps_only_backend_supported_navigation() -> None:
     script = response.text
     for label in (
         "投研大厅",
-        "任务中心",
         "专家中心",
         "研究报告",
         "用户画像",
         "研究能力",
     ):
         assert f'label: "{label}"' in script
+    assert 'label: "任务中心"' not in script
+    assert 'el("button", "pill", "🕘 历史记录")' in script
     for label in ("数据市场", "策略库", "监控看板", "知识库", "帮助中心"):
         assert f'label: "{label}"' not in script
 

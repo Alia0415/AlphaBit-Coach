@@ -1,4 +1,9 @@
-// AlphaOS backend API client. Demo mode reads mock.js instead of this file.
+// AlphaBit Coach backend API client. Demo mode reads mock.js instead of this file.
+
+// Manager planning may include model retries and can legitimately exceed the
+// generic request timeout. Keep the browser waiting while the backend owns the
+// authoritative task state instead of showing a false failure at 90 seconds.
+const PLANNING_TIMEOUT_MS = 300000;
 
 // Same-origin by default (FastAPI serves the office at /office). A different
 // backend origin can be pinned via localStorage for standalone hosting.
@@ -80,12 +85,12 @@ export const api = {
 
   // planning session / clarify (real Manager planning; consumes model quota)
   createSession: (prompt) =>
-    postJSON("/api/tasks/sessions", { prompt }, { timeoutMs: 90000 }),
+    postJSON("/api/tasks/sessions", { prompt }, { timeoutMs: PLANNING_TIMEOUT_MS }),
   clarifySession: (taskId, answers) =>
     postJSON(
       `/api/tasks/${encodeURIComponent(taskId)}/clarify`,
       { answers },
-      { timeoutMs: 90000 },
+      { timeoutMs: PLANNING_TIMEOUT_MS },
     ),
   // Absolute URL for the SSE execution stream (EventSource cannot use fetch).
   streamUrl: (taskId) =>
