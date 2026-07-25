@@ -135,6 +135,45 @@ def test_quant_computation_is_not_described_as_validated_or_profitable() -> None
     assert aggregation.direct_answer.confidence == "low"
 
 
+def test_aggregator_adds_quant_decision_calibration_block() -> None:
+    plan = _plan(["research", "quant"], intent="multidimensional_research")
+    result = _result(
+        "quant_2",
+        "quant",
+        summary="完成量化决策校验。",
+        evidence=[
+            {
+                "type": "quant_thesis_validation",
+                "claim_id": "research_1:summary",
+                "claim_source_step": "research_1",
+                "claim_text": "公司的竞争优势正在扩大。",
+                "claim_direction": "positive",
+                "assessment": "mixed",
+                "assessment_scope": "historical_market_alignment",
+                "metric_ids": ["period_return", "return_20d"],
+                "reason": "不同时间窗口的收益方向不一致。",
+                "text": "历史市场表现对该观点提供混合证据。",
+                "validation_status": "historical_computation",
+            }
+        ],
+    )
+
+    aggregation = ResultAggregator().aggregate(
+        "综合研究并进行量化校验",
+        plan,
+        {"quant_2": result},
+    )
+
+    block = next(
+        item
+        for item in aggregation.content_blocks
+        if item.title == "量化决策校验"
+    )
+    assert block.type == "finding_cards"
+    assert block.source_steps == ["quant_2"]
+    assert block.data["items"][0]["assessment"] == "mixed"
+
+
 def test_risk_only_does_not_create_quant_or_research_content() -> None:
     plan = _plan(["risk"], intent="risk_review")
     result = _result(

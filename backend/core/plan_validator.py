@@ -95,7 +95,11 @@ def _validate_step_contract(
 _DOSSIER_SCOPES = {"financials", "financial_risk", "full_dossier"}
 _MARKET_FIELDS = {"trade_date", "symbol", "close", "volume"}
 _A_SHARE_SYMBOL = re.compile(r"^\d{6}\.(?:SH|SZ)$")
-_QUANT_ANALYSIS_MODES = {"historical_cross_check", "skill_research"}
+_QUANT_ANALYSIS_MODES = {
+    "historical_cross_check",
+    "thesis_validation",
+    "skill_research",
+}
 
 
 def _validate_research_inputs(step: PlanStep) -> None:
@@ -168,12 +172,18 @@ def _validate_quant_inputs(step: PlanStep) -> None:
         raise PlanValidationError(
             f"Quant step {step.id} has unsupported analysis_mode: {mode}"
         )
-    if "quantitative_cross_check" in step.covers_dimensions and (
-        mode != "historical_cross_check"
-    ):
+    if "quantitative_cross_check" in step.covers_dimensions and mode not in {
+        "historical_cross_check",
+        "thesis_validation",
+    }:
         raise PlanValidationError(
             f"Quant cross-check step {step.id} requires "
-            "analysis_mode=historical_cross_check"
+            "analysis_mode=historical_cross_check or thesis_validation"
+        )
+    if mode == "thesis_validation" and not step.all_dependency_step_ids():
+        raise PlanValidationError(
+            f"Quant thesis-validation step {step.id} requires an upstream "
+            "dependency"
         )
 
 
