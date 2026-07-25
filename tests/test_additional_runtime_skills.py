@@ -8,7 +8,6 @@ from typing import Any
 import pytest
 
 from backend.agents.risk_agent import RiskAgent
-from backend.core.agent_registry import AgentRegistry
 from backend.core.contracts import AgentId, ExpertTask
 from backend.services.ark_client import ArkClientError
 from backend.skills.contracts import SkillInvocation, SkillStatus
@@ -91,39 +90,6 @@ def additional_runtime(tmp_path: Path) -> tuple[Path, Path, Path]:
         owner="risk",
         mode="instruction",
         extra_hashes={"references/event-risk-alert-guide.md": event_guide},
-    )
-
-    portfolio_root = runtime / "skill-portfolio-liquidity-stress-test"
-    script_dir = portfolio_root / "scripts"
-    script_dir.mkdir(parents=True)
-    portfolio_script = script_dir / "stress_liquidity.py"
-    portfolio_script.write_text(
-        """
-def analyze(rows, participation, volume_shock, horizon_days, eta, redemption_value):
-    details = [
-        {
-            "symbol": row["symbol"],
-            "days_to_liquidate": 2.0,
-            "horizon_liquidated_ratio": 1.0,
-        }
-        for row in rows
-    ]
-    return {"rows": len(rows), "symbols": len(rows), "details": details}
-
-def build_report(result):
-    return {"status": "pass", "domain_result": result, "limitations": []}
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-    lock["skills"]["portfolio_liquidity_stress"] = _lock_entry(
-        repository="quantskills/skill-portfolio-liquidity-stress-test",
-        commit="fe7a958611aa7ed8f05a49d7f63fa8afd036acf8",
-        license_name="GPL-3.0-only",
-        entrypoint="scripts/stress_liquidity.py",
-        entrypoint_path=portfolio_script,
-        owner="portfolio",
-        mode="executable",
     )
 
     lock_path = tmp_path / "skills.lock.json"
@@ -238,56 +204,28 @@ def test_risk_agent_runs_event_skill_and_real_client_boundary(
     assert any("公告原文" in item for item in result.limitations)
 
 
-def test_portfolio_skill_uses_only_caller_holdings(
+def test_removed_portfolio_skill_is_not_allowlisted(
     additional_runtime: tuple[Path, Path, Path],
 ) -> None:
     result = _registry(additional_runtime).execute(
         SkillInvocation(
-            invocation_id="portfolio-invocation",
+            invocation_id="removed-portfolio-skill",
             skill_id="portfolio_liquidity_stress",
             agent="portfolio",
-            objective="stress portfolio liquidity",
-            inputs={
-                "holdings": [
-                    {
-                        "symbol": "600519.SH",
-                        "position_value": 1_000_000,
-                        "adv": 50_000_000,
-                        "spread_bps": 8,
-                        "volatility": 0.03,
-                    }
-                ],
-                "horizon_days": 5,
-            },
-        )
-    )
-
-    assert result.status == SkillStatus.COMPLETED
-    assert result.data["validation_status"] == "scenario_estimate_not_validated"
-    assert result.evidence[0]["symbol"] == "600519.SH"
-    assert {item["symbol"] for item in result.evidence} == {"600519.SH"}
-
-
-def test_portfolio_skill_rejects_missing_holdings(
-    additional_runtime: tuple[Path, Path, Path],
-) -> None:
-    result = _registry(additional_runtime).execute(
-        SkillInvocation(
-            invocation_id="portfolio-missing",
-            skill_id="portfolio_liquidity_stress",
-            agent="portfolio",
-            objective="stress portfolio liquidity",
+            objective="attempt removed portfolio capability",
             inputs={},
         )
     )
 
     assert result.status == SkillStatus.FAILED
-    assert "holdings" in (result.error or "")
+    assert "allowlist" in (result.error or "")
 
 
-def test_portfolio_capability_is_deployed_but_expert_remains_disabled() -> None:
-    definition = AgentRegistry().get(AgentId.PORTFOLIO)
-
-    assert definition.enabled is False
-    assert definition.tools == ("portfolio_liquidity_stress",)
-    assert AgentId.PORTFOLIO not in AgentRegistry().ids(enabled_only=True)
+def test_agent_contract_has_no_portfolio_member() -> None:
+    assert {agent.value for agent in AgentId} == {
+        "research",
+        "quant",
+        "risk",
+        "macro",
+        "report",
+    }

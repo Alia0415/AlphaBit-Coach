@@ -369,11 +369,6 @@ async def set_expert_enabled(
         expert = AgentId(agent_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="未知专家") from exc
-    if expert == AgentId.PORTFOLIO and request.enabled:
-        raise HTTPException(
-            status_code=409,
-            detail="Portfolio 专家没有运行实现，暂不可启用。",
-        )
     store.set_override(expert.value, request.enabled)
     _rebuild_experts()
     definition = build_registry(store).get(expert)
