@@ -612,6 +612,106 @@ def test_quant_cross_check_requires_peer_pool_for_cross_section() -> None:
     assert "至少需要两个 symbol" in result.error
 
 
+def test_quant_thesis_validation_calibrates_upstream_claim() -> None:
+    selection = json.dumps(
+        {
+            "claims": [
+                {
+                    "claim_id": "research_1:summary",
+                    "direction": "positive",
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    panda = MockPandaData(_market_rows(("002594.SZ",)))
+    agent = QuantAgent(
+        ark_client=MockArk(selection),
+        data_client=panda,
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+    task = _quant_task(
+        {
+            "analysis_mode": "thesis_validation",
+            "symbols": ["002594.SZ"],
+            "start_date": "20240101",
+            "end_date": "20240125",
+        }
+    )
+    task.dependency_results = {
+        "research_1": ExpertResult(
+            task_id="research_1",
+            agent=AgentId.RESEARCH,
+            status="completed",
+            summary="公司的竞争优势正在扩大。",
+        )
+    }
+
+    result = agent.execute(task)
+
+    assert result.status == "completed"
+    assert len(panda.calls) == 1
+    assert result.metadata["execution_path"] == "thesis_validation"
+    validations = [
+        item
+        for item in result.evidence
+        if item["type"] == "quant_thesis_validation"
+    ]
+    assert len(validations) == 1
+    assert validations[0]["claim_source_step"] == "research_1"
+    assert validations[0]["claim_text"] == "公司的竞争优势正在扩大。"
+    assert validations[0]["assessment"] == "aligned"
+    assert validations[0]["assessment_scope"] == "historical_market_alignment"
+    assert "period_return" in validations[0]["metric_ids"]
+
+
+def test_quant_thesis_validation_falls_back_to_bounded_dependency_summary() -> None:
+    unknown_selection = json.dumps(
+        {
+            "claims": [
+                {
+                    "claim_id": "invented:claim",
+                    "direction": "positive",
+                }
+            ]
+        }
+    )
+    agent = QuantAgent(
+        ark_client=MockArk(unknown_selection),
+        data_client=MockPandaData(_market_rows(("002594.SZ",))),
+        skill_registry=SkillRegistry(register_default_adapters=False),
+    )
+    task = _quant_task(
+        {
+            "analysis_mode": "thesis_validation",
+            "symbols": ["002594.SZ"],
+            "start_date": "20240101",
+            "end_date": "20240125",
+        }
+    )
+    task.dependency_results = {
+        "macro_1": ExpertResult(
+            task_id="macro_1",
+            agent=AgentId.MACRO,
+            status="completed",
+            summary="流动性环境仍存在不确定性。",
+        )
+    }
+
+    result = agent.execute(task)
+
+    validation = next(
+        item
+        for item in result.evidence
+        if item["type"] == "quant_thesis_validation"
+    )
+    assert result.status == "completed"
+    assert validation["claim_id"] == "macro_1:summary"
+    assert validation["claim_direction"] == "neutral"
+    assert validation["assessment"] == "inconclusive"
+    assert result.metadata["claim_selection_fallback_used"] is True
+
+
 def test_quant_agent_repairs_false_market_data_skill_clarification() -> None:
     r020_adapter = StubAdapter(
         {

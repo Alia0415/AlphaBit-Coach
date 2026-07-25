@@ -256,6 +256,9 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
   必须要求澄清，不能猜测。因子创意任务不要求先获取市场数据；
 - Quant 的普通历史收益、波动、回撤、成交量与横截面交叉验证，inputs 必须设置
   analysis_mode=historical_cross_check，并提取 symbols、start_date、end_date；
+- 当综合研究需要用历史市场证据校准 Research 或 Macro 的上游结论时，Quant inputs
+  设置 analysis_mode=thesis_validation，并对需要读取的上游步骤声明 dependency；
+  该模式只评估历史市场一致性，不得声称价格表现证明基本面或预测未来收益；
   明确的因子创意或 R020 研究设置 analysis_mode=skill_research，由 Quant 自行动态
   选择授权 Skill。analysis_mode 只描述分析目标，不得写入任何 Skill ID；
 - 不得因为 Quant 可用就强制加入所有任务，也不得为 Quant 任务自动追加 risk 或

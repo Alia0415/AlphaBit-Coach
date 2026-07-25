@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +49,8 @@ class CrossCheckResult:
 
 
 ConsistencyLabel = Literal["supports", "conflicts", "inconclusive"]
+ClaimDirection = Literal["positive", "negative", "risk", "neutral"]
+MarketAlignmentLabel = Literal["aligned", "divergent", "mixed", "inconclusive"]
 
 
 @dataclass
@@ -60,6 +62,16 @@ class ConsistencyCheck:
     quant_evidence: str
     label: ConsistencyLabel
     reason: str
+
+
+@dataclass
+class MarketAlignment:
+    """Historical market alignment for one bounded upstream claim."""
+
+    assessment: MarketAlignmentLabel
+    reason: str
+    metric_ids: list[str]
+    falsification_conditions: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +311,62 @@ def assess_consistency(
         quant_evidence=evidence_summary,
         label="inconclusive",
         reason="量化证据可供参考，但不能独立验证定性判断",
+    )
+
+
+def assess_market_alignment(
+    direction: ClaimDirection,
+    quant_results: list[CrossCheckResult],
+) -> MarketAlignment:
+    """Compare an explicit claim direction with historical return windows."""
+
+    returns = [
+        item
+        for item in quant_results
+        if item.metric_id
+        in {"period_return", "return_20d", "return_60d", "return_120d"}
+        and item.value is not None
+        and item.value != 0
+    ]
+    metric_ids = [item.metric_id for item in returns]
+    if direction in {"neutral", "risk"}:
+        return MarketAlignment(
+            assessment="inconclusive",
+            reason="历史价格和风险指标只能提供背景，不能验证该类定性观点。",
+            metric_ids=metric_ids,
+            falsification_conditions=["补充与该观点直接对应的基本面或宏观指标。"],
+        )
+    if not returns:
+        return MarketAlignment(
+            assessment="inconclusive",
+            reason="有效收益窗口不足，无法判断历史市场方向是否一致。",
+            metric_ids=[],
+            falsification_conditions=["补充更长且口径一致的历史行情窗口。"],
+        )
+
+    signs = {1 if item.value and item.value > 0 else -1 for item in returns}
+    if len(signs) > 1:
+        return MarketAlignment(
+            assessment="mixed",
+            reason="不同时间窗口的历史收益方向不一致，结论具有窗口敏感性。",
+            metric_ids=metric_ids,
+            falsification_conditions=["观察后续多个窗口是否收敛到同一方向。"],
+        )
+
+    observed = next(iter(signs))
+    expected = 1 if direction == "positive" else -1
+    if observed == expected:
+        return MarketAlignment(
+            assessment="aligned",
+            reason="可用历史收益窗口的方向与该观点方向一致。",
+            metric_ids=metric_ids,
+            falsification_conditions=["若多个观察窗口转向相反方向，一致性将减弱。"],
+        )
+    return MarketAlignment(
+        assessment="divergent",
+        reason="可用历史收益窗口的方向与该观点方向相反。",
+        metric_ids=metric_ids,
+        falsification_conditions=["需要新的直接证据解释定性观点与市场表现的背离。"],
     )
 
 
