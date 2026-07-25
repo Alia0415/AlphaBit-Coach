@@ -8,7 +8,13 @@ from unittest.mock import patch
 
 import pytest
 
-from backend.agents.macro_agent import MacroAgent
+from backend.agents.macro_agent import (
+    MAX_CATALOG_ROWS,
+    MacroAgent,
+    MacroDataPlan,
+    _bound_catalog,
+    _selection_prompt,
+)
 from backend.agents.manager_agent import ManagerAgent
 from backend.core.agent_registry import AgentRegistry
 from backend.core.contracts import AgentId, ExpertTask
@@ -249,6 +255,37 @@ def test_macro_agent_uses_dynamic_pandadata_evidence_and_returns_contract() -> N
     assert any(
         call["tool"] == "pandadata_macro_data" for call in result.tool_calls
     )
+
+
+def test_macro_selection_catalog_is_bounded_and_excludes_verbose_notes() -> None:
+    rows = [
+        {
+            "symbol": f"CI{index:07d}",
+            "name": f"指标{index}",
+            "en_name": f"Indicator {index}",
+            "frequency": "月",
+            "unit": "%",
+            "importance": "重要",
+            "info_source": "source",
+            "note_text": f"VERBOSE_NOTE_{index}_" + ("x" * 2_000),
+            "end_date": "20260630",
+            "is_update": "1",
+            "api_name": "get_macro_ci",
+        }
+        for index in range(MAX_CATALOG_ROWS + 50)
+    ]
+    plan = MacroDataPlan(
+        categories=["CI"],
+        indicator_search_terms=["指标"],
+    )
+
+    candidates = _bound_catalog(rows, plan)
+    prompt = _selection_prompt(macro_task(), candidates)
+
+    assert len(candidates) == MAX_CATALOG_ROWS
+    assert "VERBOSE_NOTE_" not in prompt
+    assert f"CI{MAX_CATALOG_ROWS - 1:07d}" in prompt
+    assert f"CI{MAX_CATALOG_ROWS:07d}" not in prompt
 
 
 def valid_analysis() -> dict[str, Any]:

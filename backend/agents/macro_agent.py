@@ -25,7 +25,7 @@ from backend.skills.contracts import SkillInvocation, SkillStatus
 from backend.skills.skill_registry import SkillRegistry
 
 HISTORICAL_MONTHS = 24
-MAX_CATALOG_ROWS = 500
+MAX_CATALOG_ROWS = 80
 MAX_RECENT_OBSERVATIONS = 6
 SERIES_FIELDS = ["symbol", "period_date", "data_value"]
 
@@ -40,6 +40,16 @@ CATALOG_FIELDS = [
     "note_text",
     "end_date",
     "is_update",
+    "api_name",
+]
+SELECTION_CATALOG_FIELDS = [
+    "symbol",
+    "name",
+    "en_name",
+    "frequency",
+    "unit",
+    "importance",
+    "end_date",
     "api_name",
 ]
 
@@ -669,6 +679,10 @@ def _selection_prompt(
         "research_goal": task.inputs.get("research_goal"),
     }
     schema = MacroIndicatorSelection.model_json_schema()
+    prompt_candidates = [
+        {key: row.get(key) for key in SELECTION_CATALOG_FIELDS}
+        for row in candidates[:MAX_CATALOG_ROWS]
+    ]
     return f"""{_role_prompt()}
 
 阶段 2：宏观指标选择。
@@ -676,7 +690,7 @@ def _selection_prompt(
 symbol 必须与候选完全一致，不得虚构或改写。给出每个指标的选择理由。
 
 候选指标目录：
-{json.dumps(candidates, ensure_ascii=False)}
+{json.dumps(prompt_candidates, ensure_ascii=False)}
 
 任务上下文：
 {json.dumps(context, ensure_ascii=False)}
