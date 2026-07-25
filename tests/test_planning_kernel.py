@@ -218,6 +218,7 @@ def test_manager_uses_structured_json_for_initial_plan() -> None:
     assert len(client.json_requests) == 1
     assert client.json_requests[0].response_model is ExecutionPlan
     assert client.json_requests[0].purpose == "manager_plan"
+    assert client.json_requests[0].thinking_mode == "disabled"
     assert len(client.prompts) == 1
 
 
@@ -821,6 +822,10 @@ def test_executor_strictly_follows_different_plans() -> None:
     assert executed == ["research", "report"]
     assert list(single_results) == ["risk_1"]
     assert list(chain_results) == ["research_1", "report_1"]
+
+
+def test_executor_uses_langgraph_runtime() -> None:
+    assert WorkflowExecutor.runtime_name == "langgraph"
 
 
 def test_executor_passes_complete_expert_result_to_downstream() -> None:
