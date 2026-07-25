@@ -177,6 +177,31 @@ class TestInterpreterDimensions:
         assert scope == "comprehensive"
         assert set(dims) == set(_COMPREHENSIVE_DEFAULTS)
 
+    @pytest.mark.parametrize(
+        "user_input",
+        [
+            "分析比亚迪 002594.SZ 的基本面、行业竞争、宏观环境、量化表现与主要风险",
+            "分析比亚迪的基本面、行业竞争格局与宏观环境，并评估投资风险",
+        ],
+    )
+    def test_explicit_multidimensional_request_does_not_collapse_to_one_dimension(
+        self,
+        user_input: str,
+    ) -> None:
+        spec = TaskInterpreter().interpret(user_input, _ALLOWED_POLICY)
+
+        assert spec.request_scope == "comprehensive"
+        assert set(spec.required_dimensions) == set(_COMPREHENSIVE_DEFAULTS)
+
+    def test_comprehensive_stock_request_wins_over_quantitative_marker(self) -> None:
+        spec = TaskInterpreter().interpret(
+            "全面分析比亚迪 002594.SZ 的基本面、行业竞争、宏观环境、量化表现与主要风险",
+            _ALLOWED_POLICY,
+        )
+
+        assert spec.request_scope == "comprehensive"
+        assert set(spec.required_dimensions) == set(_COMPREHENSIVE_DEFAULTS)
+
 
 # ---------------------------------------------------------------------------
 # E2E comprehensive flow (spec §15.8)

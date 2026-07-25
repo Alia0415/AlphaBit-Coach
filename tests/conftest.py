@@ -24,8 +24,15 @@ def isolated_store(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "_default_store", test_store)
     try:
         from backend import main as main_module
+        from backend.core.task_interpreter import TaskInterpreter
 
         monkeypatch.setattr(main_module, "store", test_store, raising=False)
+        monkeypatch.setattr(
+            main_module,
+            "task_interpreter",
+            TaskInterpreter(),
+            raising=False,
+        )
     except Exception:
         # Tests that never touch the FastAPI app still get an isolated store.
         pass

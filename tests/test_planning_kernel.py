@@ -155,6 +155,15 @@ def test_registry_exposes_only_enabled_experts_to_manager() -> None:
     assert registry.get(AgentId.QUANT).enabled is True
 
 
+def test_production_task_interpreter_factory_injects_ark_client() -> None:
+    fake_client = object()
+
+    assert hasattr(main_module, "_build_task_interpreter")
+    interpreter = main_module._build_task_interpreter(lambda: fake_client)
+
+    assert interpreter._ark_client is fake_client
+
+
 def test_manager_stops_after_one_invalid_json_repair_attempt() -> None:
     client = MockArkClient("not-json", "still-not-json", "unused")
 
