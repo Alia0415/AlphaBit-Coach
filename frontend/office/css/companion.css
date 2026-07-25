@@ -130,10 +130,9 @@
 }
 
 /* Sticky sidebar context synchronized by the report ScrollSpy */
+/* 尺寸由 office.css 的折叠分区规则接管：展开时按比例分高、有最小高度 */
 .coach-reading-slot {
-  flex: 0 1 auto;
-  max-height: 27%;
-  min-height: 0;
+  flex: 0 0 auto;
   overflow-y: auto;
   padding-right: 3px;
 }
