@@ -83,6 +83,21 @@ export const api = {
   reportFollowup: (id, question) =>
     postJSON(`/api/reports/${encodeURIComponent(id)}/followup`, { question }),
 
+  // AI coach layer (model-backed; generous timeouts for model calls)
+  coachAsk: (id, question, quotedText) =>
+    postJSON(
+      `/api/reports/${encodeURIComponent(id)}/coach`,
+      { question, quoted_text: quotedText || null },
+      { timeoutMs: 90000 },
+    ),
+  coachGuide: (id, refresh = false) =>
+    getJSON(
+      `/api/reports/${encodeURIComponent(id)}/coach/guide${refresh ? "?refresh=true" : ""}`,
+      { timeoutMs: 90000 },
+    ),
+  coachNarrations: (taskId) =>
+    getJSON(`/api/tasks/${encodeURIComponent(taskId)}/coach-narrations`),
+
   // planning session / clarify (real Manager planning; consumes model quota)
   createSession: (prompt) =>
     postJSON("/api/tasks/sessions", { prompt }, { timeoutMs: PLANNING_TIMEOUT_MS }),

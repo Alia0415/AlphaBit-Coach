@@ -296,6 +296,31 @@ create `quant → risk → report`; when only a research summary is requested it
 may create `quant → report`. These are acceptance scenarios, not hardcoded
 routes.
 
+### Coach: ask about a completed report
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/reports/<report_id>/coach" \
+  -H "Content-Type: application/json" \
+  -d "{\"question\":\"净利润率为什么重要？\",\"quoted_text\":\"净利润率保持在 50% 以上\"}"
+```
+
+The coach answers only from the stored report evidence, returns concept notes
+plus cited report excerpts, and every reply is labeled `generated_by: model`.
+Citations that do not appear in the report are rejected with 422; when the
+model service is unavailable the API returns 502 instead of a fabricated
+fallback answer.
+
+### Coach: research review and guided questions
+
+```bash
+curl "http://127.0.0.1:8000/api/reports/<report_id>/coach/guide"
+```
+
+The first call generates the review and guided questions with the model and
+caches them on the report; pass `?refresh=true` to regenerate. Milestone
+narrations for a running task stream as named SSE `coach` events and can be
+replayed with `GET /api/tasks/<task_id>/coach-narrations`.
+
 ## Events and result contracts
 
 `POST /api/tasks` returns the original `plan`, `events`, and `results` plus an
@@ -379,15 +404,13 @@ Currently supported:
 - Quant R020 factor computation
 - Macro environment, policy, cycle, rate, and liquidity analysis
 - Report follow-up Q&A, glossary extraction, plain-language answers, and the
-  expert/simple result views (the shipped part of the coach experience)
-
-Planned but not yet implemented (coach layer):
-
-- Standalone AI financial coach layer between the user and Manager
-- Guided follow-up questioning initiated by the coach
-- Research error correction (evidence gaps, causal misreads, extrapolation)
-- Generated post-task research reviews
-- Knowledge-level–tiered explanations driven by the user profile
+  expert/simple result views
+- AI financial coach on completed reports: evidence-anchored Q&A with optional
+  quoted report text, coach-guided follow-up questions, and generated research
+  reviews (model-labeled, cached per report)
+- Process coaching in the war room: model-generated milestone narrations
+  streamed as SSE `coach` events and replayable through the read-only API
+- Knowledge-level–tiered coach explanations driven by the user profile
 
 Not currently supported:
 
@@ -395,6 +418,8 @@ Not currently supported:
 - Multidimensional IC diagnostics
 - Automatic trading, order placement, or buy/sell recommendations
 - Dynamic execution of unknown GitHub code
+- A coach that plans tasks, joins the expert DAG, or answers without report
+  evidence (the coach reads completed reports, events, and the profile only)
 
 All output is research-only and does not constitute investment advice,
 security recommendations, or a return promise.

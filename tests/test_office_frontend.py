@@ -68,8 +68,34 @@ def test_demo_and_live_reports_share_the_research_presentation_adapter() -> None
     script = client.get("/static/office/js/app.js").text
 
     assert "const researchReport = buildDemoResearchReport(report);" in script
-    assert "layout.appendChild(buildReportMainLive(researchReport));" in script
+    assert "buildReportMainLive(researchReport)" in script
     assert "researchPresentation.buildResearchViewModel" in script
+
+
+def test_office_wires_the_coach_layer_into_reports_and_war_room() -> None:
+    script = client.get("/static/office/js/app.js").text
+    coach_script = client.get("/static/office/js/coach.js").text
+    api_script = client.get("/static/office/js/api.js").text
+    live_script = client.get("/static/office/js/live.js").text
+    mock_script = client.get("/static/office/js/mock.js").text
+    styles = client.get("/static/office/css/office.css").text
+
+    # report pages mount the coach sidebar with IDE-style selection quoting
+    assert "buildCoachSidebar" in script
+    assert "attachSelectionQuoting" in script
+    assert "createClassroomPanel" in script
+    assert 'from "./coach.js?v=' in script
+    # transports: live hits the coach endpoints, demo replays labeled samples
+    assert "coachAsk" in api_script
+    assert "coachGuide" in api_script
+    assert "coachNarrations" in api_script
+    assert 'addEventListener("coach"' in live_script
+    assert "DEMO_COACH" in mock_script
+    # coach output is always labeled by origin and never silently degrades
+    assert "模型生成" in coach_script
+    assert "证据检索 · 未调模型" in coach_script
+    assert ".coach-panel" in styles
+    assert ".classroom-panel" in styles
 
 
 def test_office_versions_the_demo_data_module_import() -> None:
