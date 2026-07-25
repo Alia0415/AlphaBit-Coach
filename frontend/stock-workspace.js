@@ -3,8 +3,8 @@ import {
   StockLibrary,
   normalizeStoredStocks,
   searchStockCatalog,
-} from "./stock-library.js?v=20260726-mono2";
-import { StockChart } from "./stock-chart.js?v=20260726-mono2";
+} from "./stock-library.js?v=20260726-mono3";
+import { StockChart } from "./stock-chart.js?v=20260726-mono3";
 
 export const SELECTED_STOCK_STORAGE_KEY = "alphabit_selected_stock";
 
@@ -202,7 +202,7 @@ export function mountStockChartPage(
   const legend = element(
     "div",
     "stock-chart-legend",
-    "空心涨 · 实心跌　MA5 黑 · MA10 深灰 · MA20 浅灰　成交量",
+    "红涨 · 绿跌　MA5 黑 · MA10 深灰 · MA20 浅灰　成交量",
   );
   chartPanel.append(chartHead, toolbar, chartShell, legend);
 

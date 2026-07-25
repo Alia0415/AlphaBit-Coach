@@ -59,7 +59,7 @@ import {
 import {
   mountStockChartPage,
   mountStockLibraryPage,
-} from "../../stock-workspace.js?v=20260726-mono2";
+} from "../../stock-workspace.js?v=20260726-mono3";
 
 const researchPresentation = globalThis.AlphaResearchPresentation;
 
