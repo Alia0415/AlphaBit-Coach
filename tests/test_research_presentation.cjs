@@ -425,6 +425,41 @@ function reportBundle() {
 }
 
 {
+  // Regression: a live compatibility report can contain real metric cards
+  // while every text candidate is only a generic completion label.
+  const bundle = reportBundle();
+  const aggregation = bundle.report.aggregation;
+  aggregation.direct_answer = {
+    headline: "已完成所需的数据计算",
+    explanation: "营业收入同比为 -9.70%，营业利润同比为 19.24%。",
+    confidence: "medium",
+    stance: "neutral",
+  };
+  aggregation.key_findings = [];
+  aggregation.evidence_summary = [];
+  aggregation.risks = [];
+  aggregation.limitations = [];
+  aggregation.next_research_steps = [];
+  aggregation.technical_evidence.source_results = {
+    research_1: {
+      agent: "research",
+      status: "completed",
+      summary: "300750.SZ 财务分析完成，覆盖 3 个报告期。",
+    },
+  };
+  const vm = buildResearchViewModel(bundle);
+  assert.equal(
+    vm.finalSummary.conclusion.headline,
+    "营业收入同比为 -9.70%，营业利润同比为 19.24%；收入承压但营业利润改善，持续性仍需结合现金流与风险证据验证。",
+  );
+  assert.notEqual(
+    vm.finalSummary.conclusion.headline,
+    "当前证据不足以形成明确判断",
+  );
+  assert.equal(vm.finalSummary.evidence.length, 2);
+}
+
+{
   const bundle = reportBundle();
   const aggregation = bundle.report.aggregation;
   aggregation.direct_answer = {
@@ -441,7 +476,7 @@ function reportBundle() {
   const vm = buildResearchViewModel(bundle);
   assert.equal(
     vm.finalSummary.conclusion.headline,
-    "当前证据不足以形成明确判断",
+    "当前没有足以支持结论的有效证据",
   );
   assert.deepEqual(vm.finalSummary.evidence, []);
   assert.deepEqual(vm.finalSummary.uncertainties, []);

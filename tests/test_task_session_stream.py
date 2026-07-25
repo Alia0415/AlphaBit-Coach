@@ -169,12 +169,19 @@ def test_stream_executes_plan_and_persists_events_and_report() -> None:
     assert "aggregation" in named
     assert named["aggregation"]["completeness"]["completion_ratio"] == 1.0
     assert "report_id" in named["aggregation"]
+    aggregation = named["aggregation"]["aggregation"]
+    assert aggregation["direct_answer"]["headline"] != "已完成所需的数据计算"
+    assert aggregation["key_findings"] or aggregation["evidence_summary"]
     assert named["done"]["status"] == "completed"
 
     detail = client.get(f"/api/tasks/{task_id}").json()
     assert detail["status"] == "completed"
     assert [e["type"] for e in detail["events"]] == execution_types
     assert detail["aggregation"] is not None
+    stored = main_module.store.get_task(task_id)
+    assert stored is not None
+    assert stored["task_spec"]
+    assert aggregation["result_type"] == stored["task_spec"]["task_type"]
 
     reports = client.get("/api/reports").json()
     assert len(reports) == 1

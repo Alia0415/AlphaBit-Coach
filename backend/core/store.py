@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
     plan_json TEXT,
+    task_spec_json TEXT,
     aggregation_json TEXT,
     final_answer TEXT,
     duration_ms INTEGER,
@@ -186,6 +187,10 @@ class Store:
                 "final_query",
                 "ALTER TABLE tasks ADD COLUMN final_query TEXT",
             ),
+            (
+                "task_spec_json",
+                "ALTER TABLE tasks ADD COLUMN task_spec_json TEXT",
+            ),
         ]
         for col_name, sql in migrations:
             if col_name not in existing_cols:
@@ -215,6 +220,7 @@ class Store:
         prompt: str,
         status: str,
         plan: Any | None = None,
+        task_spec: Any | None = None,
         execution_id: str | None = None,
         idempotency_key: str | None = None,
         owner: str | None = None,
@@ -233,15 +239,17 @@ class Store:
                     return  # Task already exists for this key
             self._conn.execute(
                 "INSERT INTO tasks (id, prompt, status, created_at, plan_json, "
+                "task_spec_json, "
                 "execution_id, idempotency_key, owner, original_query, "
                 "rewritten_query, final_query) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     task_id,
                     prompt,
                     status,
                     _now(),
                     _dumps(plan) if plan is not None else None,
+                    _dumps(task_spec) if task_spec is not None else None,
                     execution_id or task_id,
                     idempotency_key,
                     owner,
@@ -301,11 +309,18 @@ class Store:
         *,
         status: str,
         plan: Any | None = None,
+        task_spec: Any | None = None,
     ) -> None:
         with self._lock:
             self._conn.execute(
-                "UPDATE tasks SET status = ?, plan_json = ? WHERE id = ?",
-                (status, _dumps(plan) if plan is not None else None, task_id),
+                "UPDATE tasks SET status = ?, plan_json = ?, "
+                "task_spec_json = COALESCE(?, task_spec_json) WHERE id = ?",
+                (
+                    status,
+                    _dumps(plan) if plan is not None else None,
+                    _dumps(task_spec) if task_spec is not None else None,
+                    task_id,
+                ),
             )
             self._conn.commit()
 
@@ -726,6 +741,7 @@ def _task_to_dict(
         "status": task_row["status"],
         "created_at": task_row["created_at"],
         "plan": _loads(task_row["plan_json"]),
+        "task_spec": _loads(task_row["task_spec_json"]),
         "aggregation": _loads(task_row["aggregation_json"]),
         "final_answer": task_row["final_answer"],
         "duration_ms": task_row["duration_ms"],

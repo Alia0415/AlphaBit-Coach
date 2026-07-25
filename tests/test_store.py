@@ -16,6 +16,7 @@ def test_create_task_and_get_task_roundtrip(tmp_path) -> None:
         prompt="分析 000001.SZ",
         status="planned",
         plan={"goal": "分析"},
+        task_spec={"task_type": "company_research"},
     )
 
     task = store.get_task("t1")
@@ -26,6 +27,7 @@ def test_create_task_and_get_task_roundtrip(tmp_path) -> None:
     assert task["final_query"] == "分析 000001.SZ"
     assert task["status"] == "planned"
     assert task["plan"] == {"goal": "分析"}
+    assert task["task_spec"] == {"task_type": "company_research"}
     assert task["events"] == []
     assert store.get_task("missing") is None
 

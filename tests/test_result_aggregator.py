@@ -266,6 +266,8 @@ def test_dossier_derived_metrics_are_promoted_to_user_facing_cards() -> None:
     gross_margin = metric_block.data["metrics"][0]
 
     assert aggregation.output_mode == "data_analysis"
+    assert "已完成所需的数据计算" not in aggregation.direct_answer.headline
+    assert "毛利率 91.93%" in aggregation.direct_answer.headline
     assert gross_margin["label"] == "毛利率"
     assert gross_margin["display_value"] == "91.93%"
     assert gross_margin["subject"] == "600519.SH · 2024q4"
