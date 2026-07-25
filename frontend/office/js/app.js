@@ -374,7 +374,7 @@ function drawBackground(ctx, W, H) {
   if (e && e.ready) {
     ctx.drawImage(e.img, 0, 0, e.img.width, e.img.height, 0, 0, W, H);
   } else {
-    ctx.fillStyle = "#0a1322";
+    ctx.fillStyle = "#f5f5f2";
     ctx.fillRect(0, 0, W, H);
   }
 }
@@ -443,7 +443,7 @@ function avatar(agentOrSheet, sizePx = 40, wrapCls = "pix-ava") {
       drawCell(ctx, entry, IDLE_COLS[0], ROW_FRONT, 0, 0, FRAME, FRAME);
     } else {
       // graceful fallback: solid pixel block while the atlas loads / on error
-      ctx.fillStyle = "#13263f";
+      ctx.fillStyle = "#d9d9d3";
       ctx.fillRect(0, 0, FRAME, FRAME);
     }
   };
@@ -669,8 +669,8 @@ function drawLineChart(canvas, trend) {
   const yAt = (v) => padT + plotH - ((v - minV) / range) * plotH;
 
   // gridlines + y labels
-  ctx.strokeStyle = "#16304f";
-  ctx.fillStyle = "#4a6a8f";
+  ctx.strokeStyle = "#e9e9e5";
+  ctx.fillStyle = "#9f9f9a";
   ctx.font = "10px system-ui, sans-serif";
   ctx.textAlign = "right";
   const steps = 4;
@@ -732,7 +732,7 @@ function drawRadar(canvas, radar, size = 220) {
   const maxV = 100;
 
   // concentric rings
-  ctx.strokeStyle = "#16304f";
+  ctx.strokeStyle = "#e9e9e5";
   ctx.lineWidth = 1;
   for (let r = 1; r <= 4; r++) {
     const rr = (R * r) / 4;
@@ -748,12 +748,12 @@ function drawRadar(canvas, radar, size = 220) {
   }
 
   // spokes + axis labels
-  ctx.fillStyle = "#7fa3c7";
+  ctx.fillStyle = "#6e6e6e";
   ctx.font = "10px system-ui, sans-serif";
   ctx.textAlign = "center";
   for (let i = 0; i < n; i++) {
     const a = ang(i);
-    ctx.strokeStyle = "#16304f";
+    ctx.strokeStyle = "#e9e9e5";
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx + R * Math.cos(a), cy + R * Math.sin(a));
@@ -773,12 +773,12 @@ function drawRadar(canvas, radar, size = 220) {
     i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   }
   ctx.closePath();
-  ctx.fillStyle = "rgba(34, 211, 238, 0.18)";
+  ctx.fillStyle = "rgba(17, 17, 17, 0.08)";
   ctx.fill();
-  ctx.strokeStyle = "#22d3ee";
+  ctx.strokeStyle = "#111111";
   ctx.lineWidth = 2;
   ctx.stroke();
-  ctx.fillStyle = "#22d3ee";
+  ctx.fillStyle = "#111111";
   for (let i = 0; i < n; i++) {
     const a = ang(i);
     const rr = (R * Math.min(vals[i] ?? 0, maxV)) / maxV;
@@ -1368,14 +1368,14 @@ function drawOfficeScene(canvas, agents) {
       const sheet = SPRITE_MAP[id] || id;
       drawSeated(ctx, sheet, sx, sy, W, seat.chair);
       // status dot above the seat
-      const dot = { online: "#34d399", working: "#60a5fa", busy: "#f59e0b", running: "#60a5fa", off: "#5a6b80" }[a.status] || "#5a6b80";
+      const dot = { online: "#3a3a3a", working: "#111111", busy: "#6b6b6b", running: "#111111", off: "#9f9f9a" }[a.status] || "#9f9f9a";
       const headY = sy - W * CHAIR_W_FRAC * 1.95;
       ctx.fillStyle = dot;
       ctx.beginPath(); ctx.arc(sx + W * 0.028, headY, 3.5, 0, Math.PI * 2); ctx.fill();
       // name tag under the chair
-      ctx.fillStyle = "rgba(10,22,40,0.8)";
+      ctx.fillStyle = "rgba(17,17,17,0.72)";
       ctx.beginPath(); ctx.roundRect(sx - 30, sy + 4, 60, 15, 4); ctx.fill();
-      ctx.fillStyle = "#cfe0f2";
+      ctx.fillStyle = "#ffffff";
       ctx.font = "10px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(a.name, sx, sy + 15);
@@ -1489,21 +1489,21 @@ function createOfficeStageController(canvas, agents) {
       const col = ag.walking ? WALK_COLS[ag.frameIdx % WALK_COLS.length] : IDLE_COLS[0];
       if (entry && entry.ready) drawSpriteCell(ctx, entry, col, f.row, f.flip, ag.x, ag.y, SPRITE_SIZE);
       else {
-        ctx.fillStyle = "#13263f";
+        ctx.fillStyle = "#d9d9d3";
         ctx.fillRect(ag.x - SPRITE_SIZE / 2, ag.y - SPRITE_SIZE * CELL_FEET, SPRITE_SIZE, SPRITE_SIZE * CELL_FEET);
       }
       headTop = ag.y - SPRITE_SIZE * CELL_FEET;
     }
-    const dot = { working: "#60a5fa", running: "#60a5fa", done: "#34d399", idle: "#5a6b80" }[ag.status] || "#5a6b80";
+    const dot = { working: "#111111", running: "#111111", done: "#3a3a3a", idle: "#9f9f9a" }[ag.status] || "#9f9f9a";
     ctx.fillStyle = dot;
     ctx.beginPath();
     ctx.arc(ag.x + 15, headTop + 4, 3.5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "rgba(10,22,40,0.82)";
+    ctx.fillStyle = "rgba(17,17,17,0.72)";
     ctx.beginPath();
     ctx.roundRect(ag.x - 28, ag.y + 5, 56, 14, 4);
     ctx.fill();
-    ctx.fillStyle = "#cfe0f2";
+    ctx.fillStyle = "#ffffff";
     ctx.font = "10px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(ag.name, ag.x, ag.y + 15);
@@ -2155,7 +2155,7 @@ function pageWarRoom() {
     }
     Object.entries(edgeEls).forEach(([key, ln]) => {
       if (key.startsWith(`${id}-`) && (status === "working" || status === "running" || status === "done")) {
-        ln.setAttribute("stroke", "#22d3ee");
+        ln.setAttribute("stroke", "#111111");
         ln.setAttribute("stroke-width", "0.8");
       }
     });
@@ -2205,7 +2205,7 @@ function pageWarRoom() {
         agents.forEach((a) => { a.status = "done"; setDag(a.id, "done"); });
         badge.className = "badge done";
         badge.innerHTML = '<span class="dot"></span>已完成';
-        appendLog("系统", "AlphaBit Coach 任务处理完成", "#7fa3c7", cs);
+        appendLog("系统", "AlphaBit Coach 任务处理完成", "#6e6e6e", cs);
         setTimeout(() => navigate("reports", REPORTS[0].id), 0);
         break;
     }
@@ -2265,17 +2265,17 @@ function pageWarRoom() {
       const f = facingFrom(ag.mvx, ag.mvy);
       const col = ag.walking ? WALK_COLS[ag.frameIdx % WALK_COLS.length] : IDLE_COLS[0];
       if (entry && entry.ready) drawSpriteCell(ctx, entry, col, f.row, f.flip, ag.x, ag.y, SPRITE_SIZE);
-      else { ctx.fillStyle = "#13263f"; ctx.fillRect(ag.x - SPRITE_SIZE / 2, ag.y - SPRITE_SIZE * CELL_FEET, SPRITE_SIZE, SPRITE_SIZE * CELL_FEET); }
+      else { ctx.fillStyle = "#d9d9d3"; ctx.fillRect(ag.x - SPRITE_SIZE / 2, ag.y - SPRITE_SIZE * CELL_FEET, SPRITE_SIZE, SPRITE_SIZE * CELL_FEET); }
       headTop = ag.y - SPRITE_SIZE * CELL_FEET;
     }
     // status dot near the head
-    const dot = { working: "#60a5fa", running: "#60a5fa", done: "#34d399", idle: "#5a6b80" }[ag.status] || "#5a6b80";
+    const dot = { working: "#111111", running: "#111111", done: "#3a3a3a", idle: "#9f9f9a" }[ag.status] || "#9f9f9a";
     ctx.fillStyle = dot;
     ctx.beginPath(); ctx.arc(ag.x + 15, headTop + 4, 3.5, 0, Math.PI * 2); ctx.fill();
     // name tag
-    ctx.fillStyle = "rgba(10,22,40,0.82)";
+    ctx.fillStyle = "rgba(17,17,17,0.72)";
     ctx.beginPath(); ctx.roundRect(ag.x - 28, ag.y + 5, 56, 14, 4); ctx.fill();
-    ctx.fillStyle = "#cfe0f2";
+    ctx.fillStyle = "#ffffff";
     ctx.font = "10px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(ag.name, ag.x, ag.y + 15);
@@ -2336,7 +2336,7 @@ function pageWarRoom() {
     DAG_EDGES.forEach(([a, b]) => {
       const ln = edgeEls[`${a}-${b}`];
       if (!ln) return;
-      ln.setAttribute("stroke", "#1d3a5c");
+      ln.setAttribute("stroke", "#d9d9d3");
       ln.setAttribute("stroke-width", "0.5");
     });
     badge.className = "badge running";
@@ -2419,7 +2419,7 @@ function pageExperts() {
   const by = (s) => AGENTS.filter((a) => a.status === s).length;
   foot.innerHTML = `<span>共 ${AGENTS.length} 位专家</span>
     <span><span class="dot ok"></span>在线 ${by("online")}</span>
-    <span><span class="dot" style="background:#60a5fa"></span>工作中 ${by("working")}</span>
+    <span><span class="dot" style="background:#111111"></span>工作中 ${by("working")}</span>
     <span><span class="dot warn"></span>忙碌 ${by("busy")}</span>
     <span><span class="dot"></span>离线 ${by("off")}</span>`;
   left.appendChild(foot);
@@ -2532,7 +2532,7 @@ function renderExpertDetail(panel) {
     const box = el("div", "chart-box");
     box.appendChild(canvas);
     body.appendChild(box);
-    const trend = { title: "", labels: ["W1", "W2", "W3", "W4", "W5"], series: [{ name: "贡献值", color: "#34d399", data: [62, 70, 66, 82, 90] }] };
+    const trend = { title: "", labels: ["W1", "W2", "W3", "W4", "W5"], series: [{ name: "贡献值", color: "#111111", data: [62, 70, 66, 82, 90] }] };
     requestAnimationFrame(() => drawLineChart(canvas, trend));
   } else if (expertTab === "skills") {
     body.appendChild(el("div", "follow-sec-title", `专业分析方法 · ${a.skillCount} 项`));
@@ -4539,7 +4539,7 @@ function pageWarRoomLive() {
     }
     Object.entries(edgeEls).forEach(([key, ln]) => {
       if (key.startsWith(`${stepId}-`) && (status === "running" || status === "done")) {
-        ln.setAttribute("stroke", "#22d3ee");
+        ln.setAttribute("stroke", "#111111");
         ln.setAttribute("stroke-width", "0.8");
       }
     });
@@ -4556,7 +4556,7 @@ function pageWarRoomLive() {
     pstats.working.querySelector("strong").textContent = String(working);
   };
 
-  const LOG_COLOR = { done: "var(--green)", fail: "var(--red)", run: "#60a5fa", skill: "var(--cyan)", tool: "var(--yellow)" };
+  const LOG_COLOR = { done: "var(--green)", fail: "var(--red)", run: "var(--blue)", skill: "var(--cyan)", tool: "var(--yellow)" };
   const pushLog = (who, message, kind) => {
     logCount++;
     pstats.logs.querySelector("strong").textContent = String(logCount);

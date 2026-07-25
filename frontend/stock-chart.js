@@ -1,14 +1,14 @@
 const COLORS = Object.freeze({
-  background: "#0b192c",
-  text: "#7fa3c7",
-  grid: "#16304f",
-  border: "#1d3a5f",
-  up: "#f87171",
-  down: "#34d399",
-  line: "#22d3ee",
-  ma5: "#fbbf24",
-  ma10: "#a78bfa",
-  ma20: "#60a5fa",
+  background: "#ffffff",
+  text: "#9f9f9a",
+  grid: "#efefec",
+  border: "#d9d9d3",
+  up: "#111111",
+  down: "#111111",
+  line: "#111111",
+  ma5: "#111111",
+  ma10: "#6b6b6b",
+  ma20: "#b5b5b0",
 });
 
 function finite(value) {
@@ -116,7 +116,7 @@ export class StockChart {
       primarySeries.setData(payload.line);
     } else {
       primarySeries = chart.addSeries(library.CandlestickSeries, {
-        upColor: COLORS.up,
+        upColor: "#ffffff",
         downColor: COLORS.down,
         borderUpColor: COLORS.up,
         borderDownColor: COLORS.down,
@@ -139,12 +139,12 @@ export class StockChart {
       ? (payload.volume || []).map((point) => ({
           time: point.time,
           value: point.value,
-          color: point.direction === "down" ? `${COLORS.down}99` : `${COLORS.up}99`,
+          color: point.direction === "down" ? "rgba(17,17,17,0.62)" : "rgba(17,17,17,0.22)",
         }))
       : payload.candles.map((candle) => ({
           time: candle.time,
           value: candle.volume,
-          color: candle.close >= candle.open ? `${COLORS.up}99` : `${COLORS.down}99`,
+          color: candle.close >= candle.open ? "rgba(17,17,17,0.22)" : "rgba(17,17,17,0.62)",
         }));
     volumeSeries.setData(volumeData);
 
