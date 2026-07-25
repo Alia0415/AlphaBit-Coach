@@ -159,9 +159,9 @@
 .stock-board-section {
   margin-top: 10px;
   padding: 5px 10px 12px;
-  border: 1px solid rgba(34,211,238,.1);
+  border: 1px solid rgba(17,17,17,.12);
   border-radius: 10px;
-  background: rgba(10,22,40,.32);
+  background: rgba(17,17,17,.03);
 }
 
 .stock-board-section .stock-list-section-heading h3 {
@@ -240,7 +240,7 @@
 
 .stock-board-badge {
   padding: 1px 5px;
-  border: 1px solid rgba(34,211,238,.18);
+  border: 1px solid rgba(17,17,17,.18);
   border-radius: 999px;
   color: var(--text-2);
   font: normal 9px/1.35 var(--mono);
