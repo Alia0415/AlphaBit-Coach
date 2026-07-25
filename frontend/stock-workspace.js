@@ -44,6 +44,28 @@ export function normalizeSelectedStock(stock) {
   return normalizeStoredStocks([stock], 1)[0] || null;
 }
 
+export function buildStockResearchPrompt(stock) {
+  const normalized = normalizeSelectedStock(stock);
+  if (!normalized) return "";
+  const board = normalized.board ? `，所属${normalized.board}` : "";
+  if (normalized.board === "宽基指数") {
+    return [
+      `全面分析${normalized.name}（${normalized.symbol}${board}）当前走势及相关信息。`,
+      "以最近一年和最新可得数据为主，分析价格趋势、均线、成交量、收益、波动率与最大回撤，",
+      "并对成交量异常和可用量化因子进行交叉验证；同时核查指数主要行业与风格暴露、",
+      "市场流动性、宏观与政策环境以及主要风险。请形成可阅读的研究报告，标明数据截止日期、",
+      "证据来源、不确定性和缺失信息，不提供买卖指令、目标价或收益承诺。",
+    ].join("");
+  }
+  return [
+    `全面分析${normalized.name}（${normalized.symbol}${board}）当前的股票走势及相关信息。`,
+    "以最近一年和最新可得数据为主，分析价格趋势、均线、成交量、收益、波动率与最大回撤，",
+    "并对成交量异常和可用量化因子进行交叉验证；同时核查公司基本面、重要公告或事件、",
+    "行业与宏观环境以及主要风险。请形成可阅读的研究报告，标明数据截止日期、证据来源、",
+    "不确定性和缺失信息，不提供买卖指令、目标价或收益承诺。",
+  ].join("");
+}
+
 function readSelectedStock() {
   try {
     return (
@@ -145,6 +167,7 @@ export function mountStockChartPage(
     forceDemo = false,
     initialStock = null,
     onChooseStock = () => {},
+    onAnalyzeStock = () => {},
     notify = () => {},
   } = {},
 ) {
@@ -222,6 +245,25 @@ export function mountStockChartPage(
     coachPanel.appendChild(section);
     coachSections[key] = body;
   });
+  const analysisAction = element("section", "stock-analysis-action");
+  const analysisButton = element(
+    "button",
+    "stock-analysis-button",
+    "✨ AI 自动分析该股票",
+  );
+  analysisButton.type = "button";
+  analysisButton.addEventListener("click", () => {
+    onAnalyzeStock(selected);
+  });
+  analysisAction.append(
+    analysisButton,
+    element(
+      "p",
+      "stock-analysis-copy",
+      "进入多 Agent 作战室，综合分析走势、基本面、事件、行业与风险。",
+    ),
+  );
+  coachPanel.appendChild(analysisAction);
   coachPanel.appendChild(
     element(
       "p",
