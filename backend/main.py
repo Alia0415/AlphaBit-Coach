@@ -386,7 +386,8 @@ async def list_stocks() -> dict[str, list[dict[str, str]]]:
 async def search_stocks(
     q: str = Query(default="", max_length=100),
 ) -> dict[str, Any]:
-    return {"query": q.strip(), "stocks": stock_charts.search(q)}
+    stocks = await run_in_threadpool(stock_charts.search, q)
+    return {"query": q.strip(), "stocks": stocks}
 
 
 @app.get("/api/stocks/{symbol}/chart")

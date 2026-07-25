@@ -7,6 +7,8 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from statistics import stdev
+from threading import Lock
+from time import monotonic
 from typing import Any, Iterable
 
 from backend.demo_stock_data import (
@@ -20,6 +22,8 @@ from backend.services.pandadata_client import PandaDataClient
 STOCK_SYMBOL_PATTERN = re.compile(r"^\d{6}\.(?:SH|SZ)$")
 SUPPORTED_PERIODS = frozenset({"1m", "1d", "1w", "1mo"})
 PERIOD_LIMITS = {"1d": 500, "1w": 260, "1mo": 120}
+STOCK_SEARCH_LIMIT = 20
+STOCK_CATALOG_TTL_SECONDS = 30 * 60
 
 DEFAULT_STOCKS: tuple[dict[str, str], ...] = (
     {"symbol": "600519.SH", "name": "贵州茅台", "market": "SH", "board": "沪市主板"},
@@ -88,6 +92,9 @@ class StockChartService:
 
     def __init__(self, client: PandaDataClient) -> None:
         self.client = client
+        self._catalog_cache: list[dict[str, str]] = []
+        self._catalog_cached_at = 0.0
+        self._catalog_lock = Lock()
 
     def list_stocks(self) -> list[dict[str, str]]:
         return [dict(stock) for stock in DEFAULT_STOCKS]
@@ -96,35 +103,74 @@ class StockChartService:
         normalized = str(query or "").strip()
         if not normalized:
             return self.list_stocks()
-        upper = normalized.upper()
-        digits = re.sub(r"\D", "", upper)
-        matches = [
-            dict(stock)
-            for stock in DEFAULT_STOCKS
-            if upper in stock["symbol"]
-            or normalized in stock["name"]
-            or normalized in stock["board"]
-            or (digits and digits == stock["symbol"][:6])
-        ]
-        if matches:
-            return matches
-        if STOCK_SYMBOL_PATTERN.fullmatch(upper):
-            return [
-                {
-                    "symbol": upper,
-                    "name": upper,
-                    "market": upper.rsplit(".", 1)[1],
-                    "board": infer_board(upper),
-                }
-            ]
-        return []
+        local_matches = match_stock_rows(DEFAULT_STOCKS, normalized)
+        if local_matches:
+            return local_matches[:STOCK_SEARCH_LIMIT]
+
+        symbol = normalize_search_symbol(normalized)
+        if symbol:
+            provider_rows, provider_responded = self._provider_symbol(symbol)
+            if provider_rows:
+                return provider_rows[:STOCK_SEARCH_LIMIT]
+            if provider_responded:
+                return []
+            return [stock_metadata(symbol)]
+
+        if not self.client.configured:
+            return []
+        try:
+            provider_matches = match_stock_rows(
+                self._provider_catalog(),
+                normalized,
+            )
+        except Exception:
+            return []
+        return provider_matches[:STOCK_SEARCH_LIMIT]
+
+    def _provider_symbol(
+        self,
+        symbol: str,
+    ) -> tuple[list[dict[str, str]], bool]:
+        if not self.client.configured:
+            return [], False
+        try:
+            rows = normalize_provider_stocks(
+                self.client.get_stock_detail(symbol=symbol)
+            )
+        except Exception:
+            return [], False
+        return rows, True
+
+    def _provider_catalog(self) -> list[dict[str, str]]:
+        now = monotonic()
+        if (
+            self._catalog_cache
+            and now - self._catalog_cached_at < STOCK_CATALOG_TTL_SECONDS
+        ):
+            return list(self._catalog_cache)
+        with self._catalog_lock:
+            now = monotonic()
+            if (
+                self._catalog_cache
+                and now - self._catalog_cached_at < STOCK_CATALOG_TTL_SECONDS
+            ):
+                return list(self._catalog_cache)
+            try:
+                rows = normalize_provider_stocks(self.client.get_stock_catalog())
+            except Exception:
+                if self._catalog_cache:
+                    return list(self._catalog_cache)
+                raise
+            self._catalog_cache = rows
+            self._catalog_cached_at = now
+            return list(rows)
 
     def chart(self, request: ChartRequest) -> dict[str, Any]:
         symbol = normalize_symbol(request.symbol)
         if request.period not in SUPPORTED_PERIODS:
             raise StockNotFoundError("暂不支持该行情周期。")
         range_name = normalize_range(request.range_name, request.period)
-        stock = stock_metadata(symbol)
+        stock = self._stock_metadata(symbol)
         use_demo = request.force_demo or not self.client.configured
 
         if request.period == "1m":
@@ -182,6 +228,23 @@ class StockChartService:
                 "PandaData 暂时无法返回这只股票的行情，请稍后重试。"
             ) from exc
 
+    def _stock_metadata(self, symbol: str) -> dict[str, str]:
+        metadata = stock_metadata(symbol)
+        if metadata["name"] != symbol:
+            return metadata
+        cached = next(
+            (
+                stock
+                for stock in self._catalog_cache
+                if stock["symbol"] == symbol
+            ),
+            None,
+        )
+        if cached is not None:
+            return dict(cached)
+        provider_rows, _ = self._provider_symbol(symbol)
+        return dict(provider_rows[0]) if provider_rows else metadata
+
     def _load_real_intraday(self, symbol: str) -> Any:
         end = date.today()
         start = end - timedelta(days=7)
@@ -202,6 +265,86 @@ def normalize_symbol(value: str) -> str:
     if not STOCK_SYMBOL_PATTERN.fullmatch(symbol):
         raise StockNotFoundError("股票代码格式应为 XXXXXX.SH 或 XXXXXX.SZ。")
     return symbol
+
+
+def normalize_search_symbol(value: str) -> str | None:
+    compact = re.sub(r"[\s._-]", "", str(value or "").strip().upper())
+    match = re.fullmatch(r"(?:(SH|SZ))?(\d{6})(?:(SH|SZ))?", compact)
+    if not match:
+        return None
+    prefix, code, suffix = match.groups()
+    if prefix and suffix and prefix != suffix:
+        return None
+    market = prefix or suffix or infer_market(code)
+    if market is None:
+        return None
+    return f"{code}.{market}"
+
+
+def infer_market(code: str) -> str | None:
+    if code.startswith(("600", "601", "603", "605", "688", "689")):
+        return "SH"
+    if code.startswith(("000", "001", "002", "003", "300", "301")):
+        return "SZ"
+    return None
+
+
+def match_stock_rows(
+    stocks: Iterable[dict[str, str]],
+    query: str,
+) -> list[dict[str, str]]:
+    normalized = str(query or "").strip()
+    upper = normalized.upper()
+    digits = re.sub(r"\D", "", upper)
+    return [
+        dict(stock)
+        for stock in stocks
+        if upper in stock["symbol"]
+        or normalized.casefold() in stock["name"].casefold()
+        or normalized in stock["board"]
+        or (len(digits) == 6 and digits == stock["symbol"][:6])
+    ]
+
+
+def normalize_provider_stocks(rows: Any) -> list[dict[str, str]]:
+    stocks: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for row in iter_rows(rows):
+        raw_symbol = str(
+            pick(
+                row,
+                "symbol",
+                "stock_symbol",
+                "security_code",
+                "ticker",
+                "ts_code",
+            )
+            or ""
+        )
+        symbol = normalize_search_symbol(raw_symbol)
+        if symbol is None or symbol in seen:
+            continue
+        name = str(
+            pick(
+                row,
+                "name",
+                "stock_name",
+                "security_name",
+                "display_name",
+                "short_name",
+            )
+            or symbol
+        ).strip()
+        seen.add(symbol)
+        stocks.append(
+            {
+                "symbol": symbol,
+                "name": name or symbol,
+                "market": symbol.rsplit(".", 1)[1],
+                "board": infer_board(symbol),
+            }
+        )
+    return stocks
 
 
 def normalize_range(value: str, period: str) -> str:

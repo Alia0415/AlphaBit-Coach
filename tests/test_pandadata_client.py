@@ -23,6 +23,10 @@ class RecordingSdk:
             {"competitor_stock_code": "000002", "competitor_name": "B"},
         ]
 
+    def get_stock_detail(self, **kwargs: Any) -> list[dict[str, Any]]:
+        self.calls.append(("get_stock_detail", kwargs))
+        return [{"symbol": "601633.SH", "name": "长城汽车", "status": 1}]
+
     def get_industry_constituents(self, **kwargs: Any) -> list[dict[str, Any]]:
         self.calls.append(("get_industry_constituents", kwargs))
         return [
@@ -110,6 +114,26 @@ def test_competitor_call_uses_documented_sdk_name_and_arguments(
         )
     ]
     assert result == [{"competitor_stock_code": "000001", "competitor_name": "A"}]
+
+
+def test_stock_catalog_call_uses_active_symbol_and_name_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, sdk = _client_with_sdk(monkeypatch)
+
+    result = client.get_stock_catalog()
+
+    assert sdk.calls == [
+        (
+            "get_stock_detail",
+            {
+                "symbol": "",
+                "fields": ["symbol", "name", "status"],
+                "status": 1,
+            },
+        )
+    ]
+    assert result == [{"symbol": "601633.SH", "name": "长城汽车", "status": 1}]
 
 
 def test_industry_calls_use_documented_parameters_and_filter_locally(
