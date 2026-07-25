@@ -6,9 +6,15 @@ from unittest.mock import Mock
 import httpx
 import pytest
 from openai import APIConnectionError, APIStatusError
+from pydantic import BaseModel
 
 from backend.services import ark_client
-from backend.services.ark_client import ArkClient, ArkClientError, ArkTextRequest
+from backend.services.ark_client import (
+    ArkClient,
+    ArkClientError,
+    ArkJsonRequest,
+    ArkTextRequest,
+)
 
 
 def _fake_openai_client(create: Mock) -> SimpleNamespace:
@@ -16,6 +22,10 @@ def _fake_openai_client(create: Mock) -> SimpleNamespace:
     return SimpleNamespace(
         chat=SimpleNamespace(completions=SimpleNamespace(create=create))
     )
+
+
+class _JsonPayload(BaseModel):
+    value: str
 
 
 def test_ark_client_ignores_environment_proxy_configuration(
@@ -175,3 +185,42 @@ def test_chat_text_applies_request_timeout_and_output_token_limit(
         timeout=37.0,
         max_tokens=1234,
     )
+
+
+def test_chat_json_uses_json_mode_and_can_disable_thinking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    create = Mock(
+        return_value=SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content='{"value":"ok"}')
+                )
+            ]
+        )
+    )
+    monkeypatch.setattr(
+        ark_client,
+        "DefaultHttpxClient",
+        Mock(return_value=object()),
+    )
+    monkeypatch.setattr(
+        ark_client,
+        "OpenAI",
+        Mock(return_value=_fake_openai_client(create)),
+    )
+
+    result = ArkClient().chat_json(
+        ArkJsonRequest(
+            prompt="return json",
+            response_model=_JsonPayload,
+            thinking_mode="disabled",
+        )
+    )
+
+    assert result == _JsonPayload(value="ok")
+    assert create.call_args.kwargs["response_format"] == {"type": "json_object"}
+    assert create.call_args.kwargs["extra_body"] == {
+        "thinking": {"type": "disabled"}
+    }

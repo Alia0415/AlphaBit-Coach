@@ -64,6 +64,7 @@ class ResearchQueryRefiner:
                     timeout_seconds=90.0,
                     purpose="research_query_rewrite",
                     prompt_version="1.0",
+                    thinking_mode="disabled",
                 )
             )
         except Exception as exc:

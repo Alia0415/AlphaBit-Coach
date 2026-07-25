@@ -122,6 +122,7 @@ class ManagerAgent:
             prompt_version="manager-v0.3",
             attempt=attempt,
             allow_repair=False,
+            thinking_mode="disabled",
         )
         structured_chat = getattr(client, "chat_json", None)
         if callable(structured_chat):

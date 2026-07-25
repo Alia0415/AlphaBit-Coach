@@ -184,19 +184,29 @@ class TaskInterpreter:
         dimension_defaulted = False
 
         if execution_decision != "clarify":
-            # Try LLM semantic analysis first
-            llm_result = self._try_llm_dimensions(text)
-            if llm_result is not None:
-                request_scope = llm_result.request_scope
-                required_dimensions = llm_result.required_dimensions
-                optional_dimensions = llm_result.optional_dimensions
+            deterministic_scope, deterministic_required = _deterministic_dimensions(
+                task_type,
+                subject_type,
+                lowered,
+            )
+            if _has_authoritative_deterministic_dimensions(
+                task_type,
+                subject_type,
+                lowered,
+            ):
+                request_scope = deterministic_scope
+                required_dimensions = deterministic_required
             else:
-                # Deterministic fallback (spec §5.2 conservative defaults)
-                request_scope, required_dimensions = _deterministic_dimensions(
-                    task_type, subject_type, lowered
-                )
-                if required_dimensions:
-                    dimension_defaulted = True
+                llm_result = self._try_llm_dimensions(text)
+                if llm_result is not None:
+                    request_scope = llm_result.request_scope
+                    required_dimensions = llm_result.required_dimensions
+                    optional_dimensions = llm_result.optional_dimensions
+                else:
+                    request_scope = deterministic_scope
+                    required_dimensions = deterministic_required
+                    if required_dimensions:
+                        dimension_defaulted = True
             if _requires_financial_quality_review(
                 task_type,
                 subject_type,
@@ -273,6 +283,7 @@ class TaskInterpreter:
                 temperature=0.0,
                 purpose="dimension_analysis",
                 prompt_version="1.0",
+                thinking_mode="disabled",
             )
             result = self._ark_client.chat_json(request)
             # Validate: required_dimensions must be non-empty and deduplicated
@@ -512,6 +523,37 @@ def _requires_growth_valuation_review(
         and task_type == "company_research"
         and any(marker in lowered for marker in _GROWTH_REVIEW)
         and any(marker in lowered for marker in _VALUATION_REVIEW)
+    )
+
+
+def _has_authoritative_deterministic_dimensions(
+    task_type: TaskType,
+    subject_type: SubjectType,
+    lowered: str,
+) -> bool:
+    if _requires_financial_quality_review(task_type, subject_type, lowered):
+        return True
+    if _requires_growth_valuation_review(task_type, subject_type, lowered):
+        return True
+    if task_type in {
+        "formal_report",
+        "factor_research",
+        "historical_analysis",
+        "risk_review",
+    }:
+        return True
+    if any(marker in lowered for marker in _COMPREHENSIVE_TRIGGERS):
+        return True
+    return any(
+        marker in lowered
+        for markers in (
+            _FOCUSED_QUANTITATIVE,
+            _FOCUSED_FUNDAMENTALS,
+            _FOCUSED_INDUSTRY,
+            _FOCUSED_RISK,
+            _FOCUSED_MACRO,
+        )
+        for marker in markers
     )
 
 
