@@ -35,17 +35,46 @@ def test_stock_workspace_assets_are_served_locally() -> None:
     assert "setData(undefined)" not in chart.text
 
 
-def test_office_defaults_to_stock_workspace_without_removing_research_routes() -> None:
+def test_office_separates_stock_library_and_chart_without_removing_research_routes() -> None:
     source = (
         REPO_ROOT / "frontend" / "office" / "js" / "app.js"
     ).read_text(encoding="utf-8")
+    workspace = (
+        REPO_ROOT / "frontend" / "stock-workspace.js"
+    ).read_text(encoding="utf-8")
+    styles = (
+        REPO_ROOT / "frontend" / "stock-workspace.css"
+    ).read_text(encoding="utf-8")
 
-    assert 'let currentRoute = "stocks";' in source
+    assert 'let currentRoute = "stock-library";' in source
+    assert 'case "stock-library"' in source
     assert 'case "stocks"' in source
+    assert '{ route: "stock-library", ico: "▦", label: "股票库" }' in source
+    assert '{ route: "stocks", ico: "📈", label: "股票行情" }' in source
     assert '{ route: "hall", ico: "🏛", label: "投研大厅" }' in source
     assert '{ route: "war", ico: "🛰", label: "多 Agent 作战室" }' in source
-    assert "mountStockWorkspace" in source
-    assert "navigate(\"hall\")" in source
+    assert "mountStockLibraryPage" in source
+    assert "mountStockChartPage" in source
+    assert "onOpenChart: (stock) => navigate(\"stocks\", stock)" in source
+    assert "stock-research-button" not in workspace
+    assert '{ value: "1m"' not in workspace
+    assert ".stock-market-workspace" in styles
+    assert ".stock-chart-state[hidden]" in styles
+
+
+def test_office_sidebar_can_be_collapsed_and_persists_the_choice() -> None:
+    source = (
+        REPO_ROOT / "frontend" / "office" / "js" / "app.js"
+    ).read_text(encoding="utf-8")
+    styles = (
+        REPO_ROOT / "frontend" / "office" / "css" / "office.css"
+    ).read_text(encoding="utf-8")
+
+    assert 'SIDEBAR_COLLAPSED_KEY = "alphabit-coach.sidebar-collapsed"' in source
+    assert 'className = `sidebar${sidebarCollapsed ? " collapsed" : ""}`' in source
+    assert 'sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"' in source
+    assert ".sidebar.collapsed {" in styles
+    assert ".sidebar.collapsed .nav-label" in styles
 
 
 def test_stock_frontend_state_helpers() -> None:

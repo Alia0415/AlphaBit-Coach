@@ -56,7 +56,10 @@ import {
   openOfficeGlossary,
   registerGlossaryTerms,
 } from "./glossary-ui.js?v=20260725-p12";
-import { mountStockWorkspace } from "../../stock-workspace.js?v=20260725-s03";
+import {
+  mountStockChartPage,
+  mountStockLibraryPage,
+} from "../../stock-workspace.js?v=20260725-s04";
 
 const researchPresentation = globalThis.AlphaResearchPresentation;
 
@@ -454,6 +457,7 @@ function avatar(agentOrSheet, sizePx = 40, wrapCls = "pix-ava") {
 // nav definition
 // ---------------------------------------------------------------------------
 const NAV = [
+  { route: "stock-library", ico: "▦", label: "股票库" },
   { route: "stocks", ico: "📈", label: "股票行情" },
   { route: "hall", ico: "🏛", label: "投研大厅" },
   { route: "war", ico: "🛰", label: "多 Agent 作战室" },
@@ -464,8 +468,15 @@ const NAV = [
   { route: "skills", ico: "🧩", label: "研究能力" },
 ];
 
-let currentRoute = "stocks";
+let currentRoute = "stock-library";
 let routeParam = null;
+const SIDEBAR_COLLAPSED_KEY = "alphabit-coach.sidebar-collapsed";
+let sidebarCollapsed = false;
+try {
+  sidebarCollapsed = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+} catch (_) {
+  sidebarCollapsed = false;
+}
 const CURRENT_REPORT_KEY = "alphabit-coach.current-report-id";
 let currentReportId = null;
 try {
@@ -492,12 +503,37 @@ function registerTeardown(fn) { activeTeardown = fn; }
 function renderSidebar() {
   const side = $("#sidebar");
   side.innerHTML = "";
+  side.className = `sidebar${sidebarCollapsed ? " collapsed" : ""}`;
 
+  const sidebarHead = el("div", "sidebar-head");
   const brand = el("button", "brand");
   brand.appendChild(el("span", "brand-mark", "◆"));
-  brand.appendChild(el("span", "", "<strong>AlphaBit Coach</strong><small>AI 投资研究操作系统</small>"));
+  brand.appendChild(el("span", "brand-copy", "<strong>AlphaBit Coach</strong><small>AI 投资研究操作系统</small>"));
   brand.addEventListener("click", () => navigate("hall"));
-  side.appendChild(brand);
+
+  const collapseButton = el(
+    "button",
+    "sidebar-collapse",
+    sidebarCollapsed ? "»" : "«",
+  );
+  collapseButton.type = "button";
+  collapseButton.title = sidebarCollapsed ? "展开侧边栏" : "收起侧边栏";
+  collapseButton.setAttribute("aria-label", collapseButton.title);
+  collapseButton.setAttribute("aria-expanded", String(!sidebarCollapsed));
+  collapseButton.addEventListener("click", () => {
+    sidebarCollapsed = !sidebarCollapsed;
+    try {
+      window.localStorage.setItem(
+        SIDEBAR_COLLAPSED_KEY,
+        String(sidebarCollapsed),
+      );
+    } catch (_) {
+      // The current layout still updates when storage is unavailable.
+    }
+    renderSidebar();
+  });
+  sidebarHead.append(brand, collapseButton);
+  side.appendChild(sidebarHead);
 
   const nav = el("nav", "nav");
   NAV.forEach((item) => {
@@ -514,7 +550,7 @@ function renderSidebar() {
     btn.title = item.label;
     btn.setAttribute("aria-label", item.label);
     btn.appendChild(el("span", "nav-ico", item.ico));
-    btn.appendChild(el("span", "", esc(item.label)));
+    btn.appendChild(el("span", "nav-label", esc(item.label)));
     if (opensGlossary) {
       btn.id = "glossaryToggle";
       btn.title = "打开金融术语收藏";
@@ -761,28 +797,26 @@ function renderPage() {
   page.innerHTML = "";
   const live = isLive();
   switch (currentRoute) {
+    case "stock-library": {
+      const libraryHost = el("div");
+      page.appendChild(libraryHost);
+      registerTeardown(
+        mountStockLibraryPage(libraryHost, {
+          notify: toast,
+          onOpenChart: (stock) => navigate("stocks", stock),
+        }),
+      );
+      break;
+    }
     case "stocks": {
       const stockHost = el("div");
       page.appendChild(stockHost);
       registerTeardown(
-        mountStockWorkspace(stockHost, {
+        mountStockChartPage(stockHost, {
           forceDemo: !live,
+          initialStock: routeParam,
           notify: toast,
-          onResearch: (_stock, prompt) => {
-            navigate("hall");
-            requestAnimationFrame(() => {
-              const input = $("#page .ask-box textarea");
-              if (!input) {
-                toast("任务输入框暂时不可用，请从投研大厅发起研究。");
-                return;
-              }
-              input.value = prompt;
-              input.dispatchEvent(new Event("input", { bubbles: true }));
-              input.scrollIntoView({ behavior: "smooth", block: "center" });
-              input.focus({ preventScroll: true });
-              toast("已填入当前股票，确认后再开始研究。");
-            });
-          },
+          onChooseStock: () => navigate("stock-library"),
         }),
       );
       break;
@@ -4396,14 +4430,14 @@ function boot() {
   window.__navigate = navigate;
   window.__openProfileOnboarding = () => openProfileOnboarding(toast);
   if (isLive()) {
-    // Live mode probes the backend before opening the shared stock workspace.
+    // Live mode probes the backend before opening the stock library.
     refreshServiceStatus().finally(() => {
       renderTopbar();
-      navigate("stocks");
+      navigate("stock-library");
     });
   } else {
-    // Demo mode uses the same UI and explicitly requests the fixed demo dataset.
-    navigate("stocks");
+    // Demo mode starts from the same separated stock-library entry point.
+    navigate("stock-library");
   }
   maybeStartProfileOnboarding(toast);
   setInterval(renderStatusbar, 30_000);
