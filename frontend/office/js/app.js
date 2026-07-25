@@ -469,7 +469,7 @@ function renderSidebar() {
 
   const brand = el("button", "brand");
   brand.appendChild(el("span", "brand-mark", "◆"));
-  brand.appendChild(el("span", "", "<strong>AlphaOS</strong><small>AI 投资研究操作系统</small>"));
+  brand.appendChild(el("span", "", "<strong>AlphaBit Coach</strong><small>AI 投资研究操作系统</small>"));
   brand.addEventListener("click", () => navigate("hall"));
   side.appendChild(brand);
 
@@ -490,7 +490,7 @@ function renderSidebar() {
   });
   side.appendChild(nav);
 
-  side.appendChild(el("div", "sidebar-foot", `AlphaOS v0.4 · ${isLive() ? "实时数据" : "演示模式"}`));
+  side.appendChild(el("div", "sidebar-foot", `AlphaBit Coach v0.4 · ${isLive() ? "实时数据" : "演示模式"}`));
 }
 
 function renderTopbar() {
@@ -1808,7 +1808,7 @@ function pageWarRoom() {
         agents.forEach((a) => { a.status = "done"; setDag(a.id, "done"); });
         badge.className = "badge done";
         badge.innerHTML = '<span class="dot"></span>已完成';
-        appendLog("系统", "AlphaOS 任务处理完成", "#7fa3c7", cs);
+        appendLog("系统", "AlphaBit Coach 任务处理完成", "#7fa3c7", cs);
         break;
     }
   }
@@ -1983,7 +1983,7 @@ let expertFilter = "all";
 function pageExperts() {
   const layout = el("div", "experts-layout");
   const left = el("div", "panel");
-  left.appendChild(screenTitle("04", "专家中心", "AlphaOS 专家团队由领域顶尖 AI Agent 组成，覆盖宏观、行业、量化、风险、研究与报告全链路。"));
+  left.appendChild(screenTitle("04", "专家中心", "AlphaBit Coach 专家团队由领域顶尖 AI Agent 组成，覆盖宏观、行业、量化、风险、研究与报告全链路。"));
 
   // toolbar
   const toolbar = el("div", "experts-toolbar");
@@ -2438,7 +2438,7 @@ function pageReportDetailLive(reportId) {
 }
 
 function buildReportMainLive(report) {
-  const col = el("div", "glossary-scope research-report");
+  const col = el("div", "glossary-scope research-report final-report");
   const toolbar = el("div", "rpt-toolbar");
   const back = el("button", "btn-ghost", "‹ 返回报告列表");
   back.addEventListener("click", () => navigate("reports"));
@@ -2467,18 +2467,27 @@ function buildReportMainLive(report) {
     ));
     return col;
   }
-  const knowledgeCount = connectReportKnowledge(vm.metrics);
-
   col.appendChild(renderResearchHero(report, vm));
-  col.appendChild(renderParticipants(vm));
-  col.appendChild(renderResearchPlan(vm.researchPlan));
-  col.appendChild(renderMetricOverview(vm.metrics));
-  col.appendChild(renderEvidenceChains(vm.evidenceChains));
-  col.appendChild(renderAgentWorkbenches(vm.agents));
-  col.appendChild(renderSignals(vm));
-  col.appendChild(renderCoverage(vm.coverage));
-  col.appendChild(renderLearningSummary(vm.learningSummary, knowledgeCount));
-  if (vm.reportText) col.appendChild(renderOriginalReport(vm.reportText));
+  if (vm.finalSummary.evidence.length) {
+    col.appendChild(renderFinalEvidence(vm.finalSummary.evidence));
+  }
+  if (vm.finalSummary.uncertainties.length) {
+    col.appendChild(renderFinalList(
+      "UNCERTAINTY",
+      "哪些地方还不能确定",
+      vm.finalSummary.uncertainties,
+      "final-uncertainties",
+    ));
+  }
+  col.appendChild(renderFinalLearning(vm.finalSummary.learning));
+  if (vm.finalSummary.nextSteps.length) {
+    col.appendChild(renderFinalList(
+      "NEXT",
+      "下一步研究",
+      vm.finalSummary.nextSteps,
+      "final-next-questions",
+    ));
+  }
   if (vm.disclaimer) col.appendChild(el("div", "op-note research-disclaimer", esc(vm.disclaimer)));
   return col;
 }
@@ -2538,27 +2547,67 @@ function renderResearchHero(report, vm) {
   const hero = el("section", "panel research-hero");
   const eyebrow = el("div", "research-hero-eyebrow");
   eyebrow.appendChild(el("span", "research-live-dot", ""));
-  eyebrow.appendChild(el("span", "", "统一研究报告"));
+  eyebrow.appendChild(el("span", "", "最终直接回答"));
   eyebrow.appendChild(el("span", "research-created", esc(report.created_at || "")));
   hero.appendChild(eyebrow);
-  hero.appendChild(el("h1", "", esc(vm.summary.text)));
-  if (vm.summary.explanation) {
-    hero.appendChild(el("p", "research-hero-explanation", esc(vm.summary.explanation)));
+  hero.appendChild(el("h1", "", esc(vm.finalSummary.conclusion.headline)));
+  if (vm.finalSummary.conclusion.explanation) {
+    hero.appendChild(el(
+      "p",
+      "research-hero-explanation",
+      esc(vm.finalSummary.conclusion.explanation),
+    ));
   }
   const badges = el("div", "research-summary-badges");
-  badges.appendChild(el("span", "research-badge", `结论倾向 · ${esc(vm.summary.status)}`));
-  badges.appendChild(el("span", "research-badge", `置信度 · ${esc(vm.summary.confidence)}`));
-  if (report.completeness) {
-    const ratio = Math.round((report.completeness.completion_ratio || 0) * 100);
-    badges.appendChild(el("span", "research-badge", `研究完成度 · ${ratio}%`));
-  }
-  hero.appendChild(badges);
-  hero.appendChild(el(
-    "p",
-    "research-hero-boundary",
-    "这是一份带条件的专业判断。事实、判断、假设与缺失证据在下方分别标注。",
+  badges.appendChild(el(
+    "span",
+    "research-badge",
+    `判断倾向 · ${esc(vm.finalSummary.conclusion.stance)}`,
   ));
+  badges.appendChild(el(
+    "span",
+    "research-badge",
+    `置信程度 · ${esc(vm.finalSummary.conclusion.confidence)}`,
+  ));
+  hero.appendChild(badges);
   return hero;
+}
+
+function renderFinalEvidence(evidence) {
+  const panel = researchPanel("KEY EVIDENCE", "关键证据", "");
+  const list = el("div", "final-evidence-list");
+  evidence.forEach((item) => {
+    const card = el("article", "final-evidence-card");
+    card.appendChild(el("strong", "", esc(item.title)));
+    if (item.explanation) card.appendChild(el("p", "", esc(item.explanation)));
+    list.appendChild(card);
+  });
+  panel.appendChild(list);
+  return panel;
+}
+
+function renderFinalList(kicker, title, items, cls) {
+  const panel = researchPanel(kicker, title, "", cls);
+  panel.appendChild(researchList(items));
+  return panel;
+}
+
+function renderFinalLearning(focus) {
+  const panel = researchPanel("LEARNING FOCUS", "本次分析方法", "");
+  const card = el("div", "final-learning-card");
+  card.appendChild(el("h3", "", esc(focus.title)));
+  const steps = el("ol", "final-method-steps");
+  focus.methods.forEach((item) => steps.appendChild(el("li", "", esc(item))));
+  card.appendChild(steps);
+  if (focus.misconception) {
+    card.appendChild(el(
+      "p",
+      "final-common-mistake",
+      `<span>常见误区</span>${esc(focus.misconception)}`,
+    ));
+  }
+  panel.appendChild(card);
+  return panel;
 }
 
 function renderParticipants(vm) {
