@@ -66,6 +66,7 @@ from backend.services.glossary_extractor import (
     GlossaryExtractor,
 )
 from backend.services.ark_client import ArkClient, ArkClientError
+from backend.skills.runtime_bootstrap import ensure_bundled_instruction_skills
 from backend.skills.skill_registry import SkillRegistry
 
 
@@ -86,6 +87,7 @@ app.mount(
 pandadata = PandaDataClient()
 router = RouterAgent()
 store = get_store()
+ensure_bundled_instruction_skills()
 skill_registry = SkillRegistry()
 result_aggregator = ResultAggregator()
 policy_gate = PolicyGate()
