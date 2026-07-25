@@ -9,7 +9,12 @@ from pydantic import ValidationError
 
 from backend.core.agent_registry import AgentRegistry
 from backend.core.contracts import ExecutionPlan
-from backend.core.plan_validator import PlanValidationError, validate_execution_plan, validate_plan_dimensions
+from backend.core.plan_validator import (
+    PlanValidationError,
+    validate_execution_plan,
+    validate_global_collaboration,
+    validate_plan_dimensions,
+)
 from backend.core.policy_contracts import PolicyDecision
 from backend.core.task_interpreter import TaskInterpreter
 from backend.core.task_spec import TaskSpec
@@ -154,6 +159,7 @@ class ManagerAgent:
             }
         )
         plan = validate_execution_plan(plan, self.registry)
+        plan = validate_global_collaboration(plan)
         # Dimension coverage validation (spec §6.3) — only when dimensions are specified
         if task_spec.required_dimensions:
             plan = validate_plan_dimensions(plan, task_spec, self.registry)
@@ -198,8 +204,11 @@ TaskSpec 是经过前置边界检查与需求解释的唯一任务目标来源�
 3. 哪些步骤依赖前置结果；
 4. 是否需要先向用户澄清。
 
-不得套用固定工作流，不得只选择一个所谓主 Agent。简单目标可以只选一个专家；
-复杂目标应按实际需要构建依赖图。depends_on 为空表示可立即并行执行。
+不得套用固定工作流，也不得只选择一个所谓主 Agent。所有准备执行的研究计划
+必须选择至少两个不同 Expert，并至少包含一条连接不同 Expert 的 dependency。
+第二个 Expert 必须承担独立取证、量化交叉验证、风险审查或用户明确要求的报告
+组织职责；不得用重复步骤、空步骤、无关 Agent 或 Report 凑数。无法形成可信协作
+时必须让规划失败，不得退化为单 Expert 执行。
 最多生成 8 个步骤。selected_agents 必须与 steps 中实际使用的专家完全一致。
 如果关键信息不足，将 needs_clarification 设为 true，并提供 clarification_question。
 
@@ -218,7 +227,8 @@ title（问题）、可选 hint、multi（是否可多选）、items（候选项
 你只能选择专家和专家间依赖，绝不能选择、编排或写入专家内部的底层 Skill。
 Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Manager 不得替它们
 做这件事，plan 中不得出现 skill_id 或 a_share_stock_dossier。
-根据 task_type、research_goal 和 evidence_requirements 选择最小充分专家集合。
+根据 task_type、research_goal 和 evidence_requirements 选择最小充分专家集合，
+但所有可执行研究任务的下限是两个不同 Expert。
 不得修改 expected_result_type，不得扩展当前任务的研究目标，不得输出买入、卖出、
 持有、目标收益或当前仓位建议。
 若 task_type=personal_investment_decision，只能规划支持决策所需的事实研究与风险分析；
@@ -230,10 +240,14 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
 
 始终选择完成任务所需的最小充分专家集合：
 - 不得因为某个专家已实现就选择它；
-- 价格/市场表现分析通常只需要 research，不得自动追加 risk 或 report；
-- 独立策略风险审查可以只使用 risk，不得强制先调用 research；
-- 个股或观察名单的事件风险扫描只使用 risk，并提取 symbol 或 symbols、
-  start_date、end_date；不得因为出现股票代码就自动追加 research 或财务分析。
+- 任一可执行计划至少选择两个不同 Expert，并建立至少一条跨 Expert 依赖；
+- 价格/市场表现分析由 Research 或 Quant 获取主要证据，并动态选择另一个相关
+  Expert 审查窗口、下行风险、异常或证据限制；不得用 Report 凑数；
+- 独立策略风险审查由 Risk 承担主审，并动态选择能提供策略事实、市场证据或宏观
+  背景的另一个 Expert；不得生成无关的陪衬步骤；
+- 个股或观察名单的事件风险扫描由 Risk 承担事件扫描，并提取 symbol 或 symbols、
+  start_date、end_date。另一个 Expert 只能承担与目标直接相关的公司、市场或量化
+  证据核验，不得因为出现股票代码就自动扩展成全面财务分析。
   Risk 自行选择其事件风险 Skill，Manager 不得写入 Skill ID；
 - 只有用户明确要求报告、摘要、备忘录、正式输出，或复杂任务确需整合多个专家时，
   才选择 report；
@@ -246,9 +260,10 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
   fundamental_metrics 等概念名代替真实字段；
 - 市场、财报/尽调、行业 Research 必须拆成不同步骤，不得在同一步骤混用
   symbols、财报 scope、industry 三类互斥输入契约；
-- 单公司财报、基本面和尽调问题通常只选择 research；应提取 symbol、period、
-  scope、focus 和 research_goal。只问财报时 scope=financials，全面尽调时
-  scope=full_dossier。Manager 仍然不能写入底层 Skill；
+- 单公司财报、基本面和尽调问题由 Research 获取主要事实，并动态选择另一个 Expert
+  做风险审查或适用的量化交叉验证；应提取 symbol、period、scope、focus 和
+  research_goal。只问财报时 scope=financials，全面尽调时 scope=full_dossier。
+  Manager 仍然不能写入底层 Skill；
 - 财务质量或盈利质量请求必须同时选择 Research 和 Risk：Research 覆盖
   company_fundamentals 并生成结构化财务事实，Risk 覆盖 risk_assessment 并独立审查
   现金利润质量、异常趋势和证据缺口。
@@ -280,15 +295,17 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
   该模式只评估历史市场一致性，不得声称价格表现证明基本面或预测未来收益；
   明确的因子创意或 R020 研究设置 analysis_mode=skill_research，由 Quant 自行动态
   选择授权 Skill。analysis_mode 只描述分析目标，不得写入任何 Skill ID；
-- 不得因为 Quant 可用就强制加入所有任务，也不得为 Quant 任务自动追加 risk 或
-  report。只有用户明确要求风险审查或报告时才选相应专家并建立业务依赖。
+- 不得因为 Quant 可用就机械加入所有任务。Quant 作为主分析时仍须动态选择一个
+  与目标相关的协作 Expert 并建立跨 Expert 依赖；Report 只在用户明确要求正式输出
+  时选择，不能作为通用第二 Expert。
 - 当任务明确要求评估经济周期、利率、流动性、政策或行业宏观环境时，可以选择
   macro；Macro 使用 PandaData 自行规划内部宏观指标，Manager 不得选择指标或 API；
 - 纯历史收益、因子计算、股票技术指标或公司财务任务不得自动追加 macro；
 - Macro 输入应提取 industry、time_range、research_goal。用户给出明确历史区间时
   同时填写 start_date、end_date；只有前瞻期限时不猜测历史日期，由 Macro 使用
   截至执行日的最近 24 个月数据；
-- 不得自动追加 macro。Macro 与其他专家的依赖只能来自当前任务的真实业务需要。
+- 不得机械追加 macro。Macro 与其他专家的依赖只能来自当前任务的真实业务需要；
+  Macro 作为主分析时仍须选择一个相关协作 Expert 并建立跨 Expert 依赖。
 
 可用专家注册表：
 {registry_json}
@@ -357,6 +374,9 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
 {registry_json}
 
 Agent 输入契约：
+- 所有准备执行的研究计划必须选择至少两个不同 Expert，并包含至少一条跨 Expert
+  dependency；不得用重复、空白、无关或 Report 步骤凑数。无法形成可信协作时停止
+  规划，不得返回单 Expert 计划；
 - 市场、财报/尽调、行业 Research 必须拆成不同步骤，不得在同一步骤混用
   symbols、财报 scope、industry 三类互斥输入契约；
 - 市场 Research 必须使用 symbols 列表、YYYYMMDD 的 start_date/end_date；fields

@@ -65,8 +65,14 @@ enabled. Manager prompts must be generated from the enabled Registry entries and
 
 The Manager is not an expert and must never appear in `selected_agents` or as a
 task-graph step. Do not implement fixed workflows or keyword-based A→B→C
-routing. A plan may use one expert when the task genuinely needs only one, but
-the system must not reduce every request to a single primary agent.
+routing. Every executable investment-research plan must use at least two
+distinct enabled experts and include at least one cross-expert dependency.
+Each selected expert must perform relevant evidence gathering, cross-checking,
+risk review, or explicitly requested report work; duplicate, empty, unrelated,
+or default Report steps must not be used to satisfy the minimum. If the
+Manager cannot form a credible collaboration, planning must fail instead of
+degrading to single-expert execution. Clarification and policy-rejection paths
+remain exempt because they do not execute a research DAG.
 
 The legacy `/api/route` endpoint is temporarily retained only for compatibility
 and is deprecated. It is not the AlphaOS v0.3 orchestration path.
@@ -87,8 +93,10 @@ validation succeed.
 - Mock ArkClient in automated tests; tests must never consume model API quota.
 - Mock PandaData in automated tests; only the explicit manual integration script
   may use real credentials and quota.
-- Select the minimal sufficient expert set. Risk and Report are optional, and
-  no executor code may add them or encode a fixed expert sequence.
+- Select the minimal sufficient expert set with a floor of two distinct experts
+  for every executable research plan. Risk remains dynamically selected and
+  Report is optional unless formal output is requested; no executor code may
+  add experts or encode a fixed expert sequence.
 - Manager selects experts and expert dependencies only. It must never select,
   order, or invoke an expert-owned Skill.
 - Research Agent may select only its enabled Research-owned Skills. Financial

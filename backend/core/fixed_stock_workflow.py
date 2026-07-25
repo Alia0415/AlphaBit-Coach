@@ -13,7 +13,10 @@ from backend.core.contracts import (
     ExecutionPlan,
     PlanStep,
 )
-from backend.core.plan_validator import validate_execution_plan
+from backend.core.plan_validator import (
+    validate_execution_plan,
+    validate_global_collaboration,
+)
 from backend.core.task_spec import TaskSpec
 
 
@@ -209,4 +212,5 @@ def build_fixed_stock_workflow(
         clarification_question=None,
         clarification_options=[],
     )
-    return task_spec, validate_execution_plan(plan, registry)
+    validated = validate_execution_plan(plan, registry)
+    return task_spec, validate_global_collaboration(validated)
