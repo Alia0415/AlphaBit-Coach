@@ -243,9 +243,14 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
   不能写成单数 symbol；fields 为空列表时 Research 使用默认字段，否则必须至少包含
   trade_date、symbol、close、volume，绝不能使用 price、financials、
   fundamental_metrics 等概念名代替真实字段；
-- 单公司财报、基本面、尽调和财务风险问题只选择 research；应提取 symbol、
-  period、scope、focus 和 research_goal。只问财报时 scope=financials，全面尽调时
-  scope=full_dossier。Manager 仍然只能选择 research，绝不能写入底层 Skill；
+- 单公司财报、基本面和尽调问题通常只选择 research；应提取 symbol、period、
+  scope、focus 和 research_goal。只问财报时 scope=financials，全面尽调时
+  scope=full_dossier。Manager 仍然不能写入底层 Skill；
+- 财务质量或盈利质量请求必须同时选择 Research 和 Risk：Research 覆盖
+  company_fundamentals 并生成结构化财务事实，Risk 覆盖 risk_assessment 并独立审查
+  现金利润质量、异常趋势和证据缺口。
+  Risk 必须把 Research 财务步骤声明为 required 依赖；
+  不得为此自动增加 Quant、Macro 或 Report；
 - 行业 Research 使用 industry、time_range、research_goal 和可选 focus。
   单公司行业竞争时应同时提供单数 symbol，以便查询公司行业分类和可比公司；
   不得提供 symbols 或财报 scope，也不要求市场 Research 的日期和 fields；
@@ -351,6 +356,8 @@ Agent 输入契约：
 - 个股/观察名单事件风险扫描的 Risk 使用 symbol 或 symbols，并可使用
   start_date、end_date；不得为此自动增加 Research 或财务 scope；
 - Report 必须声明至少一个上游 depends_on；
+- 财务质量或盈利质量请求必须同时选择 Research 和 Risk；Risk 必须把 Research
+  财务步骤声明为 required 依赖，不得把该审查改成独立事件风险扫描；
 - 不要为了修复契约而增加不需要的专家或改成固定流程。
 """.strip()
 

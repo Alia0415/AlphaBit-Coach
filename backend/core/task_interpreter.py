@@ -6,7 +6,6 @@ with deterministic fallback for robustness.
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime
 import re
@@ -79,7 +78,9 @@ _DIMENSION_PROMPT_TEMPLATE = """你是 AlphaOS TaskInterpreter 的维度分析�
 判定规则：
 - "分析某公司""全面研究""从多角度评估"等宽泛单公司请求→ comprehensive，包含前五个维度
 - "看波动回撤""技术分析""历史表现"→ focused，仅 quantitative_cross_check
-- "财报分析""财务质量""基本面"→ focused，仅 company_fundamentals
+- "财报分析""基本面"→ focused，仅 company_fundamentals
+- "财务质量""盈利质量""利润质量""盈余质量"→ focused，同时包含
+  company_fundamentals 与 risk_assessment，由事实研究和独立审查协作
 - "行业研究""竞争格局"→ focused，仅 industry_competition
 - "事件风险""风险扫描"→ focused，仅 risk_assessment
 - "宏观分析""经济环境"→ focused，仅 macro_environment
@@ -193,6 +194,21 @@ class TaskInterpreter:
                 )
                 if required_dimensions:
                     dimension_defaulted = True
+            if _requires_financial_quality_review(
+                task_type,
+                subject_type,
+                lowered,
+            ):
+                request_scope = "focused"
+                required_dimensions = [
+                    "company_fundamentals",
+                    "risk_assessment",
+                ]
+                optional_dimensions = [
+                    dimension
+                    for dimension in optional_dimensions
+                    if dimension not in required_dimensions
+                ]
 
         if dimension_defaulted:
             defaulted_fields.append("dimensions=deterministic_fallback")
@@ -439,11 +455,29 @@ _FOCUSED_RISK = (
 )
 _FOCUSED_MACRO = ("宏观", "经济周期", "利率", "流动性", "政策")
 _FOCUSED_REPORT = ("正式报告", "研究报告", "备忘录", "研报")
+_FINANCIAL_QUALITY_REVIEW = (
+    "财务质量",
+    "盈利质量",
+    "利润质量",
+    "盈余质量",
+)
 
 # Comprehensive triggers
 _COMPREHENSIVE_TRIGGERS = (
     "全面", "综合", "深度分析", "全方位", "多角度", "整体评估",
 )
+
+
+def _requires_financial_quality_review(
+    task_type: TaskType,
+    subject_type: SubjectType,
+    lowered: str,
+) -> bool:
+    return (
+        subject_type == "company"
+        and task_type == "company_research"
+        and any(marker in lowered for marker in _FINANCIAL_QUALITY_REVIEW)
+    )
 
 
 def _deterministic_dimensions(
@@ -469,6 +503,9 @@ def _deterministic_dimensions(
     # Check for explicit comprehensive triggers
     is_comprehensive_trigger = any(t in lowered for t in _COMPREHENSIVE_TRIGGERS)
     has_stock_target = _SYMBOL.search(lowered) is not None
+
+    if _requires_financial_quality_review(task_type, subject_type, lowered):
+        return "focused", ["company_fundamentals", "risk_assessment"]
 
     explicit_dimensions: list[ResearchDimension] = []
     for dimension, markers in (
