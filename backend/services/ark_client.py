@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, ValidationError
 ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 DEFAULT_ARK_MODEL = "ep-20260708162855-pcf9x"
 DEFAULT_ARK_TIMEOUT_SECONDS = 90.0
-DEFAULT_ARK_MAX_RETRIES = 1
+DEFAULT_ARK_MAX_RETRIES = 0
 ALPHAOS_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ class ArkJsonRequest(BaseModel, Generic[T]):
     execution_id: str | None = None
     step_id: str | None = None
     attempt: int = 1
-    allow_repair: bool = True
+    allow_repair: bool = False
 
     class Config:
         arbitrary_types_allowed = True
@@ -111,7 +111,7 @@ _RETRYABLE_KINDS = {
     ArkErrorKind.RATE_LIMIT,
     ArkErrorKind.SERVER,
 }
-_MAX_TRANSPORT_RETRIES = 2
+_MAX_TRANSPORT_RETRIES = 1
 _BASE_BACKOFF_SECONDS = 1.0
 _MAX_JITTER_SECONDS = 0.5
 
