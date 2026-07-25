@@ -3,8 +3,8 @@ const COLORS = Object.freeze({
   text: "#9f9f9a",
   grid: "#efefec",
   border: "#d9d9d3",
-  up: "#111111",
-  down: "#111111",
+  up: "#c0544e",
+  down: "#4e8d6a",
   line: "#111111",
   ma5: "#111111",
   ma10: "#6b6b6b",
@@ -139,12 +139,12 @@ export class StockChart {
       ? (payload.volume || []).map((point) => ({
           time: point.time,
           value: point.value,
-          color: point.direction === "down" ? "rgba(17,17,17,0.62)" : "rgba(17,17,17,0.22)",
+          color: point.direction === "down" ? "rgba(78,141,106,0.5)" : "rgba(192,84,78,0.4)",
         }))
       : payload.candles.map((candle) => ({
           time: candle.time,
           value: candle.volume,
-          color: candle.close >= candle.open ? "rgba(17,17,17,0.22)" : "rgba(17,17,17,0.62)",
+          color: candle.close >= candle.open ? "rgba(192,84,78,0.4)" : "rgba(78,141,106,0.5)",
         }));
     volumeSeries.setData(volumeData);
 
