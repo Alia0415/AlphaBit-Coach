@@ -22,6 +22,9 @@ function reportBundle() {
       aggregation: {
         user_goal: "分析公司基本面是否正在改善",
         completion_status: "completed",
+        task_understanding: {
+          task_type: "company_research",
+        },
         direct_answer: {
           headline: "收入同比下降 9.70%，营业利润同比增长 19.24%，盈利改善原因仍需验证。",
           explanation: "收入与利润变化方向不同，现阶段只能确认盈利表现优于收入表现。",
@@ -207,6 +210,25 @@ function reportBundle() {
   assert.match(vm.learningSummary.quiz.question, /营业收入同比增长率/);
   assert.equal(vm.learningSummary.quiz.answerIndex, 1);
   assert.equal(vm.evidenceChains.length > 0, true);
+  assert.ok(vm.finalSummary);
+  assert.equal(
+    vm.finalSummary.conclusion.headline,
+    "收入同比下降 9.70%，营业利润同比增长 19.24%，盈利改善原因仍需验证。",
+  );
+  assert.equal(vm.finalSummary.conclusion.stance, "谨慎积极");
+  assert.equal(vm.finalSummary.conclusion.confidence, "中等");
+  assert.equal(vm.finalSummary.evidence.length <= 3, true);
+  assert.equal(vm.finalSummary.uncertainties.length <= 3, true);
+  assert.deepEqual(vm.finalSummary.learning, {
+    title: "如何判断公司基本面是否真正改善",
+    methods: [
+      "先看收入变化，判断业务是否增长",
+      "再看利润变化，判断盈利能力是否提升",
+      "检查现金流，判断利润质量",
+      "观察多个周期，判断改善是否持续",
+    ],
+    misconception: "利润增长不一定代表经营全面改善。",
+  });
 
   const serialized = JSON.stringify(vm);
   [
@@ -218,13 +240,151 @@ function reportBundle() {
     "risk_2",
     "report_3",
     "row_count",
-    "method",
     "task_id",
     "skill_id",
   ].forEach((forbidden) => {
     assert.equal(serialized.includes(forbidden), false, `leaked ${forbidden}`);
   });
   assert.equal(/\d+\.\d{5,}/.test(serialized), false);
+
+  const visibleFinalText = JSON.stringify([
+    vm.finalSummary.conclusion,
+    vm.finalSummary.evidence,
+    vm.finalSummary.uncertainties,
+    vm.finalSummary.learning,
+    vm.finalSummary.nextSteps,
+  ]);
+  ["PandaData", "API", "prompt", "task_id", "skill_id", "source_step"].forEach((forbidden) => {
+    assert.equal(visibleFinalText.includes(forbidden), false, `leaked ${forbidden}`);
+  });
+}
+
+{
+  [
+    "已完成分析",
+    "正式研究报告已生成",
+    "任务已执行完成",
+    "已完成数据计算",
+    "已完成所需的数据计算",
+    "300750.SZ 财务分析完成，覆盖 3 个报告期。",
+    "已形成研究结果",
+  ].forEach((invalidHeadline) => {
+    const bundle = reportBundle();
+    bundle.report.aggregation.direct_answer.headline = invalidHeadline;
+    const vm = buildResearchViewModel(bundle);
+    assert.equal(vm.finalSummary.conclusion.headline, "盈利表现优于收入表现。");
+    ["已完成", "已生成", "报告"].forEach((invalidText) => {
+      assert.equal(vm.finalSummary.conclusion.headline.includes(invalidText), false);
+    });
+  });
+}
+
+{
+  const bundle = reportBundle();
+  const aggregation = bundle.report.aggregation;
+  aggregation.direct_answer.headline = "任务已执行";
+  aggregation.direct_answer.explanation = "解释".repeat(100);
+  aggregation.key_findings = [{ text: "已完成" }];
+  const vm = buildResearchViewModel(bundle);
+  assert.equal(
+    vm.finalSummary.conclusion.headline,
+    "盈利表现优于收入表现，但持续性需要验证。",
+  );
+  assert.equal(vm.finalSummary.conclusion.explanation.length, 180);
+}
+
+{
+  const bundle = reportBundle();
+  const aggregation = bundle.report.aggregation;
+  aggregation.key_findings = [];
+  aggregation.evidence_summary = [];
+  aggregation.content_blocks = [aggregation.content_blocks[0]];
+  const vm = buildResearchViewModel(bundle);
+  assert.deepEqual(vm.finalSummary.evidence[0], {
+    title: "营业收入同比增长率 -9.70%",
+    explanation: "本期营业收入低于上年同期。",
+  });
+  assert.equal(vm.finalSummary.evidence.length, 2);
+}
+
+{
+  const bundle = reportBundle();
+  const aggregation = bundle.report.aggregation;
+  aggregation.key_findings = [{ text: "300750.SZ 财务分析完成，覆盖 3 个报告期。" }];
+  aggregation.evidence_summary = [{ text: "营业利润同比增长 19.24%。" }];
+  aggregation.content_blocks = [];
+  const vm = buildResearchViewModel(bundle);
+  assert.deepEqual(vm.finalSummary.evidence, [{
+    title: "营业利润同比增长 19.24%。",
+    explanation: "",
+  }]);
+}
+
+{
+  const bundle = reportBundle();
+  const aggregation = bundle.report.aggregation;
+  aggregation.direct_answer = {
+    headline: "已完成",
+    explanation: "",
+  };
+  aggregation.key_findings = [];
+  aggregation.evidence_summary = [];
+  aggregation.risks = [];
+  aggregation.limitations = [];
+  aggregation.next_research_steps = [];
+  aggregation.content_blocks = [];
+  aggregation.technical_evidence.source_results = {};
+  const vm = buildResearchViewModel(bundle);
+  assert.equal(
+    vm.finalSummary.conclusion.headline,
+    "当前证据不足以形成明确判断",
+  );
+  assert.deepEqual(vm.finalSummary.evidence, []);
+  assert.deepEqual(vm.finalSummary.uncertainties, []);
+  assert.deepEqual(vm.finalSummary.nextSteps, []);
+}
+
+{
+  const bundle = reportBundle();
+  const aggregation = bundle.report.aggregation;
+  aggregation.key_findings = [];
+  aggregation.evidence_summary = [{
+    text: [
+      "风险摘要：存货与应收项目相对营收的占比持续上升，可能反映销售回款放缓或库存积压，",
+      "存在资产减值和现金流压力加大的风险。",
+      "（专业数据源: 专业研究方法, derived:2025q4:专业研究方法, SM0044820）",
+    ].join(""),
+  }];
+  aggregation.content_blocks = [];
+  const vm = buildResearchViewModel(bundle);
+  assert.equal(vm.finalSummary.evidence[0].title.length <= 80, true);
+  ["专业数据源", "专业研究方法", "derived:", "SM0044820"].forEach((forbidden) => {
+    assert.equal(JSON.stringify(vm.finalSummary).includes(forbidden), false);
+  });
+}
+
+{
+  const bundle = reportBundle();
+  const aggregation = bundle.report.aggregation;
+  aggregation.key_findings = [];
+  aggregation.evidence_summary = [];
+  aggregation.content_blocks[0].data.metrics[0].explanation = "专业字段：。";
+  const vm = buildResearchViewModel(bundle);
+  assert.equal(vm.finalSummary.evidence[0].explanation, "");
+  assert.equal(JSON.stringify(vm.finalSummary).includes("专业字段"), false);
+}
+
+{
+  const bundle = reportBundle();
+  const aggregation = bundle.report.aggregation;
+  aggregation.direct_answer.headline = "建议买入并加仓";
+  aggregation.direct_answer.explanation = "当前适合买入。";
+  aggregation.key_findings = [{ text: "盈利表现优于收入表现。" }];
+  aggregation.next_research_steps = [{ text: "建议加仓" }];
+  const vm = buildResearchViewModel(bundle);
+  assert.equal(vm.finalSummary.conclusion.headline, "盈利表现优于收入表现。");
+  assert.equal(vm.finalSummary.conclusion.explanation, "");
+  assert.deepEqual(vm.finalSummary.nextSteps, []);
 }
 
 {
