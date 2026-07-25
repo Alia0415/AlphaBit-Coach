@@ -597,6 +597,37 @@ button.chip:hover { border-color: var(--cyan-dim); color: var(--text); transform
 .ask-box textarea:focus { border-color: var(--cyan-dim); }
 .ask-foot { display: flex; align-items: center; gap: 10px; padding: 8px 12px 0; justify-content: flex-end; }
 .ask-count { color: var(--text-3); font-size: 12px; }
+.query-refinement {
+  margin-top: 10px; border-top: 1px solid var(--line-soft); padding-top: 10px;
+}
+.query-actions { display: flex; align-items: center; gap: 14px; }
+.query-action {
+  color: var(--text-2); font-size: 12px; padding: 2px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.query-action:hover { color: var(--text); border-color: var(--text); }
+.query-action:disabled { opacity: .45; cursor: not-allowed; }
+.query-original, .query-fallback-note {
+  margin-top: 9px; padding: 9px 11px; border: 1px solid var(--line-soft);
+  background: #f7f7f5; color: var(--text-2); font-size: 12px; line-height: 1.6;
+}
+.query-original::before {
+  content: "原问题"; display: block; color: var(--text-3); font-size: 10px;
+  letter-spacing: 1px; margin-bottom: 3px;
+}
+.query-fallback-note { border-style: dashed; }
+.query-clarification { margin-top: 10px; }
+.query-clarification-label {
+  display: block; margin-bottom: 7px; color: var(--text-2); font-size: 12px;
+}
+.query-option-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.query-option {
+  padding: 6px 11px; border: 1px solid var(--line); background: #f6f6f3;
+  color: var(--text-2); font-size: 12px; border-radius: 4px;
+}
+.query-option:hover, .query-option.sel {
+  border-color: #111111; color: #111111; background: #eeeeea;
+}
 .rec-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
 .rec-row .rec-label { color: var(--cyan); font-size: 12.5px; display: inline-flex; gap: 6px; align-items: center; }
 .office-preview { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); cursor: pointer; }

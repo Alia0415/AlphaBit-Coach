@@ -200,6 +200,44 @@ def test_office_versions_the_demo_data_module_import() -> None:
     assert 'from "./api.js?v=' in client.get("/static/office/js/live.js").text
 
 
+def test_hall_refines_research_query_inline_without_new_chat_or_modal() -> None:
+    script = client.get("/static/office/js/app.js").text
+    api_script = client.get("/static/office/js/api.js").text
+    live_script = client.get("/static/office/js/live.js").text
+    styles = client.get("/static/office/css/office.css").text
+
+    assert "正在整理研究问题…" in script
+    assert "我理解你的研究需求是" in script
+    assert "可直接修改" in script
+    assert "确认并开始研究" in script
+    assert "查看原问题" in script
+    assert "重新整理" in script
+    assert "rec.hidden = true" in script
+    assert "query-refinement" in script
+    assert "modal" not in script[script.index("function pageHallLive()"):script.index("function pageClarifyLive()")]
+    assert "/api/research-query/rewrite" in api_script
+    assert "rewriteResearchQuery" in live_script
+    assert ".query-refinement" in styles
+    assert ".query-option" in styles
+
+
+def test_query_refinement_helpers_apply_clarification_and_final_priority() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for the query refinement unit tests")
+
+    completed = subprocess.run(
+        [node, "tests/test_query_refinement.mjs"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "query refinement tests passed" in completed.stdout
+
+
 def test_office_loads_shared_glossary_and_office_controller() -> None:
     entrypoint = client.get("/")
     controller = client.get("/static/office/js/glossary-ui.js")

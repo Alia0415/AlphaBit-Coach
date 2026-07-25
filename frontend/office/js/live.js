@@ -3,7 +3,7 @@
 // enabled, capabilities, tools, skills, counts, statuses) come from the API;
 // only cosmetic fields (sprite / role label / specialty) are overlaid from the
 // static presentation map. It never invents research facts.
-import { api } from "./api.js?v=20260725-c01";
+import { api } from "./api.js?v=20260726-query-refine";
 import { store } from "./store.js";
 
 export const isLive = () => store.state.mode === "live";
@@ -200,8 +200,20 @@ export function mapPlan(plan) {
   };
 }
 
-export async function createSession(prompt) {
-  const res = await api.createSession(prompt);
+export async function rewriteResearchQuery(originalQuery) {
+  const res = await api.rewriteResearchQuery(originalQuery);
+  return {
+    originalQuery: res.original_query || originalQuery,
+    rewrittenQuery: res.rewritten_query || originalQuery,
+    requiresConfirmation: res.requires_confirmation === true,
+    needClarification: res.need_clarification === true,
+    clarificationType: res.clarification_type || null,
+    options: Array.isArray(res.options) ? res.options.slice(0, 3) : [],
+  };
+}
+
+export async function createSession(prompt, queryContext = {}) {
+  const res = await api.createSession(prompt, queryContext);
   return { taskId: res.task_id, plan: mapPlan(res.plan), rawPlan: res.plan };
 }
 

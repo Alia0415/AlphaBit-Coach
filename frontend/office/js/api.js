@@ -99,8 +99,23 @@ export const api = {
     getJSON(`/api/tasks/${encodeURIComponent(taskId)}/coach-narrations`),
 
   // planning session / clarify (real Manager planning; consumes model quota)
-  createSession: (prompt) =>
-    postJSON("/api/tasks/sessions", { prompt }, { timeoutMs: PLANNING_TIMEOUT_MS }),
+  rewriteResearchQuery: (originalQuery) =>
+    postJSON(
+      "/api/research-query/rewrite",
+      { original_query: originalQuery },
+      { timeoutMs: 90000 },
+    ),
+  createSession: (prompt, queryContext = {}) =>
+    postJSON(
+      "/api/tasks/sessions",
+      {
+        prompt,
+        original_query: queryContext.originalQuery || prompt,
+        rewritten_query: queryContext.rewrittenQuery || prompt,
+        final_query: queryContext.finalQuery || prompt,
+      },
+      { timeoutMs: PLANNING_TIMEOUT_MS },
+    ),
   clarifySession: (taskId, answers) =>
     postJSON(
       `/api/tasks/${encodeURIComponent(taskId)}/clarify`,
