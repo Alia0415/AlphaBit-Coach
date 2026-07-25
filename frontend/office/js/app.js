@@ -294,12 +294,12 @@ const CELL_FEET = 0.89;
 // Six desk seats as fractions of the background image, so they scale with any canvas size.
 // A seat's (fx,fy) marks where the chair base rests on the floor; `chair` picks a colour.
 const SEATS = {
-  manager:  { fx: 0.243, fy: 0.390, chair: 5 }, // top-left desk (brown)
-  macro:    { fx: 0.196, fy: 0.620, chair: 2 }, // mid-left desk (navy)
-  research: { fx: 0.240, fy: 0.850, chair: 4 }, // bottom-left desk (blue)
-  quant:    { fx: 0.744, fy: 0.380, chair: 6 }, // top-right desk (grey)
-  risk:     { fx: 0.798, fy: 0.620, chair: 1 }, // mid-right desk (charcoal)
-  report:   { fx: 0.738, fy: 0.850, chair: 3 }, // bottom-right desk (purple)
+  manager:  { fx: 0.243, fy: 0.410, chair: 5 }, // top-left desk (brown)
+  macro:    { fx: 0.196, fy: 0.640, chair: 2 }, // mid-left desk (navy)
+  research: { fx: 0.240, fy: 0.870, chair: 4 }, // bottom-left desk (blue)
+  quant:    { fx: 0.744, fy: 0.400, chair: 6 }, // top-right desk (grey)
+  risk:     { fx: 0.798, fy: 0.640, chair: 1 }, // mid-right desk (charcoal)
+  report:   { fx: 0.738, fy: 0.870, chair: 3 }, // bottom-right desk (purple)
 };
 const TABLE_CENTER = { fx: 0.5, fy: 0.565 }; // round meeting table (roundtable/visit gather point)
 // Seated-sprite tuning (fractions of the scene width) — calibrated against the screenshot.
@@ -813,7 +813,7 @@ function pageReportDetail(reportId) {
   // demo coach sidebar: locally labeled sample data, no credentials required
   const coach = buildCoachSidebar({
     demo: true,
-    seedMessages: [],
+    seedMessages: DEMO_COACH.seedMessages || [],
     loadGuide: () => Promise.resolve(DEMO_COACH.guide),
     ask: (question, quoted) => new Promise((resolve) => {
       setTimeout(() => resolve({ ...DEMO_COACH.reply, quoted_text: quoted || null }), 600);
@@ -1544,19 +1544,18 @@ function pageWarRoom() {
   stagePanel.appendChild(prog);
   centerCol.appendChild(stagePanel);
 
-  // companion interpretation feed
+  // companion interpretation feed（挂到右栏，与日志同列，保持中栏单屏）
   const companionPanel = el("div", "panel companion-panel");
+  companionPanel.style.marginTop = "0";
   companionPanel.appendChild(el("div", "panel-title", "🔍 专家解读"));
   const companionFeed = el("div", "companion-feed");
   companionPanel.appendChild(companionFeed);
-  centerCol.appendChild(companionPanel);
 
   // demo coach classroom: replays labeled sample narrations on a timer
   const classroom = createClassroomPanel({
     demo: true,
     agentName: (id) => agentById(id)?.name || id,
   });
-  centerCol.appendChild(classroom.root);
   (DEMO_COACH.narrations || []).forEach((n, i) => {
     setTimeout(() => {
       if (!classroom.root.isConnected) return;
@@ -1601,9 +1600,11 @@ function pageWarRoom() {
   centerCol.appendChild(tlPanel);
   grid.appendChild(centerCol);
 
-  // ================= RIGHT: summary + skills + logs =================
+  // ================= RIGHT: interpretation + classroom + logs =================
+  // （任务摘要与专业分析方法挪到左栏 DAG 下方，右栏集中放动态信息流）
   const rightCol = el("div");
   const sumPanel = el("div", "panel");
+  sumPanel.style.marginTop = "14px";
   sumPanel.appendChild(el("div", "panel-title", "任务摘要"));
   const kv = el("div", "kv-list");
   [
@@ -1615,7 +1616,7 @@ function pageWarRoom() {
     kv.appendChild(el("div", "kv", `<span class="k">${esc(k)}</span><span>${esc(v)}</span>`));
   });
   sumPanel.appendChild(kv);
-  rightCol.appendChild(sumPanel);
+  leftCol.appendChild(sumPanel);
 
   const skillPanel = el("div", "panel");
   skillPanel.style.marginTop = "14px";
@@ -1629,7 +1630,10 @@ function pageWarRoom() {
     skillRows[name] = row;
     skillPanel.appendChild(row);
   });
-  rightCol.appendChild(skillPanel);
+  leftCol.appendChild(skillPanel);
+
+  rightCol.appendChild(companionPanel);
+  rightCol.appendChild(classroom.root);
 
   const logPanel = el("div", "panel");
   logPanel.style.marginTop = "14px";
@@ -1657,11 +1661,20 @@ function pageWarRoom() {
 
   const state = { clock: 0, speed: 1, playing: true, ptr: 0, logs: 0, lastPct: -1 };
 
-  // Return an agent to its desk seat (the resting/seated state).
+  // Idle agents occasionally stroll around the floor; working experts and a
+  // random share of the rest return to (or stay at) their desk seats.
   function pickWander(ag) {
-    ag.tx = ag.home.x;
-    ag.ty = ag.home.y;
-    ag.pauseT = 0.6 + Math.random() * 1.9;
+    const busy = ag.status === "working" || ag.status === "running";
+    if (busy || Math.random() < 0.55) {
+      ag.tx = ag.home.x;
+      ag.ty = ag.home.y;
+      ag.pauseT = busy ? 2.5 + Math.random() * 3 : 1.2 + Math.random() * 2.2;
+    } else {
+      // stroll target: central walkable floor area away from the desks
+      ag.tx = clamp(WAR_W * (0.3 + Math.random() * 0.4), 40, WAR_W - 40);
+      ag.ty = clamp(WAR_H * (0.38 + Math.random() * 0.5), 90, WAR_H - 24);
+      ag.pauseT = 0.8 + Math.random() * 1.8;
+    }
   }
   function gather(ids) {
     const cx = TABLE_CENTER.fx * WAR_W, cy = TABLE_CENTER.fy * WAR_H, n = ids.length;
@@ -3185,6 +3198,8 @@ function renderBlockData(data) {
 const LIVE_RECOMMENDED = [
   "分析贵州茅台（600519.SH）近三个财年的盈利能力与财务质量",
   "评估宁德时代（300750.SZ）的成长性与估值水平",
+  "计算 000001.SZ、000002.SZ 和 600519.SH 在 2024 年的 R020 成交量放大因子",
+  "分析比亚迪（002594.SZ）过去一年的股价表现与波动率",
   "梳理当前国内宏观经济与货币政策环境",
 ];
 
@@ -3678,12 +3693,12 @@ function pageWarRoomLive() {
   stagePanel.appendChild(prog);
   centerCol.appendChild(stagePanel);
 
-  // companion interpretation feed
+  // companion interpretation feed（挂到右栏，保持中栏单屏）
   const companionPanel = el("div", "panel companion-panel");
+  companionPanel.style.marginTop = "0";
   companionPanel.appendChild(el("div", "panel-title", "🔍 专家解读"));
   const companionFeed = el("div", "companion-feed");
   companionPanel.appendChild(companionFeed);
-  centerCol.appendChild(companionPanel);
 
   // coach classroom feed: model-generated narrations arrive over SSE, and
   // earlier narrations for this task are replayed from the read-only API.
@@ -3692,22 +3707,25 @@ function pageWarRoomLive() {
       ? researchPresentation.agentInfo(id).name
       : id),
   });
-  centerCol.appendChild(classroom.root);
   fetchCoachNarrations(session.taskId)
     .then((rows) => (rows || []).forEach((n) => classroom.push(n)))
     .catch(() => { /* replay is best-effort; live SSE still feeds the panel */ });
 
   grid.appendChild(centerCol);
 
-  // ---- RIGHT: skills + logs ----
+  // ---- RIGHT: interpretation + classroom + logs（研究方法挪到左栏 DAG 下方）----
   const rightCol = el("div");
   const skillPanel = el("div", "panel");
+  skillPanel.style.marginTop = "14px";
   skillPanel.appendChild(el("div", "panel-title", "专业研究方法"));
   const skillList = el("div");
   skillPanel.appendChild(skillList);
   const skillEmpty = el("div", "op-note", "专家尚未开始专业分析步骤");
   skillPanel.appendChild(skillEmpty);
-  rightCol.appendChild(skillPanel);
+  leftCol.appendChild(skillPanel);
+
+  rightCol.appendChild(companionPanel);
+  rightCol.appendChild(classroom.root);
 
   const logPanel = el("div", "panel");
   logPanel.style.marginTop = "14px";

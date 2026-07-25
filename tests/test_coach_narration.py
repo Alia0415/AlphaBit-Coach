@@ -29,13 +29,23 @@ class FakeCoachService(CoachService):
         super().__init__(ark_client=None)
         self.fail = fail
         self.calls: list[tuple[str, int]] = []
+        self.profile_experience: list[str | None] = []
 
     @property
     def available(self) -> bool:  # narration path checks availability
         return True
 
-    def narrate_milestone(self, goal, recent_events, milestone):  # noqa: ANN001
+    def narrate_milestone(  # noqa: ANN001
+        self,
+        goal,
+        recent_events,
+        milestone,
+        profile=None,
+    ):
         self.calls.append((milestone, len(recent_events)))
+        self.profile_experience.append(
+            profile.investment_experience if profile is not None else None
+        )
         if self.fail:
             raise CoachServiceError("模拟模型失败")
         return CoachNarrationDraft(
@@ -142,6 +152,38 @@ def test_milestones_trigger_narrations_and_sse_coach_events() -> None:
     # Narrations are persisted for replay.
     persisted = main_module.store.list_coach_narrations(task_id)
     assert len(persisted) == 3
+
+
+def test_stream_narrations_receive_saved_user_profile() -> None:
+    coach = FakeCoachService()
+    client = TestClient(main_module.app)
+    assert client.put(
+        "/api/user-profile",
+        json={
+            "investment_experience": "experienced",
+            "onboarding_completed": True,
+            "confirmed_fields": ["investment_experience"],
+            "skipped_fields": [],
+        },
+    ).status_code == 200
+
+    manager = ManagerAgent(
+        client=MockArkClient(json.dumps(_research_plan_payload(), ensure_ascii=False))
+    )
+    with (
+        patch.object(main_module, "manager", manager),
+        patch.object(main_module, "workflow_executor", _mock_executor()),
+        patch.object(main_module, "coach_service", coach),
+    ):
+        created = client.post(
+            "/api/tasks/sessions",
+            json={"prompt": "分析 000001.SZ 在 2024 年的价格表现。"},
+        )
+        task_id = created.json()["task_id"]
+        assert client.get(f"/api/tasks/{task_id}/stream").status_code == 200
+
+    assert coach.profile_experience
+    assert set(coach.profile_experience) == {"experienced"}
 
 
 def test_narration_failure_skips_but_task_completes() -> None:
