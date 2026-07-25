@@ -86,6 +86,7 @@ class ArkJsonRequest(BaseModel, Generic[T]):
     execution_id: str | None = None
     step_id: str | None = None
     attempt: int = 1
+    allow_repair: bool = True
 
     class Config:
         arbitrary_types_allowed = True
@@ -193,10 +194,16 @@ class ArkClient:
 
             start_time = time.monotonic()
             try:
+                request_options: dict[str, Any] = {
+                    "model": selected_model,
+                    "input": request.prompt,
+                    "temperature": request.temperature,
+                    "timeout": request.timeout_seconds,
+                }
+                if request.max_output_tokens is not None:
+                    request_options["max_output_tokens"] = request.max_output_tokens
                 response = self._client.responses.create(
-                    model=selected_model,
-                    input=request.prompt,
-                    temperature=request.temperature,
+                    **request_options,
                 )
                 duration_ms = int((time.monotonic() - start_time) * 1000)
                 output_text = response.output_text
@@ -305,6 +312,11 @@ class ArkClient:
             data = json.loads(raw_text)
             return model_class.model_validate(data)
         except (json.JSONDecodeError, ValidationError) as first_error:
+            if not request.allow_repair:
+                raise ArkClientError(
+                    f"JSON 校验失败: {str(first_error)[:200]}",
+                    kind=ArkErrorKind.SCHEMA_VALIDATION,
+                ) from None
             # One repair attempt allowed (spec §11)
             logger.warning("Ark JSON first parse failed: %s", str(first_error)[:200])
             repair_prompt = (
