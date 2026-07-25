@@ -522,61 +522,103 @@ class PandaDataClient:
         self,
         *,
         symbol: str,
+        start_date: str,
+        end_date: str,
         max_results: int = 10,
     ) -> Any:
         """Retrieve competitor candidates for a given stock."""
         symbol = _validate_symbol(symbol)
+        start_date, end_date = _validate_date_range(start_date, end_date)
         if max_results < 1 or max_results > 50:
             raise ValueError("max_results must be between 1 and 50")
-        return self._call(
-            "get_stock_competitor",
+        result = self._call(
+            "get_stock_competitor_information",
             symbol=symbol,
-            max_results=max_results,
+            start_date=start_date,
+            end_date=end_date,
+            fields=None,
         )
+        return _limit_rows(result, max_results)
 
     def get_industry_constituents(
         self,
         *,
-        industry: str,
+        industry_code: str | None = None,
+        stock_symbol: str | None = None,
         level: str = "L1",
         max_results: int = 30,
     ) -> Any:
         """Get constituent stocks of a given Shenwan industry level."""
-        if not industry or not industry.strip():
-            raise ValueError("industry must be non-empty")
+        normalized_code = str(industry_code or "").strip() or None
+        normalized_symbol = (
+            _validate_symbol(stock_symbol) if stock_symbol else None
+        )
+        if normalized_code is None and normalized_symbol is None:
+            raise ValueError("industry_code or stock_symbol is required")
         if level not in ("L1", "L2", "L3"):
             raise ValueError("level must be L1, L2, or L3")
         if max_results < 1 or max_results > 100:
             raise ValueError("max_results must be between 1 and 100")
-        return self._call(
+        result = self._call(
             "get_industry_constituents",
-            industry=industry.strip(),
+            industry_code=normalized_code,
+            stock_symbol=normalized_symbol,
             level=level,
-            max_results=max_results,
+            fields=None,
         )
+        return _limit_rows(result, max_results)
 
     def get_industry_detail(self, *, industry: str, level: str = "L1") -> Any:
         """Get metadata and description of a Shenwan industry."""
-        if not industry or not industry.strip():
+        normalized_industry = str(industry or "").strip()
+        if not normalized_industry:
             raise ValueError("industry must be non-empty")
         if level not in ("L1", "L2", "L3"):
             raise ValueError("level must be L1, L2, or L3")
-        return self._call(
-            "get_industry_detail",
-            industry=industry.strip(),
-            level=level,
-        )
+        rows = self._call("get_industry_detail", level=level, fields=None)
+        if not isinstance(rows, list):
+            return rows
+        return [
+            row
+            for row in rows
+            if isinstance(row, dict)
+            and normalized_industry
+            in {
+                str(row.get("industry_code", "")).strip(),
+                str(row.get("industry_name", "")).strip(),
+            }
+        ]
 
-    def get_concept_list(self, *, max_results: int = 50) -> Any:
+    def get_concept_list(
+        self,
+        *,
+        concept: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        max_results: int = 50,
+    ) -> Any:
         """Get available concept boards/themes."""
         if max_results < 1 or max_results > 200:
             raise ValueError("max_results must be between 1 and 200")
-        return self._call("get_concept_list", max_results=max_results)
+        if (start_date is None) != (end_date is None):
+            raise ValueError("start_date and end_date must be provided together")
+        if start_date is not None and end_date is not None:
+            start_date, end_date = _validate_date_range(start_date, end_date)
+        result = self._call(
+            "get_concept_list",
+            concept=str(concept).strip() if concept else None,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        return _limit_rows(result, max_results)
 
     def get_concept_constituents(
         self,
         *,
         concept: str,
+        concept_stock: str | None = None,
+        date: str | None = None,
+        fields: list[str] | None = None,
         max_results: int = 30,
     ) -> Any:
         """Get constituent stocks of a concept board."""
@@ -584,11 +626,20 @@ class PandaDataClient:
             raise ValueError("concept must be non-empty")
         if max_results < 1 or max_results > 100:
             raise ValueError("max_results must be between 1 and 100")
-        return self._call(
+        normalized_stock = (
+            _validate_symbol(concept_stock) if concept_stock else None
+        )
+        normalized_date = None
+        if date is not None:
+            normalized_date, _ = _validate_date_range(date, date)
+        result = self._call(
             "get_concept_constituents",
             concept=concept.strip(),
-            max_results=max_results,
+            concept_stock=normalized_stock,
+            date=normalized_date,
+            fields=fields,
         )
+        return _limit_rows(result, max_results)
 
     def get_factor(
         self,
@@ -608,9 +659,11 @@ class PandaDataClient:
         return self._call(
             "get_factor",
             symbol=validated_symbols,
-            factor_id=factor_id.strip(),
+            factors=[factor_id.strip()],
             start_date=start_date,
             end_date=end_date,
+            type="stock",
+            index_component="",
         )
 
     def _dated_call(
@@ -703,6 +756,12 @@ def json_safe(value: Any) -> Any:
         except (TypeError, ValueError):
             pass
     return str(value)
+
+
+def _limit_rows(value: Any, max_results: int) -> Any:
+    if isinstance(value, list):
+        return value[:max_results]
+    return value
 
 
 def _validate_symbol(symbol: str) -> str:

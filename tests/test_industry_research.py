@@ -41,6 +41,42 @@ class MarketDataMustNotBeCalled:
         raise AssertionError("industry research must not request market data")
 
 
+class DocumentedIndustryData:
+    configured = True
+
+    def __init__(self) -> None:
+        self.competitor_arguments: dict[str, Any] = {}
+        self.constituent_arguments: dict[str, Any] = {}
+        self.detail_arguments: dict[str, Any] = {}
+
+    def get_stock_industry(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return [{
+            "stock_symbol": "002594.SZ",
+            "industry_code": "801880",
+            "industry_name": "汽车",
+        }]
+
+    def get_stock_competitor(self, **kwargs: Any) -> list[dict[str, Any]]:
+        self.competitor_arguments = kwargs
+        return [{
+            "symbol": "002594.SZ",
+            "competitor_stock_code": "601633",
+            "competitor_name": "长城汽车",
+        }]
+
+    def get_industry_constituents(self, **kwargs: Any) -> list[dict[str, Any]]:
+        self.constituent_arguments = kwargs
+        return [
+            {"stock_symbol": "002594.SZ", "stock_name": "比亚迪"},
+            {"stock_symbol": "601633.SH", "stock_name": "长城汽车"},
+            {"stock_symbol": "601238.SH", "stock_name": "广汽集团"},
+        ]
+
+    def get_industry_detail(self, **kwargs: Any) -> list[dict[str, Any]]:
+        self.detail_arguments = kwargs
+        return [{"industry_code": "801880", "industry_name": "汽车"}]
+
+
 def _industry_inputs(**overrides: Any) -> dict[str, Any]:
     inputs = {
         "industry": "新能源",
@@ -273,3 +309,36 @@ def test_market_and_dossier_validation_remain_strict() -> None:
     with pytest.raises(PlanValidationError, match="invalid A-share symbol"):
         validate_execution_plan(invalid_symbol, AgentRegistry())
     assert validate_execution_plan(dossier, AgentRegistry()) is dossier
+
+
+def test_stock_industry_evidence_uses_documented_dates_codes_and_response_fields() -> None:
+    data = DocumentedIndustryData()
+    task = _industry_task({
+        "symbol": "002594.SZ",
+        "industry": "汽车",
+        "time_range": "2024年",
+        "research_goal": "分析行业竞争格局",
+        "focus": "可比公司",
+        "start_date": "20240101",
+        "end_date": "20241231",
+    })
+
+    result = ResearchAgent(data_client=data, ark_client=MockArk()).execute(task)
+
+    assert result.status == "completed"
+    assert data.competitor_arguments == {
+        "symbol": "002594.SZ",
+        "start_date": "20240101",
+        "end_date": "20241231",
+        "max_results": 10,
+    }
+    assert data.constituent_arguments == {
+        "industry_code": "801880",
+        "level": "L1",
+        "max_results": 20,
+    }
+    assert data.detail_arguments == {"industry": "801880", "level": "L1"}
+    competitors = next(
+        item for item in result.evidence if item["type"] == "competitor_candidates"
+    )
+    assert competitors["competitors"] == ["601633.SH", "601238.SH"]
