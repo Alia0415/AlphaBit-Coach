@@ -116,6 +116,7 @@ function mapSeedMessage(m) {
     concept_notes: m.concept_notes || [],
     cited_evidence: m.cited_evidence || [],
     uncertainty_note: m.uncertainty_note || "",
+    demo: !!m.demo,
     time: (m.created_at || "").slice(11, 19),
   };
 }
@@ -222,7 +223,7 @@ export function buildCoachSidebar(options) {
       ? "这里是示例陪练对话：Live 模式下陪练会基于真实报告证据用模型讲解。"
       : "你可以就报告中的数据、术语、结论提问，也可以在正文中选中文字后引用提问。",
   });
-  seedMessages.forEach((m) => push(mapSeedMessage(m)));
+  seedMessages.forEach((m) => push({ ...mapSeedMessage(m), demo: demo || !!m.demo }));
 
   // quote chip bar
   let quotedText = null;
