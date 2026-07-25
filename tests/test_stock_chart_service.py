@@ -105,3 +105,12 @@ def test_demo_stock_switch_returns_distinct_price_series() -> None:
 
     assert first["candles"] != second["candles"]
     assert first["metrics"]["latest_close"] != second["metrics"]["latest_close"]
+
+
+def test_expanded_catalog_stock_has_deterministic_demo_chart() -> None:
+    service = StockChartService(_DemoClient())  # type: ignore[arg-type]
+
+    payload = service.chart(ChartRequest("688256.SH", "1d", "1y", True))
+
+    assert payload["name"] == "寒武纪"
+    assert payload["candles"]

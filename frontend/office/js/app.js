@@ -59,7 +59,7 @@ import {
 import {
   mountStockChartPage,
   mountStockLibraryPage,
-} from "../../stock-workspace.js?v=20260725-s04";
+} from "../../stock-workspace.js?v=20260725-s05";
 
 const researchPresentation = globalThis.AlphaResearchPresentation;
 
@@ -457,12 +457,12 @@ function avatar(agentOrSheet, sizePx = 40, wrapCls = "pix-ava") {
 // nav definition
 // ---------------------------------------------------------------------------
 const NAV = [
-  { route: "stock-library", ico: "▦", label: "股票库" },
-  { route: "stocks", ico: "📈", label: "股票行情" },
   { route: "hall", ico: "🏛", label: "投研大厅" },
   { route: "war", ico: "🛰", label: "多 Agent 作战室" },
   { route: "experts", ico: "👥", label: "专家中心" },
   { route: "reports", ico: "📑", label: "研究报告" },
+  { route: "stock-library", ico: "▦", label: "股票库" },
+  { route: "stocks", ico: "📈", label: "股票行情" },
   { action: "glossary", ico: "📚", label: "投研知识库" },
   { route: "profile", ico: "🪪", label: "用户画像" },
   { route: "skills", ico: "🧩", label: "研究能力" },
@@ -570,8 +570,17 @@ function renderSidebar() {
 function renderTopbar() {
   const bar = $("#topbar");
   bar.innerHTML = "";
+  const stockSurface = currentRoute === "stock-library" || currentRoute === "stocks";
 
-  if (isLive()) {
+  if (stockSurface) {
+    bar.appendChild(
+      el(
+        "span",
+        "pill stock-surface-label",
+        currentRoute === "stock-library" ? "股票库 · 38 个标的" : "股票行情 · K 线",
+      ),
+    );
+  } else if (isLive()) {
     const ok = liveStatus.healthy;
     const status = el(
       "span",
@@ -592,17 +601,19 @@ function renderTopbar() {
 
   bar.appendChild(el("div", "topbar-spacer"));
 
-  const live = isLive();
-  const modeBtn = el("button", "pill", live ? "查看产品演示" : "切换到实时研究");
-  modeBtn.title = live
-    ? "使用本地示例演示完整产品流程"
-    : "返回真实研究流程";
-  modeBtn.addEventListener("click", () => setMode(live ? "demo" : "live"));
-  bar.append(modeBtn);
+  if (!stockSurface) {
+    const live = isLive();
+    const modeBtn = el("button", "pill", live ? "查看产品演示" : "切换到实时研究");
+    modeBtn.title = live
+      ? "使用本地示例演示完整产品流程"
+      : "返回真实研究流程";
+    modeBtn.addEventListener("click", () => setMode(live ? "demo" : "live"));
+    bar.append(modeBtn);
 
-  const history = el("button", "pill", "🕘 历史记录");
-  history.addEventListener("click", () => navigate("tasks"));
-  bar.append(history);
+    const history = el("button", "pill", "🕘 历史记录");
+    history.addEventListener("click", () => navigate("tasks"));
+    bar.append(history);
+  }
 
   const avaBtn = el("button", "avatar-btn");
   avaBtn.appendChild(avatar("user", 34, "pix-ava"));
@@ -786,6 +797,7 @@ function navigate(route, param = null) {
   if (!(route === "reports" && param) && globalThis.AlphaGlossary?.setResearchEntries) {
     globalThis.AlphaGlossary.setResearchEntries([]);
   }
+  renderTopbar();
   renderSidebar();
   renderPage();
   $("#page").scrollTop = 0;

@@ -22,16 +22,44 @@ SUPPORTED_PERIODS = frozenset({"1m", "1d", "1w", "1mo"})
 PERIOD_LIMITS = {"1d": 500, "1w": 260, "1mo": 120}
 
 DEFAULT_STOCKS: tuple[dict[str, str], ...] = (
-    {"symbol": "000001.SZ", "name": "平安银行", "market": "SZ"},
-    {"symbol": "600519.SH", "name": "贵州茅台", "market": "SH"},
-    {"symbol": "300750.SZ", "name": "宁德时代", "market": "SZ"},
-    {"symbol": "002594.SZ", "name": "比亚迪", "market": "SZ"},
-    {"symbol": "601318.SH", "name": "中国平安", "market": "SH"},
-    {"symbol": "600036.SH", "name": "招商银行", "market": "SH"},
-    {"symbol": "000858.SZ", "name": "五粮液", "market": "SZ"},
-    {"symbol": "688981.SH", "name": "中芯国际", "market": "SH"},
-    {"symbol": "000300.SH", "name": "沪深300", "market": "SH"},
-    {"symbol": "000001.SH", "name": "上证指数", "market": "SH"},
+    {"symbol": "600519.SH", "name": "贵州茅台", "market": "SH", "board": "沪市主板"},
+    {"symbol": "601318.SH", "name": "中国平安", "market": "SH", "board": "沪市主板"},
+    {"symbol": "600036.SH", "name": "招商银行", "market": "SH", "board": "沪市主板"},
+    {"symbol": "600276.SH", "name": "恒瑞医药", "market": "SH", "board": "沪市主板"},
+    {"symbol": "601166.SH", "name": "兴业银行", "market": "SH", "board": "沪市主板"},
+    {"symbol": "600030.SH", "name": "中信证券", "market": "SH", "board": "沪市主板"},
+    {"symbol": "601888.SH", "name": "中国中免", "market": "SH", "board": "沪市主板"},
+    {"symbol": "600900.SH", "name": "长江电力", "market": "SH", "board": "沪市主板"},
+    {"symbol": "600309.SH", "name": "万华化学", "market": "SH", "board": "沪市主板"},
+    {"symbol": "601899.SH", "name": "紫金矿业", "market": "SH", "board": "沪市主板"},
+    {"symbol": "000001.SZ", "name": "平安银行", "market": "SZ", "board": "深市主板"},
+    {"symbol": "000858.SZ", "name": "五粮液", "market": "SZ", "board": "深市主板"},
+    {"symbol": "002594.SZ", "name": "比亚迪", "market": "SZ", "board": "深市主板"},
+    {"symbol": "000333.SZ", "name": "美的集团", "market": "SZ", "board": "深市主板"},
+    {"symbol": "000651.SZ", "name": "格力电器", "market": "SZ", "board": "深市主板"},
+    {"symbol": "002415.SZ", "name": "海康威视", "market": "SZ", "board": "深市主板"},
+    {"symbol": "002475.SZ", "name": "立讯精密", "market": "SZ", "board": "深市主板"},
+    {"symbol": "002714.SZ", "name": "牧原股份", "market": "SZ", "board": "深市主板"},
+    {"symbol": "002230.SZ", "name": "科大讯飞", "market": "SZ", "board": "深市主板"},
+    {"symbol": "000725.SZ", "name": "京东方A", "market": "SZ", "board": "深市主板"},
+    {"symbol": "300750.SZ", "name": "宁德时代", "market": "SZ", "board": "创业板"},
+    {"symbol": "300059.SZ", "name": "东方财富", "market": "SZ", "board": "创业板"},
+    {"symbol": "300760.SZ", "name": "迈瑞医疗", "market": "SZ", "board": "创业板"},
+    {"symbol": "300124.SZ", "name": "汇川技术", "market": "SZ", "board": "创业板"},
+    {"symbol": "300308.SZ", "name": "中际旭创", "market": "SZ", "board": "创业板"},
+    {"symbol": "300274.SZ", "name": "阳光电源", "market": "SZ", "board": "创业板"},
+    {"symbol": "300015.SZ", "name": "爱尔眼科", "market": "SZ", "board": "创业板"},
+    {"symbol": "300014.SZ", "name": "亿纬锂能", "market": "SZ", "board": "创业板"},
+    {"symbol": "688981.SH", "name": "中芯国际", "market": "SH", "board": "科创板"},
+    {"symbol": "688041.SH", "name": "海光信息", "market": "SH", "board": "科创板"},
+    {"symbol": "688256.SH", "name": "寒武纪", "market": "SH", "board": "科创板"},
+    {"symbol": "688012.SH", "name": "中微公司", "market": "SH", "board": "科创板"},
+    {"symbol": "688111.SH", "name": "金山办公", "market": "SH", "board": "科创板"},
+    {"symbol": "688036.SH", "name": "传音控股", "market": "SH", "board": "科创板"},
+    {"symbol": "688008.SH", "name": "澜起科技", "market": "SH", "board": "科创板"},
+    {"symbol": "688169.SH", "name": "石头科技", "market": "SH", "board": "科创板"},
+    {"symbol": "000300.SH", "name": "沪深300", "market": "SH", "board": "宽基指数"},
+    {"symbol": "000001.SH", "name": "上证指数", "market": "SH", "board": "宽基指数"},
 )
 
 
@@ -75,6 +103,7 @@ class StockChartService:
             for stock in DEFAULT_STOCKS
             if upper in stock["symbol"]
             or normalized in stock["name"]
+            or normalized in stock["board"]
             or (digits and digits == stock["symbol"][:6])
         ]
         if matches:
@@ -85,6 +114,7 @@ class StockChartService:
                     "symbol": upper,
                     "name": upper,
                     "market": upper.rsplit(".", 1)[1],
+                    "board": infer_board(upper),
                 }
             ]
         return []
@@ -192,7 +222,19 @@ def stock_metadata(symbol: str) -> dict[str, str]:
         "symbol": symbol,
         "name": symbol,
         "market": symbol.rsplit(".", 1)[1],
+        "board": infer_board(symbol),
     }
+
+
+def infer_board(symbol: str) -> str:
+    code, market = symbol.rsplit(".", 1)
+    if symbol in {"000300.SH", "000001.SH"}:
+        return "宽基指数"
+    if market == "SH" and code.startswith(("688", "689")):
+        return "科创板"
+    if market == "SZ" and code.startswith(("300", "301")):
+        return "创业板"
+    return "沪市主板" if market == "SH" else "深市主板"
 
 
 def sanitize_candles(rows: Any) -> list[dict[str, float | str]]:

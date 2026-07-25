@@ -56,10 +56,18 @@ def test_office_separates_stock_library_and_chart_without_removing_research_rout
     assert "mountStockLibraryPage" in source
     assert "mountStockChartPage" in source
     assert "onOpenChart: (stock) => navigate(\"stocks\", stock)" in source
+    assert source.index('label: "研究报告"') < source.index('label: "股票库"')
+    assert source.index('label: "股票行情"') < source.index('label: "投研知识库"')
     assert "stock-research-button" not in workspace
     assert '{ value: "1m"' not in workspace
     assert ".stock-market-workspace" in styles
     assert ".stock-chart-state[hidden]" in styles
+    assert "groupStocksByBoard" in (
+        REPO_ROOT / "frontend" / "stock-library.js"
+    ).read_text(encoding="utf-8")
+    assert "PandaData" not in workspace
+    assert "演示数据" not in workspace
+    assert "/api/stocks/search" not in workspace
 
 
 def test_office_sidebar_can_be_collapsed_and_persists_the_choice() -> None:

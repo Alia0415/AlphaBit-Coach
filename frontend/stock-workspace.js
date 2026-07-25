@@ -2,7 +2,8 @@ import {
   FALLBACK_STOCKS,
   StockLibrary,
   normalizeStoredStocks,
-} from "./stock-library.js?v=20260725-s03";
+  searchStockCatalog,
+} from "./stock-library.js?v=20260725-s04";
 import { StockChart } from "./stock-chart.js?v=20260725-s02";
 
 export const SELECTED_STOCK_STORAGE_KEY = "alphabit_selected_stock";
@@ -125,30 +126,16 @@ export function mountStockLibraryPage(
       library.setSelected(selected);
       onOpenChart(selected);
     },
-    onSearch: async (query) => {
-      const response = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
-      return (await responseJson(response)).stocks || [];
-    },
+    onSearch: async (query) => searchStockCatalog(query),
     onStorageError: () => notify("浏览器未允许保存关注列表，选股功能仍可正常使用。"),
   });
   library.setSelected(selected);
 
-  async function loadStocks() {
-    try {
-      const response = await fetch("/api/stocks");
-      const payload = await responseJson(response);
-      const stocks = payload.stocks || FALLBACK_STOCKS;
-      library.setStocks(stocks);
-      selected =
-        stocks.find((stock) => stock.symbol === selected.symbol) || selected;
-      rememberSelectedStock(selected);
-      library.setSelected(selected);
-    } catch (_) {
-      library.setStocks(FALLBACK_STOCKS);
-    }
-  }
-
-  loadStocks();
+  library.setStocks(FALLBACK_STOCKS);
+  selected =
+    FALLBACK_STOCKS.find((stock) => stock.symbol === selected.symbol) || selected;
+  rememberSelectedStock(selected);
+  library.setSelected(selected);
   return () => library.destroy();
 }
 
@@ -186,8 +173,7 @@ export function mountStockChartPage(
   const name = element("h2", "", "正在加载…");
   const symbol = element("span", "", "—");
   identity.append(name, symbol);
-  const source = element("span", "stock-source", "等待数据");
-  chartHead.append(identity, source);
+  chartHead.appendChild(identity);
 
   const toolbar = element("div", "stock-chart-toolbar");
   const periodGroup = element("div", "stock-periods");
@@ -262,8 +248,6 @@ export function mountStockChartPage(
     controller = new AbortController();
     const sequence = ++requestSequence;
     setState("loading", "正在加载行情…");
-    source.textContent = "加载中";
-    source.className = "stock-source loading";
     const period = PERIODS.find((item) => item.value === selectedPeriod);
     const query = new URLSearchParams({
       period: selectedPeriod,
@@ -294,7 +278,7 @@ export function mountStockChartPage(
           chart.render(fallbackPayload);
           updateDetails(fallbackPayload);
           setState("ready", "");
-          notify("PandaData 暂不可用，已加载明确标注的演示数据。");
+          notify("实时行情暂不可用，已加载备用行情数据。");
           return;
         } catch (fallbackError) {
           if (
@@ -306,8 +290,6 @@ export function mountStockChartPage(
         }
       }
       chart.destroy();
-      source.textContent = "加载失败";
-      source.className = "stock-source error";
       setState(
         "error",
         error?.message || "暂时无法获取这只股票的行情，请稍后重试。",
@@ -324,8 +306,6 @@ export function mountStockChartPage(
     rememberSelectedStock(selected);
     name.textContent = selected.name;
     symbol.textContent = selected.symbol;
-    source.textContent = payload.is_demo ? "演示数据" : payload.data_source || "PandaData";
-    source.className = `stock-source ${payload.is_demo ? "demo" : "live"}`;
     const copy = buildCoachCopy(payload);
     Object.entries(copy).forEach(([key, value]) => {
       coachSections[key].textContent = value;
