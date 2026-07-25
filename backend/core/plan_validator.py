@@ -410,7 +410,29 @@ def validate_plan_dimensions(
                         "research evidence step"
                     )
 
-    # 6. Manager must not appear in selected_agents or as a step agent
+    # 6. Focused financial-quality review requires an upstream fundamentals
+    #    result. Risk is a reviewer here, not an independent event scanner.
+    if _is_focused_financial_quality_review(task_spec, task_dimensions):
+        research_steps = {
+            step.id
+            for step in plan.steps
+            if step.agent == AgentId.RESEARCH
+            and "company_fundamentals" in step.covers_dimensions
+        }
+        for step in plan.steps:
+            if (
+                step.agent != AgentId.RISK
+                or "risk_assessment" not in step.covers_dimensions
+            ):
+                continue
+            required = set(step.required_dependency_ids())
+            if not required.intersection(research_steps):
+                raise PlanValidationError(
+                    f"financial-quality Risk step {step.id} requires a "
+                    "required Research dependency"
+                )
+
+    # 7. Manager must not appear in selected_agents or as a step agent
     #    (Manager is not an expert, checked as AgentId not in enum but
     #     this is a semantic rule — verify no step.agent == 'manager')
     for selection in plan.selected_agents:
@@ -419,7 +441,7 @@ def validate_plan_dimensions(
                 "Manager must not appear in selected_agents"
             )
 
-    # 7. Validate typed dependencies for cycle and unknown refs
+    # 8. Validate typed dependencies for cycle and unknown refs
     step_id_set = {step.id for step in plan.steps}
     all_dependencies: dict[str, list[str]] = {}
     for step in plan.steps:
@@ -440,3 +462,20 @@ def validate_plan_dimensions(
     _assert_acyclic(all_dependencies)
 
     return plan
+
+
+def _is_focused_financial_quality_review(
+    task_spec: TaskSpec,
+    task_dimensions: set[ResearchDimension],
+) -> bool:
+    return (
+        task_spec.request_scope == "focused"
+        and {
+            "company_fundamentals",
+            "risk_assessment",
+        }.issubset(task_dimensions)
+        and any(
+            marker in task_spec.research_goal.lower()
+            for marker in ("财务质量", "盈利质量", "利润质量", "盈余质量")
+        )
+    )

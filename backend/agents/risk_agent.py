@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
@@ -34,11 +35,14 @@ class RiskAgent:
             return _failed(task, "Risk Agent 收到了不匹配的任务类型。")
 
         dependency_evidence = _dependency_evidence(task.dependency_results)
+        financial_quality_review = (
+            _financial_quality_payload(dependency_evidence) is not None
+        )
         event_result = None
         tool_calls: list[dict[str, Any]] = []
         agent_events: list[dict[str, Any]] = []
         symbols = _symbols(task.inputs)
-        if symbols:
+        if symbols and not financial_quality_review:
             event_result = self.skills.execute(
                 SkillInvocation(
                     invocation_id=str(uuid4()),
@@ -256,6 +260,10 @@ def _assess(
     evidence: list[dict[str, Any]],
     context: dict[str, Any],
 ) -> dict[str, Any]:
+    financial_quality = _assess_financial_quality(evidence, context)
+    if financial_quality is not None:
+        return financial_quality
+
     risk_factors: list[str] = []
     challenged = [
         "历史样本中的关系能够延续到未来市场环境。",
@@ -382,6 +390,185 @@ def _assess(
         "recommended_follow_up": recommended_follow_up,
         "reviewed_context": context,
     }
+
+
+def _financial_quality_payload(
+    evidence: list[dict[str, Any]],
+) -> Mapping[str, Any] | None:
+    for cited in evidence:
+        fact = cited.get("fact")
+        if not isinstance(fact, Mapping):
+            continue
+        data = fact.get("data")
+        if (
+            fact.get("skill_id") == "a_share_stock_dossier"
+            and isinstance(data, Mapping)
+        ):
+            return data
+    return None
+
+
+def _assess_financial_quality(
+    evidence: list[dict[str, Any]],
+    context: dict[str, Any],
+) -> dict[str, Any] | None:
+    data = _financial_quality_payload(evidence)
+    if data is None:
+        return None
+
+    risk_factors: list[str] = []
+    missing = [
+        str(item)
+        for item in data.get("missing_information", [])
+        if str(item).strip()
+    ]
+    missing.extend(_financial_data_scope_gaps(data))
+    cash_quality = _metric_series(
+        data,
+        "operating_cash_flow_to_net_profit",
+    )
+    net_margins = _metric_series(data, "net_margin")
+    inventory_ratios = _metric_series(data, "inventory_to_revenue")
+    revenue_growth = _latest_metric(data, "revenue_yoy")
+    profit_growth = _latest_metric(data, "net_profit_yoy")
+
+    if cash_quality:
+        period, value = cash_quality[-1]
+        if value < 1:
+            risk_factors.append(
+                f"{period} 经营现金流／归母净利润为 {value:.2f}x，"
+                "现金含量低于 1.00x，需要核查利润兑现质量。"
+            )
+    else:
+        missing.append("缺少经营现金流／归母净利润指标，无法评价利润现金含量。")
+
+    if len(net_margins) >= 2:
+        previous_period, previous = net_margins[-2]
+        period, current = net_margins[-1]
+        if current < previous:
+            risk_factors.append(
+                f"净利率由 {previous_period} 的 {previous:.2%} 降至 "
+                f"{period} 的 {current:.2%}，盈利能力出现收缩。"
+            )
+    elif not net_margins:
+        missing.append("缺少净利率序列，无法判断盈利能力变化。")
+
+    if len(inventory_ratios) >= 2:
+        previous_period, previous = inventory_ratios[-2]
+        period, current = inventory_ratios[-1]
+        if current > previous:
+            risk_factors.append(
+                f"存货／营业收入由 {previous_period} 的 {previous:.2%} "
+                f"升至 {period} 的 {current:.2%}，需核查存货增长与收入"
+                "变化是否匹配。"
+            )
+    elif not inventory_ratios:
+        missing.append("缺少存货／营业收入序列，无法评价营运资金质量。")
+
+    if revenue_growth is not None and profit_growth is not None:
+        period = profit_growth[0]
+        if profit_growth[1] < revenue_growth[1]:
+            risk_factors.append(
+                f"{period} 归母净利润同比 {profit_growth[1]:.2%}，"
+                f"弱于营业收入同比 {revenue_growth[1]:.2%}，需进一步"
+                "核查成本和费用变化。"
+            )
+
+    if not risk_factors:
+        risk_factors.append(
+            "现有结构化指标未触发明确异常阈值，但这不等于财务质量已经"
+            "得到完整验证。"
+        )
+
+    level = "high" if len(risk_factors) >= 3 else "medium"
+    return {
+        "review_type": "financial_quality",
+        "risk_level": level,
+        "risk_factors": list(dict.fromkeys(risk_factors)),
+        "challenged_assumptions": [
+            "会计利润能够按相近比例转化为经营现金流。",
+            "利润率和营运资金变化不包含需要进一步解释的异常。",
+            "目标年度的财务数据具有完整且可核对的审计覆盖。",
+        ],
+        "missing_evidence": list(dict.fromkeys(missing)),
+        "failure_scenarios": [
+            "利润增速与现金流兑现持续背离。",
+            "利润率下降同时伴随存货占收入上升。",
+            "缺失审计或字段覆盖被误当成无异常。",
+        ],
+        "recommended_follow_up": [
+            "核对经营现金流、费用结构和非经常性损益的年度变化。",
+            "补充目标年度审计意见并核验财报公告版本。",
+            "分析存货、合同负债和销售收现与收入变化的匹配关系。",
+        ],
+        "reviewed_context": context,
+    }
+
+
+def _metric_series(
+    data: Mapping[str, Any],
+    metric: str,
+) -> list[tuple[str, float]]:
+    points: list[tuple[str, float]] = []
+    for section in data.values():
+        if not isinstance(section, Mapping):
+            continue
+        rows = section.get("derived_metrics")
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, Mapping) or row.get("metric") != metric:
+                continue
+            value = row.get("value")
+            period = str(row.get("period", "")).strip()
+            if (
+                not period
+                or isinstance(value, bool)
+                or not isinstance(value, (int, float))
+            ):
+                continue
+            points.append((period, float(value)))
+    return sorted(points, key=lambda item: item[0])
+
+
+def _financial_data_scope_gaps(data: Mapping[str, Any]) -> list[str]:
+    periods = sorted(
+        str(item).strip()
+        for item in data.get("periods", [])
+        if str(item).strip()
+    )
+    target_period = periods[-1] if periods else ""
+    gaps: list[str] = []
+    scope = data.get("data_scope")
+    if not isinstance(scope, list):
+        return gaps
+    for item in scope:
+        if not isinstance(item, Mapping):
+            continue
+        method = str(item.get("method", "")).strip()
+        status = str(item.get("missing_status", "")).strip()
+        latest = str(item.get("latest_report_period", "")).strip()
+        if method and status and status != "available":
+            gaps.append(f"{method} 未返回可用数据。")
+        if (
+            method == "get_audit_opinion"
+            and target_period
+            and latest
+            and latest.lower() != target_period.lower()
+        ):
+            gaps.append(
+                f"{target_period} 缺少对应年度审计意见；"
+                f"审计数据最新仅到 {latest}。"
+            )
+    return gaps
+
+
+def _latest_metric(
+    data: Mapping[str, Any],
+    metric: str,
+) -> tuple[str, float] | None:
+    points = _metric_series(data, metric)
+    return points[-1] if points else None
 
 
 def _risk_prompt(
