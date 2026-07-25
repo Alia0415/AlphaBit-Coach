@@ -11,6 +11,13 @@ from backend.services import ark_client
 from backend.services.ark_client import ArkClient, ArkClientError, ArkTextRequest
 
 
+def _fake_openai_client(create: Mock) -> SimpleNamespace:
+    """Mimic the chat.completions surface used by ArkClient."""
+    return SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+
+
 def test_ark_client_ignores_environment_proxy_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -20,7 +27,7 @@ def test_ark_client_ignores_environment_proxy_configuration(
     monkeypatch.delenv("ARK_MAX_RETRIES", raising=False)
     http_client = object()
     http_factory = Mock(return_value=http_client)
-    openai_client = SimpleNamespace(responses=SimpleNamespace(create=Mock()))
+    openai_client = _fake_openai_client(Mock())
     openai_factory = Mock(return_value=openai_client)
     monkeypatch.setattr(ark_client, "DefaultHttpxClient", http_factory)
     monkeypatch.setattr(ark_client, "OpenAI", openai_factory)
@@ -47,9 +54,7 @@ def test_ark_client_accepts_only_bounded_timeout_and_retry_configuration(
     monkeypatch.setenv("ARK_TIMEOUT_SECONDS", "45")
     monkeypatch.setenv("ARK_MAX_RETRIES", "2")
     http_factory = Mock(return_value=object())
-    openai_factory = Mock(
-        return_value=SimpleNamespace(responses=SimpleNamespace(create=Mock()))
-    )
+    openai_factory = Mock(return_value=_fake_openai_client(Mock()))
     monkeypatch.setattr(ark_client, "DefaultHttpxClient", http_factory)
     monkeypatch.setattr(ark_client, "OpenAI", openai_factory)
 
@@ -82,7 +87,6 @@ def test_chat_reports_connection_error_type_without_sensitive_details(
     request = httpx.Request("POST", ark_client.ARK_BASE_URL)
     connection_error = APIConnectionError(request=request)
     connection_error.__cause__ = OSError("secret transport detail")
-    responses = SimpleNamespace(create=Mock(side_effect=connection_error))
     monkeypatch.setattr(
         ark_client,
         "DefaultHttpxClient",
@@ -91,8 +95,12 @@ def test_chat_reports_connection_error_type_without_sensitive_details(
     monkeypatch.setattr(
         ark_client,
         "OpenAI",
-        Mock(return_value=SimpleNamespace(responses=responses)),
+        Mock(
+            return_value=_fake_openai_client(Mock(side_effect=connection_error))
+        ),
     )
+    # Connection errors are transport-retryable; skip the real backoff sleep.
+    monkeypatch.setattr(ark_client, "_backoff_seconds", lambda attempt: 0.0)
 
     with pytest.raises(ArkClientError, match=r"连接失败（OSError）") as exc_info:
         ArkClient().chat("hello")
@@ -115,7 +123,6 @@ def test_chat_reports_http_status_without_response_body(
         response=response,
         body=response.json(),
     )
-    responses = SimpleNamespace(create=Mock(side_effect=status_error))
     monkeypatch.setattr(
         ark_client,
         "DefaultHttpxClient",
@@ -124,8 +131,10 @@ def test_chat_reports_http_status_without_response_body(
     monkeypatch.setattr(
         ark_client,
         "OpenAI",
-        Mock(return_value=SimpleNamespace(responses=responses)),
+        Mock(return_value=_fake_openai_client(Mock(side_effect=status_error))),
     )
+    # HTTP 429 maps to rate_limit, which is transport-retryable; skip backoff.
+    monkeypatch.setattr(ark_client, "_backoff_seconds", lambda attempt: 0.0)
 
     with pytest.raises(ArkClientError, match=r"HTTP 429") as exc_info:
         ArkClient().chat("hello")
@@ -137,7 +146,11 @@ def test_chat_text_applies_request_timeout_and_output_token_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("ARK_API_KEY", "test-key")
-    create = Mock(return_value=SimpleNamespace(output_text="ok"))
+    create = Mock(
+        return_value=SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]
+        )
+    )
     monkeypatch.setattr(
         ark_client,
         "DefaultHttpxClient",
@@ -146,11 +159,7 @@ def test_chat_text_applies_request_timeout_and_output_token_limit(
     monkeypatch.setattr(
         ark_client,
         "OpenAI",
-        Mock(
-            return_value=SimpleNamespace(
-                responses=SimpleNamespace(create=create)
-            )
-        ),
+        Mock(return_value=_fake_openai_client(create)),
     )
 
     response = ArkClient().chat_text(
@@ -164,8 +173,8 @@ def test_chat_text_applies_request_timeout_and_output_token_limit(
     assert response.text == "ok"
     create.assert_called_once_with(
         model=ark_client.DEFAULT_ARK_MODEL,
-        input="bounded request",
+        messages=[{"role": "user", "content": "bounded request"}],
         temperature=0.0,
         timeout=37.0,
-        max_output_tokens=1234,
+        max_tokens=1234,
     )
