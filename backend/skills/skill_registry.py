@@ -242,46 +242,6 @@ DEFAULT_SKILLS = (
         capabilities=["event_risk_monitoring", "watchlist_risk_screening"],
         optional_task_inputs=["symbol", "symbols", "start_date", "end_date"],
     ),
-    SkillSpec(
-        id="portfolio_liquidity_stress",
-        name="Portfolio Liquidity Stress Test",
-        description="基于持仓、ADV、价差和波动率执行确定性的流动性压力情景",
-        mode=SkillMode.EXECUTABLE,
-        enabled=True,
-        owner_agents=["portfolio"],
-        input_schema={
-            "type": "object",
-            "properties": {
-                "holdings": {"type": "array"},
-                "participation": {"type": "number"},
-                "volume_shock": {"type": "number"},
-                "horizon_days": {"type": "integer"},
-                "eta": {"type": "number"},
-                "redemption_value": {"type": ["number", "null"]},
-            },
-            "required": ["holdings"],
-        },
-        output_schema={
-            "type": "object",
-            "required": ["report", "validation_status"],
-        },
-        source_repository=(
-            "quantskills/skill-portfolio-liquidity-stress-test"
-        ),
-        source_ref="fe7a958611aa7ed8f05a49d7f63fa8afd036acf8",
-        license="GPL-3.0-only",
-        runtime_path="skill-portfolio-liquidity-stress-test",
-        expected_entrypoint="scripts/stress_liquidity.py",
-        capabilities=["liquidity_stress_testing", "redemption_scenario_analysis"],
-        required_task_inputs=["holdings"],
-        optional_task_inputs=[
-            "participation",
-            "volume_shock",
-            "horizon_days",
-            "eta",
-            "redemption_value",
-        ],
-    ),
 )
 
 
@@ -404,9 +364,6 @@ class SkillRegistry:
         )
         from backend.skills.adapters.event_risk_alert import EventRiskAlertAdapter
         from backend.skills.adapters.macro_monitor import MacroMonitorAdapter
-        from backend.skills.adapters.portfolio_liquidity_stress import (
-            PortfolioLiquidityStressAdapter,
-        )
         from backend.skills.loaders.instruction_skill_loader import (
             InstructionSkillLoader,
         )
@@ -430,9 +387,6 @@ class SkillRegistry:
             "event_risk_alert": EventRiskAlertAdapter(
                 loader=loader,
                 data_client=data_client,
-            ),
-            "portfolio_liquidity_stress": PortfolioLiquidityStressAdapter(
-                locator=self.locator
             ),
         }
         for skill_id, adapter in defaults.items():

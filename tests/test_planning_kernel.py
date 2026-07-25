@@ -260,7 +260,7 @@ def test_manager_accepts_five_distinct_dynamic_graphs(
     assert [step.agent.value for step in plan.steps] == path
 
 
-def test_manager_accepts_quant_and_rejects_still_disabled_expert() -> None:
+def test_manager_accepts_quant_and_rejects_removed_expert() -> None:
     quant_plan = json.dumps(_plan_payload(["quant"]))
     quant_manager = ManagerAgent(client=MockArkClient(quant_plan))
 
@@ -743,24 +743,6 @@ def test_executor_passes_complete_expert_result_to_downstream() -> None:
     assert dependency.evidence == [{"metric": 42}]
     assert dependency.assumptions == ["assumption"]
     assert dependency.metadata == {"complete": True}
-
-
-def test_still_disabled_expert_never_returns_placeholder_success() -> None:
-    called = False
-
-    def handler(task: ExpertTask) -> ExpertResult:
-        nonlocal called
-        called = True
-        return _completed(task)
-
-    events, results = WorkflowExecutor(
-        handlers={AgentId.PORTFOLIO: handler}
-    ).execute(_plan(["portfolio"]))
-
-    assert not called
-    assert results["portfolio_1"].status == "failed"
-    assert "disabled" in (results["portfolio_1"].error or "")
-    assert events[-1].type == "step_failed"
 
 
 def test_dependency_failure_blocks_all_descendants() -> None:

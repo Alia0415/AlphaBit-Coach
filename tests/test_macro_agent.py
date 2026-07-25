@@ -450,7 +450,7 @@ def plan_payload(agent: str, inputs: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def test_registry_exposes_enabled_macro_but_keeps_portfolio_disabled() -> None:
+def test_registry_exposes_enabled_macro_without_removed_portfolio() -> None:
     registry = AgentRegistry()
     ids = {item["id"] for item in registry.prompt_payload()}
 

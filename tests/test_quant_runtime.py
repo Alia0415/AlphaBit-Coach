@@ -297,9 +297,7 @@ def test_skill_registry_exposes_only_each_agents_owned_skills() -> None:
     assert {spec.id for spec in registry.allowed_for_agent("macro")} == {
         "macro_monitor"
     }
-    assert {spec.id for spec in registry.allowed_for_agent("portfolio")} == {
-        "portfolio_liquidity_stress"
-    }
+    assert registry.allowed_for_agent("portfolio") == ()
     assert {item["id"] for item in registry.prompt_payload("quant")} == {
         "factor_idea_generation",
         "r020_volume_expansion",

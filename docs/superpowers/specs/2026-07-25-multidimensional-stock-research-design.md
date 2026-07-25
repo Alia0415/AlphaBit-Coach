@@ -43,7 +43,6 @@ AlphaOS 当前具备 `research`、`quant`、`risk`、`macro`、`report`
 ### 2.2 非目标
 
 - 不实现完整回测、IC 检验、组合构建、账户访问或自动交易。
-- 不启用 Portfolio Agent。
 - 不接入 PandaAIQuant 以外的金融数据、网页事实或模型内生知识作为事实证据。
 - 不把 Manager 改造成研究专家，也不让 Executor 或 Aggregator 补选 Agent。
 - 不实现固定的 Research → Macro → Quant → Risk → Report 流水线。

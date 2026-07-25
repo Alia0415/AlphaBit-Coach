@@ -219,7 +219,7 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
 做这件事，plan 中不得出现 skill_id 或 a_share_stock_dossier。
 根据 task_type、research_goal 和 evidence_requirements 选择最小充分专家集合。
 不得修改 expected_result_type，不得扩展当前任务的研究目标，不得输出买入、卖出、
-持有、目标收益或当前仓位建议。Portfolio 当前禁用且不得出现在计划中。
+持有、目标收益或当前仓位建议。
 若 task_type=personal_investment_decision，只能规划支持决策所需的事实研究与风险分析；
 不得把个人资金情况转写成证券、行业或仓位建议，也不得绕过 TaskSpec 的澄清要求。
 用户画像不是 Expert，不得加入 selected_agents、steps 或 AgentRegistry。

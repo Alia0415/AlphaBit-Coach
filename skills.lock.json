@@ -95,28 +95,6 @@
       "dependency_mapping": {
         "skill-pandadata-api": "backend.services.pandadata_client.PandaDataClient"
       }
-    },
-    "portfolio_liquidity_stress": {
-      "repository": "quantskills/skill-portfolio-liquidity-stress-test",
-      "commit_sha": "fe7a958611aa7ed8f05a49d7f63fa8afd036acf8",
-      "skill_path": ".",
-      "license": "GPL-3.0-only",
-      "installed_at": "2026-07-25T07:04:36.328232+00:00",
-      "owner": "portfolio",
-      "mode": "executable",
-      "expected_entrypoint": "scripts/stress_liquidity.py",
-      "entrypoint_sha256": "e6c478b90bdb75a923aa1810f062331a7aa1085177a939aad457dcc42643a01b",
-      "file_sha256": {
-        "SKILL.md": "f1268489a0adb1708ef26babfbbb4a261f039770f8d84670578f9f818be7c969",
-        "scripts/stress_liquidity.py": "e6c478b90bdb75a923aa1810f062331a7aa1085177a939aad457dcc42643a01b",
-        "references/methodology.md": "bd24289e2b8cb640c4c58b403db2f7ea9f8e277cebc5e939dbf2e649eaf74565",
-        "references/output-contract.md": "3e29656b0a7e619da955e1705d59b09277def408d5b24f62bbf7e736067d1e34",
-        "references/pandadata-integration.md": "60463efc89406a26b89daf233ec0a5eed77e625c15a6fd3efec0732dad2de1e8",
-        "LICENSE": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809"
-      },
-      "dependency_mapping": {
-        "skill-pandadata-api": "backend.services.pandadata_client.PandaDataClient"
-      }
     }
   }
 }

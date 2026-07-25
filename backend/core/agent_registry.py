@@ -123,28 +123,6 @@ DEFAULT_EXPERTS = (
         covers_dimensions=("risk_assessment",),
     ),
     AgentDefinition(
-        id=AgentId.PORTFOLIO,
-        name="Portfolio Agent",
-        description="组合构建、仓位配置、约束、再平衡和流动性压力测试",
-        enabled=False,
-        tools=("portfolio_liquidity_stress",),
-        accepted_inputs=(
-            "holdings",
-            "participation",
-            "volume_shock",
-            "horizon_days",
-            "eta",
-            "redemption_value",
-        ),
-        capabilities=(
-            "portfolio_construction",
-            "allocation",
-            "rebalancing",
-            "liquidity_stress_testing",
-        ),
-        covers_dimensions=(),
-    ),
-    AgentDefinition(
         id=AgentId.MACRO,
         name="Macro Agent",
         description="基于 PandaData 分析宏观环境、政策、周期、利率与流动性",
