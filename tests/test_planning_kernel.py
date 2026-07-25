@@ -101,7 +101,23 @@ def _step(
     }
 
 
-def _plan_payload(path: list[str]) -> dict[str, Any]:
+def _collaborative_path(path: list[str]) -> list[str]:
+    if len(set(path)) >= 2:
+        return path
+    if path == ["risk"]:
+        return ["research", "risk"]
+    if path == ["report"]:
+        return ["research", "report"]
+    return [*path, "risk"]
+
+
+def _plan_payload(
+    path: list[str],
+    *,
+    ensure_collaboration: bool = True,
+) -> dict[str, Any]:
+    if ensure_collaboration:
+        path = _collaborative_path(path)
     counts: dict[str, int] = {}
     steps: list[dict[str, Any]] = []
     previous: str | None = None
@@ -124,8 +140,14 @@ def _plan_payload(path: list[str]) -> dict[str, Any]:
     }
 
 
-def _plan(path: list[str]) -> ExecutionPlan:
-    return ExecutionPlan.model_validate(_plan_payload(path))
+def _plan(
+    path: list[str],
+    *,
+    ensure_collaboration: bool = True,
+) -> ExecutionPlan:
+    return ExecutionPlan.model_validate(
+        _plan_payload(path, ensure_collaboration=ensure_collaboration)
+    )
 
 
 def _task(
@@ -334,7 +356,7 @@ def test_manager_accepts_five_distinct_dynamic_graphs(
 
     plan = manager.create_plan(user_request)
 
-    assert [step.agent.value for step in plan.steps] == path
+    assert [step.agent.value for step in plan.steps] == _collaborative_path(path)
 
 
 def test_manager_accepts_quant_and_rejects_removed_expert() -> None:
@@ -449,7 +471,7 @@ def test_plan_validator_accepts_none_scope_for_market_research() -> None:
 
 
 def test_manager_rejects_report_without_declared_dependency() -> None:
-    invalid = _plan_payload(["report"])
+    invalid = _plan_payload(["report"], ensure_collaboration=False)
     client = MockArkClient(
         json.dumps(invalid, ensure_ascii=False),
         json.dumps(invalid, ensure_ascii=False),
@@ -784,7 +806,10 @@ def test_executor_strictly_follows_different_plans() -> None:
         }
     )
 
-    _, single_results = executor.execute(_plan(["risk"]), "risk only")
+    _, single_results = executor.execute(
+        _plan(["risk"], ensure_collaboration=False),
+        "risk only",
+    )
     single_path = executed.copy()
     executed.clear()
     _, chain_results = executor.execute(
@@ -893,7 +918,7 @@ def test_executor_emits_tool_event_before_completion() -> None:
 
     events, _ = WorkflowExecutor(
         handlers={AgentId.RESEARCH: handler}
-    ).execute(_plan(["research"]))
+    ).execute(_plan(["research"], ensure_collaboration=False))
 
     assert [event.type for event in events] == [
         "step_started",
@@ -913,7 +938,10 @@ def test_tasks_api_returns_v03_shape_and_full_event_lifecycle() -> None:
         return _completed(task)
 
     mock_executor = WorkflowExecutor(
-        handlers={AgentId.RESEARCH: handler}
+        handlers={
+            AgentId.RESEARCH: handler,
+            AgentId.RISK: handler,
+        }
     )
     with (
         patch.object(main_module, "manager", mock_manager),
@@ -935,9 +963,11 @@ def test_tasks_api_returns_v03_shape_and_full_event_lifecycle() -> None:
         "duration_ms",
         "disclaimer",
     }
-    assert list(body["results"]) == ["research_1"]
+    assert list(body["results"]) == ["research_1", "risk_1"]
     assert [event["type"] for event in body["events"]] == [
         "plan_created",
+        "step_started",
+        "step_completed",
         "step_started",
         "step_completed",
         "synthesis_started",

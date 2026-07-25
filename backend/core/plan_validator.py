@@ -67,6 +67,32 @@ def validate_execution_plan(
     return plan
 
 
+def validate_global_collaboration(plan: ExecutionPlan) -> ExecutionPlan:
+    """Require credible multi-expert collaboration before research execution."""
+
+    if plan.needs_clarification:
+        return plan
+
+    selected = {selection.agent for selection in plan.selected_agents}
+    if len(selected) < 2:
+        raise PlanValidationError(
+            "Executable research plans require at least two distinct experts"
+        )
+
+    agent_by_step = {step.id: step.agent for step in plan.steps}
+    has_cross_expert_dependency = any(
+        agent_by_step.get(dependency_id) not in {None, step.agent}
+        for step in plan.steps
+        for dependency_id in step.all_dependency_step_ids()
+    )
+    if not has_cross_expert_dependency:
+        raise PlanValidationError(
+            "Executable research plans require a cross-expert dependency"
+        )
+
+    return plan
+
+
 def _validate_step_contract(
     step: PlanStep,
     registry: AgentRegistry,

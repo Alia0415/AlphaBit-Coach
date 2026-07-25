@@ -432,9 +432,12 @@ def test_macro_continues_with_partial_api_failure() -> None:
 def plan_payload(agent: str, inputs: dict[str, Any]) -> dict[str, Any]:
     return {
         "goal": "动态任务",
-        "intent": "按任务选择专家",
-        "complexity": "low",
-        "selected_agents": [{"agent": agent, "reason": "最小充分专家"}],
+        "intent": "主分析与独立风险审查",
+        "complexity": "medium",
+        "selected_agents": [
+            {"agent": agent, "reason": "承担主分析"},
+            {"agent": "risk", "reason": "审查假设和证据限制"},
+        ],
         "steps": [
             {
                 "id": f"{agent}_1",
@@ -443,7 +446,15 @@ def plan_payload(agent: str, inputs: dict[str, Any]) -> dict[str, Any]:
                 "inputs": inputs,
                 "depends_on": [],
                 "expected_output": "结构化专家结果",
-            }
+            },
+            {
+                "id": "risk_1",
+                "agent": "risk",
+                "objective": "审查主分析的假设和证据限制",
+                "inputs": {"risk_context": "独立证据审查"},
+                "depends_on": [f"{agent}_1"],
+                "expected_output": "风险与证据限制",
+            },
         ],
         "needs_clarification": False,
         "clarification_question": None,
@@ -459,7 +470,7 @@ def test_registry_exposes_enabled_macro_without_removed_portfolio() -> None:
     assert registry.is_enabled(AgentId.MACRO)
 
 
-def test_manager_accepts_macro_and_quant_only_dynamic_plans() -> None:
+def test_manager_accepts_macro_and_quant_led_collaborative_plans() -> None:
     macro_manager = ManagerAgent(
         client=MockArk(
             plan_payload(
@@ -485,12 +496,19 @@ def test_manager_accepts_macro_and_quant_only_dynamic_plans() -> None:
         )
     )
 
-    assert macro_manager.create_plan("分析新能源宏观环境").steps[0].agent == AgentId.MACRO
+    macro_plan = macro_manager.create_plan("分析新能源宏观环境")
+    assert [step.agent for step in macro_plan.steps] == [
+        AgentId.MACRO,
+        AgentId.RISK,
+    ]
     quant_plan = quant_manager.create_plan("分析某股票历史收益")
-    assert [step.agent for step in quant_plan.steps] == [AgentId.QUANT]
+    assert [step.agent for step in quant_plan.steps] == [
+        AgentId.QUANT,
+        AgentId.RISK,
+    ]
     prompt = quant_manager._planning_prompt("历史收益")
     assert '"id": "macro"' in prompt
-    assert "不得自动追加 macro" in prompt
+    assert "不得机械追加 macro" in prompt
 
 
 def test_default_executor_registers_real_macro_agent() -> None:

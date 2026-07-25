@@ -53,8 +53,11 @@ def _resolved_payload() -> dict:
     return {
         "goal": "分析 000001.SZ 在 2024 年的价格表现",
         "intent": "按用户目标执行",
-        "complexity": "low",
-        "selected_agents": [{"agent": "research", "reason": "需要 research"}],
+        "complexity": "medium",
+        "selected_agents": [
+            {"agent": "research", "reason": "获取市场证据"},
+            {"agent": "risk", "reason": "审查风险和证据限制"},
+        ],
         "steps": [
             {
                 "id": "research_1",
@@ -68,7 +71,15 @@ def _resolved_payload() -> dict:
                 },
                 "depends_on": [],
                 "expected_output": "research output",
-            }
+            },
+            {
+                "id": "risk_1",
+                "agent": "risk",
+                "objective": "审查窗口、下行风险和证据限制",
+                "inputs": {"symbols": ["000001.SZ"]},
+                "depends_on": ["research_1"],
+                "expected_output": "risk review",
+            },
         ],
         "needs_clarification": False,
         "clarification_question": None,

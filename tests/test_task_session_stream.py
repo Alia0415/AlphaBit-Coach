@@ -29,8 +29,11 @@ def _research_plan_payload() -> dict:
     return {
         "goal": "分析 000001.SZ 在 2024 年的价格表现",
         "intent": "按用户目标执行",
-        "complexity": "low",
-        "selected_agents": [{"agent": "research", "reason": "需要 research"}],
+        "complexity": "medium",
+        "selected_agents": [
+            {"agent": "research", "reason": "获取市场证据"},
+            {"agent": "risk", "reason": "审查风险和证据限制"},
+        ],
         "steps": [
             {
                 "id": "research_1",
@@ -44,7 +47,15 @@ def _research_plan_payload() -> dict:
                 },
                 "depends_on": [],
                 "expected_output": "research output",
-            }
+            },
+            {
+                "id": "risk_1",
+                "agent": "risk",
+                "objective": "审查窗口、下行风险和证据限制",
+                "inputs": {"symbols": ["000001.SZ"]},
+                "depends_on": ["research_1"],
+                "expected_output": "risk review",
+            },
         ],
         "needs_clarification": False,
         "clarification_question": None,
@@ -77,7 +88,12 @@ def _mock_executor() -> WorkflowExecutor:
             evidence=[{"metric": "period_return", "value": 1.0}],
         )
 
-    return WorkflowExecutor(handlers={AgentId.RESEARCH: handler})
+    return WorkflowExecutor(
+        handlers={
+            AgentId.RESEARCH: handler,
+            AgentId.RISK: handler,
+        }
+    )
 
 
 def test_session_creates_plan_and_persists_without_executing() -> None:
@@ -160,6 +176,8 @@ def test_stream_executes_plan_and_persists_events_and_report() -> None:
     execution_types = [data["type"] for name, data in messages if name is None]
     assert execution_types == [
         "plan_created",
+        "step_started",
+        "step_completed",
         "step_started",
         "step_completed",
         "synthesis_started",

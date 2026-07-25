@@ -58,8 +58,11 @@ def _research_plan_payload() -> dict:
     return {
         "goal": "分析 000001.SZ 在 2024 年的价格表现",
         "intent": "按用户目标执行",
-        "complexity": "low",
-        "selected_agents": [{"agent": "research", "reason": "需要 research"}],
+        "complexity": "medium",
+        "selected_agents": [
+            {"agent": "research", "reason": "获取市场证据"},
+            {"agent": "risk", "reason": "审查风险和证据限制"},
+        ],
         "steps": [
             {
                 "id": "research_1",
@@ -73,7 +76,15 @@ def _research_plan_payload() -> dict:
                 },
                 "depends_on": [],
                 "expected_output": "research output",
-            }
+            },
+            {
+                "id": "risk_1",
+                "agent": "risk",
+                "objective": "审查窗口、下行风险和证据限制",
+                "inputs": {"symbols": ["000001.SZ"]},
+                "depends_on": ["research_1"],
+                "expected_output": "risk review",
+            },
         ],
         "needs_clarification": False,
         "clarification_question": None,
@@ -106,7 +117,12 @@ def _mock_executor() -> WorkflowExecutor:
             evidence=[{"metric": "period_return", "value": 1.0}],
         )
 
-    return WorkflowExecutor(handlers={AgentId.RESEARCH: handler})
+    return WorkflowExecutor(
+        handlers={
+            AgentId.RESEARCH: handler,
+            AgentId.RISK: handler,
+        }
+    )
 
 
 def _run_stream(coach: CoachService) -> tuple[str, list[tuple[str | None, dict]]]:
@@ -134,7 +150,12 @@ def test_milestones_trigger_narrations_and_sse_coach_events() -> None:
     task_id, messages = _run_stream(coach)
 
     milestones = [m for m, _count in coach.calls]
-    assert milestones == ["plan_created", "step_completed", "task_completed"]
+    assert milestones == [
+        "plan_created",
+        "step_completed",
+        "step_completed",
+        "task_completed",
+    ]
     # Batched context: the plan_created narration consumes the replayed events.
     assert coach.calls[0][1] >= 1
 
@@ -151,7 +172,7 @@ def test_milestones_trigger_narrations_and_sse_coach_events() -> None:
 
     # Narrations are persisted for replay.
     persisted = main_module.store.list_coach_narrations(task_id)
-    assert len(persisted) == 3
+    assert len(persisted) == 4
 
 
 def test_stream_narrations_receive_saved_user_profile() -> None:
@@ -226,9 +247,10 @@ def test_replay_endpoint_returns_persisted_narrations() -> None:
     assert [n["milestone"] for n in narrations] == [
         "plan_created",
         "step_completed",
+        "step_completed",
         "task_completed",
     ]
-    assert [n["seq"] for n in narrations] == [1, 2, 3]
+    assert [n["seq"] for n in narrations] == [1, 2, 3, 4]
     assert all(n["generated_by"] == "model" for n in narrations)
 
 
