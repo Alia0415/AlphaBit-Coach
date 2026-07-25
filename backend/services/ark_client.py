@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, ValidationError
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
 DEFAULT_DEEPSEEK_TIMEOUT_SECONDS = 90.0
-DEFAULT_DEEPSEEK_MAX_RETRIES = 0
+DEFAULT_DEEPSEEK_MAX_RETRIES = 1
 ALPHAOS_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,6 @@ class ArkTextRequest(BaseModel):
     execution_id: str | None = None
     step_id: str | None = None
     attempt: int = 1
-    json_mode: bool = False
 
 
 class ArkJsonRequest(BaseModel, Generic[T]):
@@ -115,7 +114,7 @@ _RETRYABLE_KINDS = {
     ArkErrorKind.RATE_LIMIT,
     ArkErrorKind.SERVER,
 }
-_MAX_TRANSPORT_RETRIES = 1
+_MAX_TRANSPORT_RETRIES = 2
 _BASE_BACKOFF_SECONDS = 1.0
 _MAX_JITTER_SECONDS = 0.5
 
@@ -211,8 +210,6 @@ class ArkClient:
                 }
                 if request.max_output_tokens is not None:
                     request_options["max_tokens"] = request.max_output_tokens
-                if request.json_mode:
-                    request_options["response_format"] = {"type": "json_object"}
                 response = self._client.chat.completions.create(
                     **request_options,
                 )
@@ -308,7 +305,6 @@ class ArkClient:
             execution_id=request.execution_id,
             step_id=request.step_id,
             attempt=request.attempt,
-            json_mode=True,
         )
         response = self.chat_text(text_request, budget_remaining_seconds)
         raw_text = response.text.strip()
@@ -353,7 +349,6 @@ class ArkClient:
                 execution_id=request.execution_id,
                 step_id=request.step_id,
                 attempt=request.attempt + 1,
-                json_mode=True,
             )
             try:
                 repair_response = self.chat_text(

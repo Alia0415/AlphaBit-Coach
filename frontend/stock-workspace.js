@@ -3,8 +3,8 @@ import {
   StockLibrary,
   normalizeStoredStocks,
   searchStockCatalog,
-} from "./stock-library.js?v=20260726-mono3";
-import { StockChart } from "./stock-chart.js?v=20260726-mono3";
+} from "./stock-library.js?v=20260726-main-sync2";
+import { StockChart } from "./stock-chart.js?v=20260726-main-sync2";
 
 export const SELECTED_STOCK_STORAGE_KEY = "alphabit_selected_stock";
 

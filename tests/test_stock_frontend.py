@@ -58,6 +58,7 @@ def test_office_separates_stock_library_and_chart_without_removing_research_rout
     assert "onOpenChart: (stock) => navigate(\"stocks\", stock)" in source
     assert source.index('label: "研究报告"') < source.index('label: "股票库"')
     assert source.index('label: "股票行情"') < source.index('label: "投研知识库"')
+    assert "stock-research-button" not in workspace
     assert "stock-analysis-button" in workspace
     assert "buildStockResearchPrompt" in workspace
     assert "onAnalyzeStock" in source

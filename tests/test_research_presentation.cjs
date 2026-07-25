@@ -377,6 +377,14 @@ function reportBundle() {
 
 {
   const bundle = reportBundle();
+  const longHeadline = "截至2026年7月24日，中国宏观经济呈现弱复苏态势，PMI三大指数均回升至扩张区间，但数值仍处于临界点附近，表明经济增长动能温和，新订单指数明显反弹。";
+  bundle.report.aggregation.direct_answer.headline = longHeadline;
+  const vm = buildResearchViewModel(bundle);
+  assert.equal(vm.finalSummary.conclusion.headline, longHeadline);
+}
+
+{
+  const bundle = reportBundle();
   const aggregation = bundle.report.aggregation;
   aggregation.direct_answer.headline = "任务已执行";
   aggregation.direct_answer.explanation = "解释".repeat(100);

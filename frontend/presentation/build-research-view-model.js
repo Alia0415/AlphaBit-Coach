@@ -1137,7 +1137,7 @@
     for (const candidate of candidates) {
       const text = finalText(candidate);
       if (text && !genericHeadline(text) && !investmentAdvice(text)) {
-        return concise(text, 80);
+        return text;
       }
     }
     return "当前证据不足以形成明确判断";
