@@ -240,8 +240,9 @@ export function buildCoachSidebar(options) {
   };
 
   // current report section: deterministic teaching cues from the real view model
+  // 导读与复盘默认都收起，把默认空间留给对话流
   const contextSlot = el("div", "coach-reading-slot");
-  const readingFold = makeFold("reading", "本节导读", contextSlot);
+  const readingFold = makeFold("reading", "本节导读", contextSlot, { open: false });
   panel.appendChild(readingFold.head);
   panel.appendChild(contextSlot);
 

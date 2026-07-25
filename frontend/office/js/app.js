@@ -52,7 +52,7 @@ import {
   attachSelectionQuoting,
   buildCoachSidebar,
   createClassroomPanel,
-} from "./coach.js?v=20260726-coach-fold";
+} from "./coach.js?v=20260726-coach-fold2";
 import {
   buildOfficeGlossaryPage,
   highlightGlossaryScope,
@@ -3059,14 +3059,70 @@ function buildReportMainLive(report) {
 }
 
 function compactReportNavigation(vm) {
+  // 顶部锚点用紧凑标签，但陪练导读需要每节的教学线索：
+  // 一句话读懂 / 学习重点 / 常见误区 / 追问建议均来自真实视图模型。
+  const overview = (vm.navigation || []).find((n) => n.id === "report-overview") || {};
+  const boundary = vm.learningSummary.evidenceBoundary || [];
+  const questions = (vm.learningSummary.professionalQuestions || []).slice(0, 3);
+  const evidence = vm.finalSummary.evidence || [];
+  const metrics = vm.metrics || [];
   const items = [
-    { id: "report-overview", label: "结论" },
-    vm.finalSummary.evidence.length ? { id: "report-key-evidence", label: "证据" } : null,
-    { id: "report-key-metrics", label: "指标" },
-    { id: "report-synthesis", label: "风险" },
-    vm.learningSummary.evidenceBoundary.length ? { id: "report-evidence-boundary", label: "边界" } : null,
-    { id: "report-learning-quiz", label: "学习检查" },
-    { id: "report-evidence-trace", label: "追溯" },
+    {
+      id: "report-overview",
+      label: "结论",
+      summary: overview.summary || vm.finalSummary.conclusion.headline || "",
+      learningFocus: overview.learningFocus || "",
+      misconception: overview.misconception || boundary[0] || "",
+      questions: (overview.questions || []).length ? overview.questions : questions,
+    },
+    evidence.length ? {
+      id: "report-key-evidence",
+      label: "证据",
+      summary: `本次结论由 ${evidence.length} 条关键证据支撑，每条都标注了数据来源。`,
+      learningFocus: "把每条证据和结论对应起来：它证明了什么、没证明什么。",
+      misconception: boundary[0] || "",
+      questions,
+    } : null,
+    {
+      id: "report-key-metrics",
+      label: "指标",
+      summary: metrics.length
+        ? `报告共呈现 ${metrics.length} 个计算指标，均附计算口径与数据来源。`
+        : "本节展示报告中的计算指标与口径说明。",
+      learningFocus: "先看指标定义和计算口径，再看数值大小；口径不同的指标不能直接比较。",
+      misconception: "指标是历史计算结果，不能直接当作对未来的预测。",
+      questions,
+    },
+    {
+      id: "report-synthesis",
+      label: "风险",
+      summary: "本节区分数据支持的信号与需要警惕的风险提示。",
+      learningFocus: "关注每条风险的触发条件，而不是只看风险是否存在。",
+      misconception: "存在风险不代表风险一定发生，但忽略风险会高估结论可靠度。",
+      questions,
+    },
+    boundary.length ? {
+      id: "report-evidence-boundary",
+      label: "边界",
+      summary: boundary[0] || "",
+      learningFocus: "证据边界告诉你结论在什么范围内成立，超出边界的推断都需要额外验证。",
+      misconception: "把阶段性、有范围限制的结论当成无条件成立。",
+      questions,
+    } : null,
+    {
+      id: "report-learning-quiz",
+      label: "学习检查",
+      summary: "用一道选择题检查你是否真的读懂了本报告的核心指标。",
+      learningFocus: "先自己作答再看解析，错题比对题更能暴露理解盲区。",
+      questions,
+    },
+    {
+      id: "report-evidence-trace",
+      label: "追溯",
+      summary: "这里保存了专家分工、证据链与数据覆盖，用于审计结论怎么得出。",
+      learningFocus: "需要验证某个数字时，先到这里找它的来源与计算过程。",
+      questions,
+    },
   ].filter(Boolean);
   const seen = new Set();
   return items.filter((item) => {
