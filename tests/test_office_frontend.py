@@ -97,6 +97,11 @@ def test_office_wires_the_coach_layer_into_reports_and_war_room() -> None:
     assert "attachSelectionQuoting" in script
     assert "createClassroomPanel" in script
     assert 'from "./coach.js?v=' in script
+    assert '"coach-chat-section"' in coach_script
+    assert '"coach-compose"' in coach_script
+    assert '"研究复盘"' in coach_script
+    assert '"对话记录"' in coach_script
+    assert '"提问区"' in coach_script
     # transports: live hits the coach endpoints, demo replays labeled samples
     assert "coachAsk" in api_script
     assert "coachGuide" in api_script
@@ -107,7 +112,34 @@ def test_office_wires_the_coach_layer_into_reports_and_war_room() -> None:
     assert "模型生成" in coach_script
     assert "证据检索 · 未调模型" in coach_script
     assert ".coach-panel" in styles
+    assert ".coach-guide-slot" in styles
+    assert "max-height: 30%;" in styles
+    assert ".coach-chat-section" in styles
+    assert ".coach-compose" in styles
     assert ".classroom-panel" in styles
+
+
+def test_live_war_room_uses_real_plan_flow_and_event_driven_office_motion() -> None:
+    script = client.get("/static/office/js/app.js").text
+    styles = client.get("/static/office/css/office.css").text
+    companion_styles = client.get("/static/office/css/companion.css").text
+
+    assert 'el("div", "dag-wrap dag-stack")' in script
+    assert 'layers[d].forEach((s) =>' in script
+    assert 's.dependsOn.length' in script
+    assert 'status: "idle"' in script
+    assert 'const stageController = createOfficeStageController(canvas, planAgents);' in script
+    assert 'stageController.setAgentStatus(agent, "working")' in script
+    assert 'stageController.setAgentStatus(agent, "done")' in script
+    assert 'stageController.stop();' in script
+    assert ".dag-stack" in styles
+    assert ".dag-layer" in styles
+    assert ".dag-stack .dag-node" in styles
+    assert ".war-right-col > .companion-panel" in styles
+    assert "flex: 0 0 44%;" in styles
+    assert ".war-right-col > .classroom-panel" in styles
+    assert "flex: 0 0 30%;" in styles
+    assert "max-height: 230px" not in companion_styles
 
 
 def test_office_versions_the_demo_data_module_import() -> None:
