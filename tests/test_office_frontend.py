@@ -31,6 +31,18 @@ def test_office_keeps_only_backend_supported_navigation() -> None:
         assert f'label: "{label}"' not in script
 
 
+def test_office_places_the_glossary_in_the_sidebar() -> None:
+    script = client.get("/static/office/js/app.js").text
+
+    glossary_item = '{ action: "glossary", ico: "📚", label: "投研知识库" }'
+    assert glossary_item in script
+    assert script.index('label: "研究报告"') < script.index(glossary_item)
+    assert script.index(glossary_item) < script.index('label: "用户画像"')
+    assert 'const opensGlossary = item.action === "glossary";' in script
+    assert 'btn.id = "glossaryToggle";' in script
+    assert 'el("button", "pill glossary-toggle", "📚 投研知识库")' not in script
+
+
 def test_office_does_not_render_unimplemented_actions() -> None:
     response = client.get("/static/office/js/app.js")
 
