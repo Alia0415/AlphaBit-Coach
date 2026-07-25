@@ -259,6 +259,48 @@ def test_manager_prompt_uses_registry_and_minimal_sufficient_principle() -> None
     assert "report 不是默认必经节点" in prompt
 
 
+def test_manager_prompts_keep_factor_ideation_out_of_cross_check_contract() -> None:
+    invalid = _plan_payload(["quant"])
+    invalid["steps"][0]["inputs"] = {
+        "analysis_mode": "skill_research",
+        "research_goal": "提出三个可验证的 A 股量价因子想法",
+    }
+    invalid["steps"][0]["covers_dimensions"] = ["quantitative_cross_check"]
+    valid = _plan_payload(["quant"])
+    valid["steps"][0]["inputs"] = {"analysis_mode": "skill_research"}
+    client = MockArkClient(
+        json.dumps(invalid, ensure_ascii=False),
+        json.dumps(valid, ensure_ascii=False),
+    )
+
+    ManagerAgent(client=client).create_plan(
+        "请提出三个可验证的A股量价因子想法，并说明经济直觉和局限。"
+    )
+
+    assert len(client.prompts) == 2
+    for prompt in client.prompts:
+        assert "因子创意任务的 covers_dimensions 必须为空列表" in prompt
+        assert "不得在 Quant inputs 中写入 research_goal" in prompt
+
+
+def test_manager_prompt_requires_separate_research_input_contracts() -> None:
+    invalid = _plan_payload(["research"])
+    invalid["steps"][0]["inputs"]["symbol"] = "000001.SZ"
+    valid = _plan_payload(["research"])
+    client = MockArkClient(
+        json.dumps(invalid, ensure_ascii=False),
+        json.dumps(valid, ensure_ascii=False),
+    )
+
+    ManagerAgent(client=client).create_plan(
+        "综合分析 000001.SZ 的市场表现、基本面和行业竞争。"
+    )
+
+    assert len(client.prompts) == 2
+    for prompt in client.prompts:
+        assert "市场、财报/尽调、行业 Research 必须拆成不同步骤" in prompt
+
+
 def test_manager_prompt_allows_company_symbol_for_industry_competition() -> None:
     client = MockArkClient(json.dumps(_plan_payload(["research"])))
 

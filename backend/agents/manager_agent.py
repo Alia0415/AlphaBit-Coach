@@ -243,6 +243,8 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
   不能写成单数 symbol；fields 为空列表时 Research 使用默认字段，否则必须至少包含
   trade_date、symbol、close、volume，绝不能使用 price、financials、
   fundamental_metrics 等概念名代替真实字段；
+- 市场、财报/尽调、行业 Research 必须拆成不同步骤，不得在同一步骤混用
+  symbols、财报 scope、industry 三类互斥输入契约；
 - 单公司财报、基本面和尽调问题通常只选择 research；应提取 symbol、period、
   scope、focus 和 research_goal。只问财报时 scope=financials，全面尽调时
   scope=full_dossier。Manager 仍然不能写入底层 Skill；
@@ -259,6 +261,9 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
   分析互不依赖，应将两个 depends_on 都留空以并行执行，不得写成固定流水线；
 - Quant 因子实际计算同样必须提取 symbols、start_date、end_date；缺少任一项时
   必须要求澄清，不能猜测。因子创意任务不要求先获取市场数据；
+- 因子创意任务设置 analysis_mode=skill_research，inputs 只能使用 Registry
+  允许的 Quant 字段，不得在 Quant inputs 中写入 research_goal；
+  因子创意任务的 covers_dimensions 必须为空列表；
 - Quant 的普通历史收益、波动、回撤、成交量与横截面交叉验证，inputs 必须设置
   analysis_mode=historical_cross_check，并提取 symbols、start_date、end_date；
 - 当综合研究需要用历史市场证据校准 Research 或 Macro 的上游结论时，Quant inputs
@@ -343,6 +348,8 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
 {registry_json}
 
 Agent 输入契约：
+- 市场、财报/尽调、行业 Research 必须拆成不同步骤，不得在同一步骤混用
+  symbols、财报 scope、industry 三类互斥输入契约；
 - 市场 Research 必须使用 symbols 列表、YYYYMMDD 的 start_date/end_date；fields
   为空列表或至少包含 trade_date、symbol、close、volume；
 - 财报/尽调 Research 才能使用 symbol，并必须提供 financials、financial_risk
@@ -353,11 +360,14 @@ Agent 输入契约：
 - Macro 必须使用非空 industry、time_range、research_goal；若提供历史区间必须同时
   给出合法 YYYYMMDD 的 start_date 与 end_date 且不倒置，不得只给其一；纯个股价格、
   财务或因子任务不需要 macro，不要为修复契约而保留缺输入的 macro，可直接移除；
+- Quant 因子创意任务使用 analysis_mode=skill_research；
+  不得在 Quant inputs 中写入 research_goal；
+  因子创意任务的 covers_dimensions 必须为空列表；
 - 个股/观察名单事件风险扫描的 Risk 使用 symbol 或 symbols，并可使用
   start_date、end_date；不得为此自动增加 Research 或财务 scope；
-- Report 必须声明至少一个上游 depends_on；
 - 财务质量或盈利质量请求必须同时选择 Research 和 Risk；Risk 必须把 Research
   财务步骤声明为 required 依赖，不得把该审查改成独立事件风险扫描；
+- Report 必须声明至少一个上游 depends_on；
 - 不要为了修复契约而增加不需要的专家或改成固定流程。
 """.strip()
 
