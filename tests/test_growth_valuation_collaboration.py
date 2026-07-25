@@ -36,6 +36,15 @@ class _SingleDimensionArk:
         )
 
 
+class _CapturingDimensionArk(_SingleDimensionArk):
+    def __init__(self) -> None:
+        self.requests = []
+
+    def chat_json(self, request):
+        self.requests.append(request)
+        return super().chat_json(request)
+
+
 class _ResearchOnlyPlanArk:
     def __init__(self, plan: ExecutionPlan) -> None:
         self.plan = plan
@@ -87,6 +96,17 @@ def test_single_goal_does_not_force_growth_valuation_collaboration(
     )
 
     assert spec.required_dimensions == ["company_fundamentals"]
+
+
+def test_ambiguous_dimension_analysis_disables_thinking() -> None:
+    ark = _CapturingDimensionArk()
+
+    TaskInterpreter(ark_client=ark).interpret(
+        "评估宁德时代（300750.SZ）的成长性",
+        _allowed_policy(),
+    )
+
+    assert ark.requests[0].thinking_mode == "disabled"
 
 
 def test_growth_valuation_request_rejects_research_only_plan() -> None:

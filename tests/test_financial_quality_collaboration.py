@@ -45,6 +45,15 @@ class _SingleDimensionArk:
         )
 
 
+class _CountingDimensionArk(_SingleDimensionArk):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def chat_json(self, request):
+        self.calls += 1
+        return super().chat_json(request)
+
+
 def _allowed_policy() -> PolicyDecision:
     return PolicyDecision(
         decision="allowed_research",
@@ -113,6 +122,18 @@ def test_financial_quality_request_requires_research_and_risk_dimensions() -> No
     spec = _financial_quality_spec()
 
     assert spec.request_scope == "focused"
+    assert spec.required_dimensions == [
+        "company_fundamentals",
+        "risk_assessment",
+    ]
+
+
+def test_financial_quality_dimensions_do_not_require_model_call() -> None:
+    ark = _CountingDimensionArk()
+
+    spec = TaskInterpreter(ark_client=ark).interpret(PROMPT, _allowed_policy())
+
+    assert ark.calls == 0
     assert spec.required_dimensions == [
         "company_fundamentals",
         "risk_assessment",
