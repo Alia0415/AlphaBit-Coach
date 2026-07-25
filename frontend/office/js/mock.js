@@ -392,6 +392,42 @@ export const HISTORY_TASKS = [
   { id: "task-dividend", title: "红利低波组合增强策略回测", status: "running", kind: "策略回测", time: "今天 09:48" },
 ];
 
+// ---------- AI coach demo data ----------
+// 所有文案均为明确标注的本地示例，仅用于无凭据演示陪练交互形态；
+// Live 模式下陪练回答全部由后端模型基于真实报告证据生成。
+export const DEMO_COACH = {
+  guide: {
+    guided_questions: [
+      { question: "报告里的「渗透率提升」和「估值合理」之间是什么关系？", why_it_matters: "理解增长预期如何传导到估值，是基本面研究的核心链条。" },
+      { question: "如果产能出清比预期慢，报告的哪些结论会先受影响？", why_it_matters: "学会用反面情形检验结论稳健性，避免只看多头证据。" },
+      { question: "风险部分提到的回撤数字是怎么算出来的？", why_it_matters: "搞清楚指标的计算口径，才能判断它能不能直接用于决策。" },
+    ],
+    review: {
+      framework: "本次示例研究先看宏观环境，再做公司基本面与估值，最后用风险扫描收敛结论。（示例）",
+      experts_involved: ["宏观分析师", "行业研究员", "量化分析师", "风险分析师"],
+      evidence_basis: ["行业渗透率与装机量数据（示例）", "毛利率与同业对比（示例）"],
+      open_questions: ["产能出清节奏尚无法确认（示例）"],
+      next_learning_steps: ["了解渗透率、毛利率等指标的计算口径（示例）"],
+    },
+  },
+  reply: {
+    role: "coach",
+    text: "（示例回答）这里会结合报告证据解释你的问题：例如「渗透率」指新能源车占汽车销量的比例，报告用它衡量行业成长空间。Live 模式下，回答由模型基于真实报告证据生成并逐条校验引用。",
+    concept_notes: [
+      { term: "渗透率", explanation: "新产品在目标市场中的占比，用于衡量普及程度与剩余增长空间。（示例讲解）" },
+    ],
+    cited_evidence: [],
+    uncertainty_note: "这是本地示例内容，不代表真实研究结论。",
+    created_at: "",
+  },
+  narrations: [
+    { seq: 1, milestone: "plan_created", agent: "", narration: "（示例）研究经理刚把任务拆成了四个专家步骤：宏观、基本面、估值、风险。", teaching_point: "真实投研中，先拆问题再分工能避免重复劳动和盲区。" },
+    { seq: 2, milestone: "step_completed", agent: "macro", narration: "（示例）宏观分析师确认了利率下行环境，这会影响后续估值环节的折现率假设。", teaching_point: "宏观结论很少直接给答案，它的价值是为后续环节定边界。" },
+    { seq: 3, milestone: "step_completed", agent: "quant", narration: "（示例）量化分析师用模型把盈利预期翻译成了价格区间。", teaching_point: "估值模型的输出取决于输入假设，看结果前先看假设。" },
+    { seq: 4, milestone: "task_completed", agent: "", narration: "（示例）四位专家的证据已汇总成报告，冲突观点被保留而不是被抹平。", teaching_point: "好的研究报告会保留不确定性，而不是假装所有问题都有答案。" },
+  ],
+};
+
 // ---------- clarification chat ----------
 export const CLARIFY_GROUPS = [
   { key: "period", title: "投资周期", hint: "你希望的投资周期是？", multi: false, items: ["短期（1-3个月）", "中期（3-12个月）", "长期（1-3年）"], def: [2] },

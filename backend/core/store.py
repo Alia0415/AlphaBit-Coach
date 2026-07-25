@@ -119,6 +119,26 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS coach_messages (
+    id TEXT PRIMARY KEY,
+    report_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    payload_json TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS coach_guides (
+    report_id TEXT PRIMARY KEY,
+    guide_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS coach_narrations (
+    task_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (task_id, seq)
+);
 """
 
 
@@ -391,6 +411,8 @@ class Store:
             ).fetchall()
         report = _report_to_dict(report_row)
         report["followups"] = [_followup_to_dict(row) for row in followup_rows]
+        report["coach_messages"] = self.list_coach_messages(report_id)
+        report["coach_guide"] = self.get_coach_guide(report_id)
         return report
 
     def list_reports(self, *, limit: int = 100) -> list[dict[str, Any]]:
@@ -455,6 +477,103 @@ class Store:
                 (report_id,),
             ).fetchall()
         return [_followup_to_dict(row) for row in rows]
+
+    # -- coach layer -----------------------------------------------------------
+
+    def add_coach_message(
+        self,
+        *,
+        message_id: str,
+        report_id: str,
+        role: str,
+        text: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        created_at = _now()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO coach_messages "
+                "(id, report_id, role, text, payload_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    message_id,
+                    report_id,
+                    role,
+                    text,
+                    _dumps(payload) if payload is not None else None,
+                    created_at,
+                ),
+            )
+            self._conn.commit()
+        record: dict[str, Any] = {
+            "id": message_id,
+            "report_id": report_id,
+            "role": role,
+            "text": text,
+            "created_at": created_at,
+        }
+        record.update(payload or {})
+        return record
+
+    def list_coach_messages(self, report_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM coach_messages WHERE report_id = ? "
+                "ORDER BY created_at ASC, rowid ASC",
+                (report_id,),
+            ).fetchall()
+        return [_coach_message_to_dict(row) for row in rows]
+
+    def save_coach_guide(self, report_id: str, guide: dict[str, Any]) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO coach_guides (report_id, guide_json, created_at) "
+                "VALUES (?, ?, ?) "
+                "ON CONFLICT(report_id) DO UPDATE SET "
+                "guide_json = excluded.guide_json, "
+                "created_at = excluded.created_at",
+                (report_id, _dumps(guide), _now()),
+            )
+            self._conn.commit()
+
+    def get_coach_guide(self, report_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT guide_json FROM coach_guides WHERE report_id = ?",
+                (report_id,),
+            ).fetchone()
+        return _loads(row["guide_json"]) if row is not None else None
+
+    def add_coach_narration(
+        self,
+        task_id: str,
+        *,
+        payload: dict[str, Any],
+    ) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COALESCE(MAX(seq), 0) + 1 AS next "
+                "FROM coach_narrations WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            seq = int(row["next"])
+            self._conn.execute(
+                "INSERT INTO coach_narrations "
+                "(task_id, seq, payload_json, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (task_id, seq, _dumps(payload), _now()),
+            )
+            self._conn.commit()
+            return seq
+
+    def list_coach_narrations(self, task_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM coach_narrations WHERE task_id = ? "
+                "ORDER BY seq ASC",
+                (task_id,),
+            ).fetchall()
+        return [_coach_narration_to_dict(row) for row in rows]
 
     # -- overrides -----------------------------------------------------------
 
@@ -615,6 +734,32 @@ def _followup_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "evidence": _loads(row["evidence_json"]) or [],
         "created_at": row["created_at"],
     }
+
+
+def _coach_message_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "id": row["id"],
+        "report_id": row["report_id"],
+        "role": row["role"],
+        "text": row["text"],
+        "created_at": row["created_at"],
+    }
+    payload = _loads(row["payload_json"])
+    if isinstance(payload, dict):
+        record.update(payload)
+    return record
+
+
+def _coach_narration_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "task_id": row["task_id"],
+        "seq": row["seq"],
+        "created_at": row["created_at"],
+    }
+    payload = _loads(row["payload_json"])
+    if isinstance(payload, dict):
+        record.update(payload)
+    return record
 
 
 _default_store: Store | None = None

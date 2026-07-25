@@ -532,6 +532,113 @@ class FollowupAnswer(BaseModel):
     created_at: str
 
 
+# ---------------------------------------------------------------------------
+# Coach layer contracts (AI 金融陪练层)
+#
+# The coach is NOT an expert: it never appears in a plan, never joins the DAG,
+# and only reads completed reports, persisted events, and the user profile.
+# ---------------------------------------------------------------------------
+
+
+class ConceptNote(BaseModel):
+    """One financial term explained alongside a coach answer."""
+
+    term: str = Field(min_length=1)
+    explanation: str = Field(min_length=1)
+
+
+class CoachReply(BaseModel):
+    """Structured model output for a report coaching answer."""
+
+    answer: str = Field(min_length=1)
+    concept_notes: list[ConceptNote] = Field(default_factory=list)
+    cited_evidence: list[str] = Field(default_factory=list)
+    uncertainty_note: str = ""
+    is_general_knowledge_included: bool = False
+
+
+class CoachMessage(BaseModel):
+    """A persisted coach conversation turn on a report."""
+
+    id: str
+    report_id: str
+    role: Literal["user", "coach"]
+    text: str
+    quoted_text: str | None = None
+    concept_notes: list[ConceptNote] = Field(default_factory=list)
+    cited_evidence: list[str] = Field(default_factory=list)
+    uncertainty_note: str = ""
+    is_general_knowledge_included: bool = False
+    generated_by: Literal["user", "model"] = "user"
+    created_at: str
+
+
+class GuidedQuestion(BaseModel):
+    """One guided reflection question with its pedagogical rationale."""
+
+    question: str = Field(min_length=1)
+    why_it_matters: str = Field(min_length=1)
+
+
+class CoachReview(BaseModel):
+    """Structured research retrospective for learning purposes.
+
+    ``experts_involved``, ``evidence_basis``, and ``open_questions`` are
+    extracted deterministically from execution evidence — the model organizes
+    language only and must never add or remove entries.
+    """
+
+    framework: str = ""
+    experts_involved: list[str] = Field(default_factory=list)
+    evidence_basis: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    next_learning_steps: list[str] = Field(default_factory=list)
+
+
+class CoachGuideDraft(BaseModel):
+    """Model output for the guide: questions plus language-only review parts."""
+
+    guided_questions: list[GuidedQuestion] = Field(min_length=3, max_length=5)
+    framework: str = Field(min_length=1)
+    next_learning_steps: list[str] = Field(default_factory=list, max_length=5)
+
+
+class CoachGuide(BaseModel):
+    """Persisted guided questions + research review for one report."""
+
+    report_id: str
+    guided_questions: list[GuidedQuestion] = Field(default_factory=list)
+    review: CoachReview = Field(default_factory=CoachReview)
+    generated_by: Literal["model"] = "model"
+    created_at: str
+
+
+class CoachNarrationDraft(BaseModel):
+    """Model output for one milestone narration during execution."""
+
+    narration: str = Field(min_length=1)
+    teaching_point: str = Field(min_length=1)
+
+
+class CoachNarration(BaseModel):
+    """A persisted process-coaching narration tied to a task milestone."""
+
+    task_id: str
+    seq: int = Field(ge=1)
+    milestone: Literal[
+        "plan_created",
+        "step_completed",
+        "step_failed",
+        "task_completed",
+    ]
+    step_id: str | None = None
+    agent: str | None = None
+    narration: str
+    teaching_point: str
+    generated_by: Literal["model"] = "model"
+    created_at: str
+
+
 class ReportDetail(BaseModel):
     """Full persisted report with completeness, aggregation, and follow-ups."""
 
@@ -542,6 +649,8 @@ class ReportDetail(BaseModel):
     completeness: CompletenessMetric | None = None
     aggregation: AggregationResult | None = None
     followups: list[FollowupAnswer] = Field(default_factory=list)
+    coach_messages: list[CoachMessage] = Field(default_factory=list)
+    coach_guide: CoachGuide | None = None
 
 
 # ---------------------------------------------------------------------------

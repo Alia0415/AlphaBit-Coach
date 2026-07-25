@@ -102,6 +102,28 @@ validation succeed.
   and it must not fall back to model-only macro claims when PandaData is
   unavailable.
 
+## Coach layer rules
+
+- The Coach is a learning companion, not an expert. It must never appear in
+  `selected_agents`, never become a task-graph step, and never alter Manager
+  planning, expert execution, or aggregation.
+- Coach inputs are read-only: completed reports, stored execution events, and
+  the user profile. The Coach must not trigger new research, call expert
+  Skills, or touch PandaData directly.
+- Coach answers must stay anchored to actual report evidence. Cited excerpts
+  are validated against the stored report text, and fabricated citations are
+  rejected instead of being served.
+- Every coach output carries `generated_by: "model"` (the demo frontend labels
+  sample content 示例). When Ark is unavailable the coach fails explicitly with
+  an error; it must never degrade to fabricated or template answers.
+- Milestone narrations are generated asynchronously and streamed as named SSE
+  `coach` events. Narration generation must never block, delay, or fail task
+  execution.
+- General financial knowledge mixed into a reply must be flagged via
+  `is_general_knowledge_included`, and uncertainty must be stated openly.
+- Coach output is educational research commentary only: no buy/sell advice,
+  no return promises, and no claims beyond the report's evidence boundary.
+
 ## QuantSkills integration principles
 
 - Register QuantSkills through the central skill registry.

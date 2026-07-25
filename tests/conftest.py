@@ -33,6 +33,15 @@ def isolated_store(tmp_path, monkeypatch):
             TaskInterpreter(),
             raising=False,
         )
+        # Coach must never consume real model quota in automated tests.
+        from backend.core.coach_service import CoachService
+
+        monkeypatch.setattr(
+            main_module,
+            "coach_service",
+            CoachService(),
+            raising=False,
+        )
     except Exception:
         # Tests that never touch the FastAPI app still get an isolated store.
         pass
