@@ -21,7 +21,7 @@ function _evidenceText(e) {
   if (e.description) return e.description;
   if (e.content) return e.content;
   if (e.name && e.value != null) return `${e.name}：${e.value}${e.unit || ""}`;
-  if (e.indicator) return `${e.indicator}：${e.value != null ? e.value : ""}${e.unit || ""}`;
+  if (e.indicator != null && e.value != null) return `${e.indicator}：${e.value}${e.unit || ""}`;
   if (e.text) return e.text;
   if (e.title) return e.title;
   if (e.summary) return e.summary;
