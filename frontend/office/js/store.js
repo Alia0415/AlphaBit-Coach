@@ -3,7 +3,7 @@ const KEY = "alphaos.office.v1";
 
 const defaults = () => ({
   onboarded: false,
-  mode: "demo", // demo | live
+  mode: "live", // demo | live;真实研究是默认产品入口
   agentEnabled: { manager: true, macro: true, research: true, quant: true, risk: true, report: true },
   tasks: [],
   currentTaskId: null,

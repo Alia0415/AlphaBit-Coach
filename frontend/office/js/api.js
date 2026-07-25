@@ -37,7 +37,7 @@ async function requestJSON(
       } catch {
         // Keep the plain-language fallback.
       }
-      throw new Error(`${method} ${path} → ${message}`);
+      throw new Error(message);
     }
     if (res.status === 204) return null;
     return await res.json();

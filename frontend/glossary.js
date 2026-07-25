@@ -733,6 +733,15 @@
     category,
   }));
   GLOSSARY.push(...EXTENDED_GLOSSARY);
+  const RESEARCH_ENTRIES = new Map();
+
+  function activeEntries() {
+    const byTerm = new Map(
+      GLOSSARY.map((entry) => [entry.term.toLowerCase(), entry])
+    );
+    RESEARCH_ENTRIES.forEach((entry, key) => byTerm.set(key, entry));
+    return [...byTerm.values()].sort((a, b) => b.term.length - a.term.length);
+  }
 
   /* 按词条长度从长到短排序，避免短词抢在长词之前匹配 */
   let SORTED = [];
@@ -740,10 +749,10 @@
 
   /*
    * 中文术语需要在连续中文句子中命中；英文缩写则保留字母数字边界，
-   * 避免把 AlphaOS 中的 Alpha 当作独立术语。
-   */
+  * 避免把 AlphaOS 中的 Alpha 当作独立术语。
+  */
   function rebuildMatcher() {
-    SORTED = GLOSSARY.slice().sort((a, b) => b.term.length - a.term.length);
+    SORTED = activeEntries();
     const patterns = SORTED.map((g) => {
       const escaped = g.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const startsWithAscii = /^[A-Za-z0-9_]/.test(g.term);
@@ -755,11 +764,40 @@
   }
   rebuildMatcher();
 
+  function safeEntryColor(value) {
+    const color = String(value || "");
+    return /^(?:#[0-9a-f]{3,8}|var\(--(?:amber|accent-strong|blue|cyan|green|red|yellow)\))$/i.test(color)
+      ? color
+      : "var(--cyan)";
+  }
+
+  function setResearchEntries(entries) {
+    RESEARCH_ENTRIES.clear();
+    if (!Array.isArray(entries)) {
+      rebuildMatcher();
+      return 0;
+    }
+    entries.slice(0, 100).forEach((item) => {
+      const term = String(item?.term || "").trim().slice(0, 80);
+      const explanation = String(item?.explanation || "").trim().slice(0, 2000);
+      if (!term || !explanation) return;
+      RESEARCH_ENTRIES.set(term.toLowerCase(), {
+        term,
+        explanation,
+        color: safeEntryColor(item?.color),
+        source: "current_research",
+      });
+    });
+    rebuildMatcher();
+    return RESEARCH_ENTRIES.size;
+  }
+
   /**
    * 查词条对象（用原始未转译的词条名查找）
    */
   function lookup(term) {
-    return SORTED.find((g) => g.term.toLowerCase() === term.toLowerCase());
+    const key = String(term || "").trim().toLowerCase();
+    return activeEntries().find((entry) => entry.term.toLowerCase() === key);
   }
 
   function getTerms() {
@@ -802,6 +840,7 @@
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
 
+    if (!RE) return safe;
     return safe.replace(RE, (match, term) => {
       const entry = lookup(term);
       if (!entry) return match;
@@ -874,6 +913,7 @@
     lookup,
     getTerms,
     registerTerms,
+    setResearchEntries,
     getKnowledge,
     addKnowledge,
     removeKnowledge,
