@@ -52,7 +52,7 @@ import {
   attachSelectionQuoting,
   buildCoachSidebar,
   createClassroomPanel,
-} from "./coach.js?v=20260726-coach-fold2";
+} from "./coach.js?v=20260726-risk1";
 import {
   buildOfficeGlossaryPage,
   highlightGlossaryScope,
@@ -735,6 +735,8 @@ function renderStatusbar() {
   const sb = $("#statusbar");
   sb.innerHTML = "";
   sb.appendChild(el("span", "sb-item", "AI 投研团队 · 证据边界清晰 · 仅供研究参考"));
+  // 合规风险提示：全站常驻，任何页面都不可隐藏
+  sb.appendChild(el("span", "sb-item sb-risk", "⚠ 风险提示：内容由 AI 生成，仅供投研学习，不构成投资建议"));
   sb.appendChild(el("span", "spacer"));
   sb.appendChild(el("span", "sb-item sb-slogan", nowClock()));
 }
@@ -3054,7 +3056,14 @@ function buildReportMainLive(report) {
   }
   col.appendChild(renderCompactLearningQuiz(vm.learningSummary));
   col.appendChild(renderEvidenceTraceDrawer(vm));
-  if (vm.disclaimer) col.appendChild(el("div", "op-note research-disclaimer", esc(vm.disclaimer)));
+  // 合规要求：报告页必须展示风险提示；后端未返回时使用前端兜底文案
+  const disclaimerText = vm.disclaimer
+    || "本报告内容由 AI 生成，仅用于投资研究学习与技术演示，不构成投资建议、证券推荐、收益承诺或交易指令。";
+  col.appendChild(el(
+    "div",
+    "op-note research-disclaimer",
+    `<strong class="risk-label">⚠ 风险提示</strong>${esc(disclaimerText)}`,
+  ));
   return col;
 }
 

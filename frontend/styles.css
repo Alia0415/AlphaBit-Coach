@@ -1598,6 +1598,11 @@ footer {
   letter-spacing: 0.04em;
 }
 
+footer .footer-risk {
+  color: var(--amber);
+  opacity: 0.75;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
