@@ -178,6 +178,16 @@ def test_manager_prompt_uses_registry_and_minimal_sufficient_principle() -> None
     assert "report 不是默认必经节点" in prompt
 
 
+def test_manager_prompt_allows_company_symbol_for_industry_competition() -> None:
+    client = MockArkClient(json.dumps(_plan_payload(["research"])))
+
+    ManagerAgent(client=client).create_plan("分析比亚迪 002594.SZ 的行业竞争格局")
+
+    prompt = client.prompts[0]
+    assert "单公司行业竞争时应同时提供单数 symbol" in prompt
+    assert "不得提供 symbols 或财报 scope" in prompt
+
+
 @pytest.mark.parametrize(
     ("user_request", "path"),
     [

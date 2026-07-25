@@ -211,8 +211,9 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
 - 单公司财报、基本面、尽调和财务风险问题只选择 research；应提取 symbol、
   period、scope、focus 和 research_goal。只问财报时 scope=financials，全面尽调时
   scope=full_dossier。Manager 仍然只能选择 research，绝不能写入底层 Skill；
-- 行业 Research 使用 industry、time_range、research_goal 和可选 focus；不得同时
-  提供 symbol、symbols 或财报 scope，也不要求市场 Research 的日期和 fields；
+- 行业 Research 使用 industry、time_range、research_goal 和可选 focus。
+  单公司行业竞争时应同时提供单数 symbol，以便查询公司行业分类和可比公司；
+  不得提供 symbols 或财报 scope，也不要求市场 Research 的日期和 fields；
 - 行业 Research 负责行业需求、产业链、竞争、技术成本和估值预期研究。Macro 负责
   宏观、政策、周期和流动性；只有当前目标确实同时需要两者时才选择两个专家。若两项
   分析互不依赖，应将两个 depends_on 都留空以并行执行，不得写成固定流水线；
@@ -300,7 +301,8 @@ Agent 输入契约：
 - 财报/尽调 Research 才能使用 symbol，并必须提供 financials、financial_risk
   或 full_dossier scope；
 - 行业 Research 必须使用非空 industry；time_range、research_goal、focus 如提供
-  必须为非空字符串；不得同时提供 symbol、symbols 或财报 scope；
+  必须为非空字符串；单公司行业竞争时应同时提供单数 symbol；不得提供 symbols 或
+  财报 scope；
 - Macro 必须使用非空 industry、time_range、research_goal；若提供历史区间必须同时
   给出合法 YYYYMMDD 的 start_date 与 end_date 且不倒置，不得只给其一；纯个股价格、
   财务或因子任务不需要 macro，不要为修复契约而保留缺输入的 macro，可直接移除；
