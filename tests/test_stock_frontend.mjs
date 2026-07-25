@@ -9,11 +9,13 @@ import {
 } from "../frontend/stock-library.js";
 import {
   buildCoachCopy,
-  researchPrompt,
+  normalizeSelectedStock,
+  SELECTED_STOCK_STORAGE_KEY,
 } from "../frontend/stock-workspace.js";
 
 assert.equal(RECENT_STORAGE_KEY, "alphabit_recent_stocks");
 assert.equal(FAVORITE_STORAGE_KEY, "alphabit_favorite_stocks");
+assert.equal(SELECTED_STOCK_STORAGE_KEY, "alphabit_selected_stock");
 
 const normalized = normalizeStoredStocks([
   { symbol: "600519.sh", name: "贵州茅台" },
@@ -46,10 +48,11 @@ favorites = toggleFavoriteList(favorites, {
 });
 assert.deepEqual(favorites, []);
 
-assert.equal(
-  researchPrompt({ symbol: "300750.SZ" }),
-  "请分析 300750.SZ 的市场表现、基本面和主要风险，并用通俗方式解释。",
+assert.deepEqual(
+  normalizeSelectedStock({ symbol: "300750.sz", name: "宁德时代" }),
+  { symbol: "300750.SZ", name: "宁德时代", market: "SZ" },
 );
+assert.equal(normalizeSelectedStock({ symbol: "invalid", name: "无效" }), null);
 
 const copy = buildCoachCopy({
   metrics: { period_return: 0.12, latest_close: 120 },

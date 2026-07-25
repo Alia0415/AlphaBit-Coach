@@ -1,8 +1,13 @@
-import { FALLBACK_STOCKS, StockLibrary } from "./stock-library.js?v=20260725-s02";
-import { StockChart } from "./stock-chart.js?v=20260725-s01";
+import {
+  FALLBACK_STOCKS,
+  StockLibrary,
+  normalizeStoredStocks,
+} from "./stock-library.js?v=20260725-s03";
+import { StockChart } from "./stock-chart.js?v=20260725-s02";
+
+export const SELECTED_STOCK_STORAGE_KEY = "alphabit_selected_stock";
 
 const PERIODS = Object.freeze([
-  { value: "1m", label: "分时", range: "1d" },
   { value: "1d", label: "日 K", range: "1y" },
   { value: "1w", label: "周 K", range: "3y" },
   { value: "1mo", label: "月 K", range: "5y" },
@@ -13,15 +18,6 @@ function element(tag, className, text) {
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
-}
-
-function formatMetric(value, kind = "number") {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "—";
-  if (kind === "percent") {
-    return `${number > 0 ? "+" : ""}${(number * 100).toFixed(2)}%`;
-  }
-  return number.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 }
 
 async function responseJson(response) {
@@ -43,8 +39,31 @@ async function responseJson(response) {
   return payload;
 }
 
-export function researchPrompt(stock) {
-  return `请分析 ${stock.symbol} 的市场表现、基本面和主要风险，并用通俗方式解释。`;
+export function normalizeSelectedStock(stock) {
+  return normalizeStoredStocks([stock], 1)[0] || null;
+}
+
+function readSelectedStock() {
+  try {
+    return (
+      normalizeSelectedStock(
+        JSON.parse(localStorage.getItem(SELECTED_STOCK_STORAGE_KEY) || "null"),
+      ) || FALLBACK_STOCKS[0]
+    );
+  } catch (_) {
+    return FALLBACK_STOCKS[0];
+  }
+}
+
+export function rememberSelectedStock(stock) {
+  const normalized = normalizeSelectedStock(stock);
+  if (!normalized) return null;
+  try {
+    localStorage.setItem(SELECTED_STOCK_STORAGE_KEY, JSON.stringify(normalized));
+  } catch (_) {
+    // Selection still works for the current page when storage is unavailable.
+  }
+  return normalized;
 }
 
 export function buildCoachCopy(payload) {
@@ -73,38 +92,94 @@ export function buildCoachCopy(payload) {
   };
 }
 
-export function mountStockWorkspace(
+export function mountStockLibraryPage(
   host,
-  { forceDemo = false, onResearch = () => {}, notify = () => {} } = {},
+  { onOpenChart = () => {}, notify = () => {} } = {},
 ) {
-  const root = element("div", "stock-page");
+  const root = element("div", "stock-page stock-library-page");
   const heading = element("div", "stock-page-heading");
   const titleBlock = element("div");
   titleBlock.append(
-    element("span", "stock-page-kicker", "MARKET WORKSPACE · INTERACTIVE CHART"),
-    element("h1", "", "股票库与行情走势图"),
-    element("p", "", "切换股票和周期，先看确定性数据，再决定是否发起深入研究。"),
+    element("span", "stock-page-kicker", "MARKET LIBRARY"),
+    element("h1", "", "股票库"),
+    element("p", "", "搜索、关注并选择股票，点击后进入独立的大图行情页。"),
   );
-  const libraryToggle = element("button", "stock-library-toggle", "☰ 股票库");
-  libraryToggle.type = "button";
-  heading.append(titleBlock, libraryToggle);
+  heading.appendChild(titleBlock);
 
-  const workspace = element("div", "stock-workspace");
-  const libraryPanel = element("aside", "stock-library-panel");
-  const chartPanel = element("section", "stock-chart-panel");
-  const coachPanel = element("aside", "stock-coach-panel");
-  workspace.append(libraryPanel, chartPanel, coachPanel);
-  root.append(heading, workspace);
+  const selectionHint = element(
+    "div",
+    "stock-library-selection-hint",
+    "选择任意股票查看日 K、周 K、月 K 与读图提示",
+  );
+  const libraryPanel = element(
+    "section",
+    "stock-library-panel stock-library-panel-page",
+  );
+  root.append(heading, selectionHint, libraryPanel);
   host.appendChild(root);
 
-  libraryToggle.addEventListener("click", () => {
-    workspace.classList.toggle("library-collapsed");
-    libraryToggle.setAttribute(
-      "aria-expanded",
-      String(!workspace.classList.contains("library-collapsed")),
-    );
+  let selected = readSelectedStock();
+  const library = new StockLibrary(libraryPanel, {
+    onSelect: (stock) => {
+      selected = rememberSelectedStock(stock) || stock;
+      library.setSelected(selected);
+      onOpenChart(selected);
+    },
+    onSearch: async (query) => {
+      const response = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
+      return (await responseJson(response)).stocks || [];
+    },
+    onStorageError: () => notify("浏览器未允许保存关注列表，选股功能仍可正常使用。"),
   });
-  libraryToggle.setAttribute("aria-expanded", "true");
+  library.setSelected(selected);
+
+  async function loadStocks() {
+    try {
+      const response = await fetch("/api/stocks");
+      const payload = await responseJson(response);
+      const stocks = payload.stocks || FALLBACK_STOCKS;
+      library.setStocks(stocks);
+      selected =
+        stocks.find((stock) => stock.symbol === selected.symbol) || selected;
+      rememberSelectedStock(selected);
+      library.setSelected(selected);
+    } catch (_) {
+      library.setStocks(FALLBACK_STOCKS);
+    }
+  }
+
+  loadStocks();
+  return () => library.destroy();
+}
+
+export function mountStockChartPage(
+  host,
+  {
+    forceDemo = false,
+    initialStock = null,
+    onChooseStock = () => {},
+    notify = () => {},
+  } = {},
+) {
+  const root = element("div", "stock-page stock-market-page");
+  const heading = element("div", "stock-page-heading stock-market-heading");
+  const titleBlock = element("div");
+  titleBlock.append(
+    element("span", "stock-page-kicker", "MARKET CHART · K-LINE"),
+    element("h1", "", "股票行情"),
+    element("p", "", "聚焦价格、均线与成交量，只保留 K 线和读图提示。"),
+  );
+  const chooseButton = element("button", "stock-choose-button", "← 从股票库选股");
+  chooseButton.type = "button";
+  chooseButton.addEventListener("click", onChooseStock);
+  heading.append(titleBlock, chooseButton);
+
+  const workspace = element("div", "stock-market-workspace");
+  const chartPanel = element("section", "stock-chart-panel");
+  const coachPanel = element("aside", "stock-coach-panel");
+  workspace.append(chartPanel, coachPanel);
+  root.append(heading, workspace);
+  host.appendChild(root);
 
   const chartHead = element("div", "stock-chart-head");
   const identity = element("div", "stock-identity");
@@ -113,22 +188,6 @@ export function mountStockWorkspace(
   identity.append(name, symbol);
   const source = element("span", "stock-source", "等待数据");
   chartHead.append(identity, source);
-
-  const metrics = element("div", "stock-metrics");
-  const metricNodes = {};
-  [
-    ["latest_close", "最新价", "number"],
-    ["period_return", "区间涨跌", "percent"],
-    ["maximum_drawdown", "最大回撤", "percent"],
-    ["volatility", "波动率", "percent"],
-  ].forEach(([key, label, kind]) => {
-    const card = element("div", "stock-metric");
-    const value = element("strong", "", "—");
-    value.dataset.kind = kind;
-    card.append(element("span", "", label), value);
-    metrics.appendChild(card);
-    metricNodes[key] = value;
-  });
 
   const toolbar = element("div", "stock-chart-toolbar");
   const periodGroup = element("div", "stock-periods");
@@ -154,22 +213,12 @@ export function mountStockWorkspace(
   tooltip.hidden = true;
   const state = element("div", "stock-chart-state");
   chartShell.append(chartHost, tooltip, state);
-
   const legend = element(
     "div",
     "stock-chart-legend",
     "红涨 · 绿跌　MA5　MA10　MA20　成交量",
   );
-  const researchButton = element("button", "stock-research-button", "让投研团队深入研究");
-  researchButton.type = "button";
-  chartPanel.append(
-    chartHead,
-    metrics,
-    toolbar,
-    chartShell,
-    legend,
-    researchButton,
-  );
+  chartPanel.append(chartHead, toolbar, chartShell, legend);
 
   coachPanel.append(
     element("span", "stock-coach-kicker", "ALPHA 陪练"),
@@ -195,43 +244,18 @@ export function mountStockWorkspace(
     ),
   );
 
-  let selected = FALLBACK_STOCKS[0];
+  let selected =
+    normalizeSelectedStock(initialStock) ||
+    readSelectedStock();
   let selectedPeriod = "1d";
   let requestSequence = 0;
   let controller = null;
   let destroyed = false;
   const chart = new StockChart(chartHost, tooltip);
 
-  const library = new StockLibrary(libraryPanel, {
-    onSelect: (stock) => selectStock(stock),
-    onSearch: async (query) => {
-      const response = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
-      return (await responseJson(response)).stocks || [];
-    },
-    onStorageError: () => notify("浏览器未允许保存关注列表，图表仍可正常使用。"),
-  });
-
-  async function loadStocks() {
-    try {
-      const response = await fetch("/api/stocks");
-      const payload = await responseJson(response);
-      library.setStocks(payload.stocks || FALLBACK_STOCKS);
-      selected =
-        (payload.stocks || []).find((stock) => stock.symbol === selected.symbol) ||
-        selected;
-    } catch (_) {
-      library.setStocks(FALLBACK_STOCKS);
-    }
-    await selectStock(selected);
-  }
-
-  async function selectStock(stock) {
-    selected = stock;
-    library.setSelected(stock);
-    name.textContent = stock.name;
-    symbol.textContent = stock.symbol;
-    await loadChart();
-  }
+  name.textContent = selected.name;
+  symbol.textContent = selected.symbol;
+  rememberSelectedStock(selected);
 
   async function loadChart() {
     controller?.abort();
@@ -240,7 +264,6 @@ export function mountStockWorkspace(
     setState("loading", "正在加载行情…");
     source.textContent = "加载中";
     source.className = "stock-source loading";
-    researchButton.disabled = true;
     const period = PERIODS.find((item) => item.value === selectedPeriod);
     const query = new URLSearchParams({
       period: selectedPeriod,
@@ -257,7 +280,6 @@ export function mountStockWorkspace(
       chart.render(payload);
       updateDetails(payload);
       setState("ready", "");
-      researchButton.disabled = false;
     } catch (error) {
       if (error?.name === "AbortError" || destroyed || sequence !== requestSequence) return;
       if (!forceDemo && Number(error?.status) >= 500) {
@@ -272,7 +294,6 @@ export function mountStockWorkspace(
           chart.render(fallbackPayload);
           updateDetails(fallbackPayload);
           setState("ready", "");
-          researchButton.disabled = false;
           notify("PandaData 暂不可用，已加载明确标注的演示数据。");
           return;
         } catch (fallbackError) {
@@ -295,29 +316,20 @@ export function mountStockWorkspace(
   }
 
   function updateDetails(payload) {
-    name.textContent = payload.name || selected.name;
-    symbol.textContent = payload.symbol || selected.symbol;
+    selected =
+      normalizeSelectedStock({
+        symbol: payload.symbol || selected.symbol,
+        name: payload.name || selected.name,
+      }) || selected;
+    rememberSelectedStock(selected);
+    name.textContent = selected.name;
+    symbol.textContent = selected.symbol;
     source.textContent = payload.is_demo ? "演示数据" : payload.data_source || "PandaData";
     source.className = `stock-source ${payload.is_demo ? "demo" : "live"}`;
-    Object.entries(metricNodes).forEach(([key, node]) => {
-      node.textContent = formatMetric(payload.metrics?.[key], node.dataset.kind);
-      node.classList.toggle(
-        "positive",
-        key === "period_return" && Number(payload.metrics?.[key]) > 0,
-      );
-      node.classList.toggle(
-        "negative",
-        key === "period_return" && Number(payload.metrics?.[key]) < 0,
-      );
-    });
     const copy = buildCoachCopy(payload);
     Object.entries(copy).forEach(([key, value]) => {
       coachSections[key].textContent = value;
     });
-    legend.textContent =
-      payload.period === "1m"
-        ? "分时价格线 · 成交量（演示数据不会冒充实时行情）"
-        : "红涨 · 绿跌　MA5　MA10　MA20　成交量";
   }
 
   function setState(kind, message) {
@@ -337,17 +349,12 @@ export function mountStockWorkspace(
     });
   });
   fitButton.addEventListener("click", () => chart.fitContent());
-  researchButton.addEventListener("click", () => {
-    onResearch(selected, researchPrompt(selected));
-  });
-
-  loadStocks();
+  loadChart();
 
   return () => {
     destroyed = true;
     requestSequence += 1;
     controller?.abort();
-    library.destroy();
     chart.destroy();
   };
 }

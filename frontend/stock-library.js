@@ -198,12 +198,14 @@ export class StockLibrary {
       row.dataset.symbol = stock.symbol;
       const select = node("button", "stock-row-main");
       select.type = "button";
+      select.title = `查看 ${stock.name} K 线行情`;
+      select.setAttribute("aria-label", select.title);
       const label = node("span", "stock-row-label");
       label.append(
         node("strong", "", stock.name),
         node("small", "", stock.symbol),
       );
-      select.appendChild(label);
+      select.append(label, node("span", "stock-row-action", "查看行情 →"));
       select.addEventListener("click", () => this.onSelect(stock));
 
       const favorite = node(
