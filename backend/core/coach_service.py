@@ -230,7 +230,7 @@ class CoachService:
     def _require_client(self) -> ArkClient:
         if self._ark_client is None:
             raise CoachServiceError(
-                "陪练模型服务当前不可用（未配置 ARK_API_KEY）。"
+                "陪练模型服务当前不可用（未配置 DEEPSEEK_API_KEY）。"
             )
         return self._ark_client
 

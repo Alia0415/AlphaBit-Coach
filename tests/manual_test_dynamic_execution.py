@@ -1,6 +1,6 @@
 """Manual real-service smoke test for AlphaOS v0.3.
 
-Run from the AlphaOS repository root after configuring ARK_API_KEY and
+Run from the AlphaOS repository root after configuring DEEPSEEK_API_KEY and
 PandaData credentials. This script is intentionally excluded from automated
 tests and never prints credential values or raw external responses.
 """
