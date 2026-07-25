@@ -218,13 +218,13 @@ class A2AJsonRpcRequest(BaseModel):
 
 
 @app.get("/", include_in_schema=False)
-async def frontend() -> FileResponse:
-    return FileResponse(FRONTEND_DIR / "office" / "index.html")
+async def frontend() -> RedirectResponse:
+    return RedirectResponse(url="/office", status_code=307)
 
 
 @app.get("/office", include_in_schema=False)
-async def office_frontend() -> RedirectResponse:
-    return RedirectResponse(url="/", status_code=307)
+async def office_frontend() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "office" / "index.html")
 
 
 @app.get("/api/health")
