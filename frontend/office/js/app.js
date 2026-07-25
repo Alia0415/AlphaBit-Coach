@@ -833,6 +833,167 @@ function pageReportDetail(reportId) {
   return layout;
 }
 
+const DEMO_REPORT_PROFILES = {
+  "r-ne-20240430": {
+    intent: "industry_research",
+    headline: "新能源行业仍处在结构性成长阶段，但分化会比总量增长更重要。",
+    explanation: "演示证据显示，储能和海风同时具备需求增速、政策可见度和盈利改善线索；光伏一体化处在出清左侧，结论强度低于储能和海风。",
+    confidence: "medium",
+    stance: "cautiously_positive",
+    metrics: [
+      {
+        metric: "revenue_yoy",
+        label: "行业收入同比增速",
+        display_value: "+28.6%",
+        subject: "2023-2026E 示例复合增速",
+        formula: "（期末行业收入 / 期初行业收入）^(1 / 年数) - 1",
+        explanation: "储能与海风贡献主要增量，代表行业需求仍处扩张阶段。",
+      },
+      {
+        metric: "gross_margin",
+        label: "重点赛道毛利率中枢",
+        display_value: "21.4%",
+        subject: "2024E 示例均值",
+        formula: "重点公司毛利额合计 / 重点公司收入合计",
+        explanation: "储能系统毛利率企稳，光伏环节仍受价格竞争影响。",
+      },
+      {
+        metric: "operating_cash_flow_to_net_profit",
+        label: "现金流利润覆盖倍数",
+        display_value: "1.12x",
+        subject: "龙头样本 2024E 示例",
+        formula: "经营活动现金流净额 / 净利润",
+        explanation: "龙头样本现金流覆盖利润，盈利质量暂未明显恶化。",
+      },
+      {
+        metric: "asset_liability_ratio",
+        label: "资产负债率",
+        display_value: "58.3%",
+        subject: "重点公司样本中位数",
+        formula: "总负债 / 总资产",
+        explanation: "重资产扩张阶段杠杆处于中等水平，需继续观察融资成本。",
+      },
+    ],
+    evidence: [
+      "储能系统 2024E 装机增速示例值为 +120%，在细分赛道中最高。",
+      "海上风电吊装增速示例值为 +65%，受竞配项目开工节奏支撑。",
+      "光伏一体化评分 85 分，反映成本曲线优势但仍受产能出清影响。",
+      "压力测试显示极端情景最大回撤约 12%，主要来自价格战与海外政策扰动。",
+    ],
+    risks: [
+      "电池和光伏环节仍有产能过剩风险，价格竞争可能压低毛利率。",
+      "海外贸易政策变化可能改变出口订单的盈利和交付节奏。",
+      "利率若重新上行，成长赛道估值中枢可能被压缩。",
+    ],
+    limitations: [
+      "演示数据未接入实时订单、排产和海外关税数据。",
+      "细分赛道评分来自本地示例模型，不能替代真实样本验证。",
+      "行业景气指数为演示口径，不应被解释为投资信号。",
+    ],
+    next: [
+      "用真实装机、招标价格和上市公司订单验证储能景气持续性。",
+      "按细分赛道拆分收入、毛利率和现金流，排除总量数据掩盖的分化。",
+      "补充海外政策情景，对出口链盈利做敏感性分析。",
+    ],
+    sources: [
+      { name: "本地演示行业数据包", method: "demo_industry_panel", missing_status: "available", period: "2022-2025E", row_count: 128 },
+      { name: "公开披露摘录样本", method: "demo_company_filings", missing_status: "available", latest_report_period: "2024Q1", row_count: 36 },
+      { name: "本地压力测试脚本", method: "demo_stress_scenario", missing_status: "available", period: "极端情景", row_count: 4 },
+    ],
+  },
+  default: {
+    intent: "company_research",
+    headline: "公司盈利质量仍处于较强区间，短期关键变量是需求和价格信号能否稳定。",
+    explanation: "演示证据显示，公司核心盈利能力、现金流和估值分位均具备研究价值；但需求恢复和渠道价格仍是需要跟踪的主要不确定性。",
+    confidence: "medium",
+    stance: "mixed",
+    metrics: [
+      {
+        metric: "revenue_yoy",
+        label: "营业收入同比增长率",
+        display_value: "+16.8%",
+        subject: "2024E 示例",
+        formula: "（本期营业收入 / 上年同期营业收入 - 1）× 100%",
+        explanation: "收入仍保持增长，但需要结合渠道库存验证持续性。",
+      },
+      {
+        metric: "net_profit_yoy",
+        label: "净利润同比增长率",
+        display_value: "+18.4%",
+        subject: "2024E 示例",
+        formula: "（本期净利润 / 上年同期净利润 - 1）× 100%",
+        explanation: "利润增速略高于收入，说明盈利效率未明显弱化。",
+      },
+      {
+        metric: "gross_margin",
+        label: "毛利率",
+        display_value: "91.6%",
+        subject: "2024E 示例",
+        formula: "（营业收入 - 营业成本）/ 营业收入",
+        explanation: "高毛利率体现品牌和产品结构优势，但需要观察批价变化。",
+      },
+      {
+        metric: "operating_cash_flow_to_net_profit",
+        label: "经营现金流与净利润比",
+        display_value: "1.18x",
+        subject: "近三年示例均值",
+        formula: "经营活动现金流净额 / 净利润",
+        explanation: "现金流覆盖利润，说明账面利润质量较好。",
+      },
+      {
+        metric: "asset_liability_ratio",
+        label: "资产负债率",
+        display_value: "14.7%",
+        subject: "2024E 示例",
+        formula: "总负债 / 总资产",
+        explanation: "杠杆水平较低，财务压力相对可控。",
+      },
+    ],
+    evidence: [
+      "近三年示例 ROE 维持在 30% 以上，显著高于行业均值。",
+      "经营现金流与净利润比为 1.18x，利润现金含量较好。",
+      "估值分位示例值为近五年 22%，处于历史中枢下沿。",
+      "风险扫描把批价波动、需求复苏和消费税预期列为主要跟踪项。",
+    ],
+    risks: [
+      "若批价再次下探，渠道信心和估值修复节奏会先受影响。",
+      "需求复苏不及预期会削弱收入增长的可持续性。",
+      "消费税改革预期可能改变市场对利润率的折现方式。",
+    ],
+    limitations: [
+      "演示数据未接入实时批价和渠道库存。",
+      "估值分位为本地示例口径，真实研究需重新计算样本区间。",
+      "未纳入个人风险承受能力和持仓约束。",
+    ],
+    next: [
+      "补充真实批价、渠道库存和动销数据，验证需求恢复强度。",
+      "用最近五年估值分位和自由现金流收益率交叉检查安全边际。",
+      "做消费税改革情景测算，观察净利率和估值中枢变化。",
+    ],
+    sources: [
+      { name: "本地演示财务数据包", method: "demo_financial_panel", missing_status: "available", latest_report_period: "2024E", row_count: 24 },
+      { name: "公开披露摘录样本", method: "demo_company_filings", missing_status: "available", latest_report_period: "2024Q1", row_count: 18 },
+      { name: "本地估值分位样本", method: "demo_valuation_percentile", missing_status: "available", period: "2019-2024", row_count: 260 },
+    ],
+  },
+};
+
+function demoProfileFor(report) {
+  return DEMO_REPORT_PROFILES[report.id] || DEMO_REPORT_PROFILES.default;
+}
+
+function demoSourceStep(steps, agent) {
+  return steps.find((step) => step.agent === agent)?.id || steps[0]?.id || "";
+}
+
+function demoItems(items, type, sourceSteps) {
+  return (items || []).map((text) => ({
+    text,
+    evidence_type: type,
+    source_steps: sourceSteps.filter(Boolean),
+  }));
+}
+
 function buildDemoResearchReport(report) {
   const selectedAgents = (report.team || []).filter((id) => id !== "manager");
   const steps = selectedAgents.map((agent, index) => ({
@@ -849,23 +1010,30 @@ function buildDemoResearchReport(report) {
         .map((id) => `${id}_demo_${selectedAgents.indexOf(id) + 1}`)
       : [],
   }));
+  const profile = demoProfileFor(report);
+  const macroStep = demoSourceStep(steps, "macro");
+  const researchStep = demoSourceStep(steps, "research");
+  const quantStep = demoSourceStep(steps, "quant");
+  const riskStep = demoSourceStep(steps, "risk");
+  const reportStep = demoSourceStep(steps, "report");
+  const primarySteps = [macroStep, researchStep, quantStep].filter(Boolean);
+  const riskSteps = [riskStep || researchStep].filter(Boolean);
   const sourceResults = Object.fromEntries(steps.map((step) => [
     step.id,
     {
       agent: step.agent,
       status: "completed",
-      summary: (report.contributions?.[step.agent] || []).join("；")
-        || "已完成本次专业研究。",
-      assumptions: [],
+      summary: demoAgentSummary(step.agent, report, profile),
+      assumptions: demoAgentAssumptions(step.agent),
       risks: step.agent === "risk"
-        ? ["该示例结论需要结合实际数据重新验证。"]
+        ? profile.risks.slice(0, 3)
         : [],
-      limitations: ["当前为本地示例数据，不代表实际研究结论。"],
-      recommendations: ["请从投研大厅重新发起研究任务，并以实际数据验证结论。"],
-      data_sources: [],
+      limitations: demoAgentLimitations(step.agent, profile),
+      recommendations: demoAgentRecommendations(step.agent, profile),
+      data_sources: demoAgentSources(step.agent, profile.sources),
     },
   ]));
-  const metricSource = steps.find((step) => step.agent !== "report")?.id || "";
+  const metricSource = researchStep || quantStep || steps.find((step) => step.agent !== "report")?.id || "";
   const findings = (report.body || []).map((item) => ({
     text: `${item.h}：${item.p}`,
     evidence_type: /风险/.test(item.h) ? "risk" : "judgment",
@@ -902,35 +1070,28 @@ function buildDemoResearchReport(report) {
       user_goal: report.title,
       completion_status: "completed",
       direct_answer: {
-        headline: report.summary,
-        explanation: "以下内容使用与正式报告相同的学习化展示逻辑。",
-        confidence: "not_applicable",
-        stance: "not_applicable",
+        headline: profile.headline,
+        explanation: profile.explanation,
+        confidence: profile.confidence,
+        stance: profile.stance,
       },
-      key_findings: findings.filter((item) => item.evidence_type !== "risk"),
-      evidence_summary: [],
-      risks: findings.filter((item) => item.evidence_type === "risk"),
-      limitations: [{
-        text: "当前为本地示例数据，不代表实际研究结论。",
-        evidence_type: "limitation",
-        source_steps: [],
-      }],
-      next_research_steps: [{
-        text: "请从投研大厅重新发起研究任务，并以实际数据验证结论。",
-        evidence_type: "research_action",
-        source_steps: [],
-      }],
+      key_findings: [
+        ...demoItems(profile.evidence.slice(0, 3), "judgment", primarySteps),
+        ...findings.filter((item) => item.evidence_type !== "risk"),
+      ],
+      evidence_summary: demoItems(profile.evidence, "fact", primarySteps),
+      risks: [
+        ...demoItems(profile.risks, "risk", riskSteps),
+        ...findings.filter((item) => item.evidence_type === "risk"),
+      ],
+      limitations: demoItems(profile.limitations, "limitation", riskSteps),
+      next_research_steps: demoItems(profile.next, "research_action", [reportStep || riskStep || metricSource]),
       content_blocks: [
         {
           type: "metric_cards",
           source_steps: metricSource ? [metricSource] : [],
           data: {
-            metrics: (report.kv || []).map((item, index) => ({
-              metric: `demo_metric_${index + 1}`,
-              label: item.label,
-              display_value: item.value,
-              explanation: item.sub,
-            })),
+            metrics: profile.metrics,
           },
         },
         {
@@ -939,13 +1100,72 @@ function buildDemoResearchReport(report) {
           data: { content: reportText },
         },
       ],
+      data_scope: profile.sources,
       technical_evidence: {
-        conflicts: [],
+        conflicts: [
+          "演示中的成长线索与风险线索同时存在：宏观和研究结果偏积极，风险结果要求验证价格战、需求和政策扰动。",
+        ],
         source_results: sourceResults,
       },
       disclaimer: "产品演示使用本地示例数据，不构成投资建议。",
     },
   };
+}
+function demoAgentSummary(agent, report, profile) {
+  const contribution = (report.contributions?.[agent] || []).join("；");
+  const byAgent = {
+    macro: `宏观环境以流动性和政策支持为主线，对本次主题形成中性偏正面的背景约束。${contribution}`,
+    research: `${profile.evidence[0] || report.summary} ${contribution}`,
+    quant: `已把核心指标转化为可展示的量化证据：${profile.metrics.slice(0, 2).map((m) => `${m.label}${m.display_value}`).join("，")}。`,
+    risk: `已识别主要反向证据：${profile.risks.slice(0, 2).join("；")}。`,
+    report: `已整合各专家示例证据，保留支持、反对、局限和下一步验证问题。`,
+  };
+  return byAgent[agent] || contribution || "已完成本次专业研究。";
+}
+
+function demoAgentAssumptions(agent) {
+  const byAgent = {
+    macro: ["政策与利率情景采用中性基准，不假设额外刺激超预期。"],
+    research: ["演示样本口径保持可比，财务和行业指标按同一期间阅读。"],
+    quant: ["估值和分位测算采用本地演示样本，不代表实时市场价格。"],
+    risk: ["压力情景用于展示风险识别流程，不作为真实回撤预测。"],
+    report: ["报告只汇总已给出的示例证据，不补造未返回的信息。"],
+  };
+  return byAgent[agent] || [];
+}
+
+function demoAgentLimitations(agent, profile) {
+  const shared = "当前为本地示例数据，不代表实际研究结论。";
+  const byAgent = {
+    macro: [profile.limitations[0], shared],
+    research: [profile.limitations[1] || profile.limitations[0], shared],
+    quant: [profile.limitations[2] || profile.limitations[0], shared],
+    risk: profile.limitations,
+    report: [shared, "真实研究需要重新调用模型和数据源生成可验证证据。"],
+  };
+  return (byAgent[agent] || [shared]).filter(Boolean);
+}
+
+function demoAgentRecommendations(agent, profile) {
+  const byAgent = {
+    macro: [profile.next[0]],
+    research: [profile.next[0], profile.next[1]],
+    quant: [profile.next[1]],
+    risk: [profile.next[2] || profile.next[1]],
+    report: profile.next,
+  };
+  return (byAgent[agent] || profile.next.slice(0, 1)).filter(Boolean);
+}
+
+function demoAgentSources(agent, sources) {
+  const byAgent = {
+    macro: [sources[0]],
+    research: [sources[0], sources[1]],
+    quant: [sources[2] || sources[0]],
+    risk: [sources[2] || sources[0], sources[1]],
+    report: sources,
+  };
+  return (byAgent[agent] || sources.slice(0, 1)).filter(Boolean);
 }
 
 function buildReportMain(report) {
@@ -2478,10 +2698,18 @@ function buildReportMainLive(report) {
       "final-next-questions",
     ));
   }
+  connectReportKnowledge(vm.metrics);
+  col.appendChild(renderParticipants(vm));
+  col.appendChild(renderResearchPlan(vm.researchPlan));
+  col.appendChild(renderMetricOverview(vm.metrics));
+  col.appendChild(renderEvidenceChains(vm.evidenceChains));
+  col.appendChild(renderAgentWorkbenches(vm.agents));
+  col.appendChild(renderSignals(vm));
+  col.appendChild(renderCoverage(vm.coverage));
+  col.appendChild(renderLearningSummary(vm.learningSummary));
   if (vm.disclaimer) col.appendChild(el("div", "op-note research-disclaimer", esc(vm.disclaimer)));
   return col;
 }
-
 function connectReportKnowledge(metrics) {
   const glossary = globalThis.AlphaGlossary;
   if (!glossary?.setResearchEntries) return 0;
