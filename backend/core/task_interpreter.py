@@ -239,6 +239,19 @@ class TaskInterpreter:
                     for dimension in optional_dimensions
                     if dimension not in required_dimensions
                 ]
+            elif request_scope == "focused" and required_dimensions:
+                # The global two-expert minimum forces the Manager to add a
+                # companion expert to every executable plan. Whitelist the
+                # dimensions that companion may cover so plan validation does
+                # not reject the collaboration the Manager itself requires.
+                optional_dimensions = list(
+                    dict.fromkeys(
+                        [
+                            *optional_dimensions,
+                            *_focused_companion_dimensions(required_dimensions),
+                        ]
+                    )
+                )
 
         if dimension_defaulted:
             defaulted_fields.append("dimensions=deterministic_fallback")
@@ -494,6 +507,30 @@ _FINANCIAL_QUALITY_REVIEW = (
 )
 _GROWTH_REVIEW = ("成长性", "成长能力", "增长能力", "业绩增长")
 _VALUATION_REVIEW = ("估值", "估值水平", "贵不贵")
+
+
+def _focused_companion_dimensions(
+    required: list[ResearchDimension],
+) -> list[ResearchDimension]:
+    """Dimensions the mandated companion expert may cover in a focused plan.
+
+    Every executable plan needs at least two distinct experts, so a focused
+    single-dimension request always carries a companion review step. Its
+    dimensions must be reachable through optional_dimensions, otherwise the
+    dimension-scope validator rejects the exact collaboration the Manager
+    prompt demands (e.g. a Risk review beside focused industry research).
+    """
+
+    if required == ["risk_assessment"]:
+        # Event-risk scans pair with company/market/quant evidence checks.
+        companions: tuple[ResearchDimension, ...] = (
+            "company_fundamentals",
+            "quantitative_cross_check",
+        )
+    else:
+        companions = ("quantitative_cross_check", "risk_assessment")
+    return [dimension for dimension in companions if dimension not in required]
+
 
 # Comprehensive triggers
 _COMPREHENSIVE_TRIGGERS = (
