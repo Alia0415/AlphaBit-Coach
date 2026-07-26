@@ -12,7 +12,7 @@ draft, the service detects explicit stock-selection wording in the original
 query and replaces the model draft with one deterministic, research-only
 question:
 
-> 研究当前 A 股市场值得关注的行业方向、公司筛选框架、基本面证据和主要风险，不提供具体买卖建议。
+> 综合研究当前 A 股市场值得关注的行业方向、市场筛选框架、宏观与行业证据及关键不确定性，不提供具体买卖建议。
 
 The rewritten query requires user confirmation, just like other material
 rewrites. It does not select experts, Skills, dimensions, or DAG edges.
@@ -56,6 +56,8 @@ Add regression coverage proving:
 - "我应该买什么股票" is always converted to the fixed research-only query,
   even when the model returns a recommendation-style rewrite.
 - The result requires confirmation.
+- The rewritten query is interpreted as executable comprehensive market
+  research without requiring a company identifier.
 - A normal, specific research question still uses the model result unchanged.
 
 Run the query-refinement tests, planning tests, and the broader governed
