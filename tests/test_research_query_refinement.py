@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 
 from backend import main as main_module
 from backend.core.contracts import ExecutionPlan
+from backend.core.policy_gate import PolicyGate
+from backend.core.task_interpreter import TaskInterpreter
 from backend.services.research_query_refiner import (
     ResearchQueryRefinement,
     ResearchQueryRefiner,
@@ -97,6 +99,50 @@ def test_professional_query_proceeds_unchanged_without_confirmation() -> None:
     assert result.requires_confirmation is False
     assert result.options == []
     assert ark.requests[0].thinking_mode == "disabled"
+
+
+def test_stock_selection_request_is_deterministically_rewritten_for_research() -> None:
+    refiner = ResearchQueryRefiner(
+        FakeArkClient(
+            {
+                "rewritten_query": "当前市场环境下，哪些股票具有投资价值？",
+                "requires_confirmation": True,
+                "need_clarification": False,
+                "clarification_type": None,
+            }
+        )
+    )
+
+    result = refiner.refine("我应该买什么股票")
+
+    assert result.rewritten_query == (
+        "综合研究当前 A 股市场值得关注的行业方向、市场筛选框架、"
+        "宏观与行业证据及关键不确定性，不提供具体买卖建议。"
+    )
+    assert result.requires_confirmation is True
+    assert result.need_clarification is False
+    assert result.options == []
+
+
+def test_stock_selection_rewrite_is_executable_without_a_company_identifier() -> None:
+    refiner = ResearchQueryRefiner(
+        FakeArkClient(
+            {
+                "rewritten_query": "当前市场环境下，哪些股票具有投资价值？",
+                "requires_confirmation": True,
+            }
+        )
+    )
+
+    rewritten = refiner.refine("我应该买什么股票").rewritten_query
+    task = TaskInterpreter().interpret(
+        rewritten,
+        PolicyGate().evaluate(rewritten),
+    )
+
+    assert task.task_type == "market_research"
+    assert "company_or_stock_code" not in task.missing_fields
+    assert task.execution_decision == "execute_with_defaults"
 
 
 def test_refiner_failure_is_explicit_and_safe() -> None:

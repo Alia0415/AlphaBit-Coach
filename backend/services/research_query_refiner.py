@@ -10,6 +10,19 @@ from pydantic import BaseModel, Field, field_validator
 from backend.services.ark_client import ArkClient, ArkJsonRequest
 
 _TIME_RANGE_OPTIONS = ["近3个月", "近1年", "近3年"]
+_STOCK_SELECTION_MARKERS = (
+    "买什么股票",
+    "买哪只股票",
+    "买哪些股票",
+    "该买什么股票",
+    "应该买什么股票",
+    "推荐股票",
+    "推荐几只股票",
+)
+_STOCK_SELECTION_RESEARCH_QUERY = (
+    "综合研究当前 A 股市场值得关注的行业方向、市场筛选框架、"
+    "宏观与行业证据及关键不确定性，不提供具体买卖建议。"
+)
 
 
 class ResearchQueryRefinement(BaseModel):
@@ -72,6 +85,13 @@ class ResearchQueryRefiner:
                 "研究问题整理暂时不可用，请直接使用原问题继续研究。"
             ) from exc
 
+        if _is_stock_selection_request(original):
+            return ResearchQueryRefinement(
+                original_query=original,
+                rewritten_query=_STOCK_SELECTION_RESEARCH_QUERY,
+                requires_confirmation=True,
+            )
+
         need_time_range = (
             draft.need_clarification
             and draft.clarification_type == "time_range"
@@ -89,6 +109,10 @@ class ResearchQueryRefiner:
             clarification_type="time_range" if need_time_range else None,
             options=list(_TIME_RANGE_OPTIONS) if need_time_range else [],
         )
+
+
+def _is_stock_selection_request(query: str) -> bool:
+    return any(marker in query for marker in _STOCK_SELECTION_MARKERS)
 
 
 def _rewrite_prompt(original_query: str) -> str:
