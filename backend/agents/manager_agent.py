@@ -400,6 +400,10 @@ Agent 输入契约：
   基本面、行业竞争、量化交叉验证和风险评估；公司与行业 Research 必须拆成符合
   各自输入契约的步骤。市场行为交叉验证不能替代估值指标，不得把价格表现表述为
   估值高低；缺少 PE、PB、EV、可比估值或历史分位时必须明确标记证据不足；
+- 当 TaskSpec 包含 required_dimensions 时，每个步骤的 covers_dimensions 只能使用
+  该专家在 Registry 中授权的维度；focused 请求的步骤只能覆盖
+  required_dimensions 或 optional_dimensions 中的维度，协作复核步骤也可以将
+  covers_dimensions 留为空列表；
 - Report 必须声明至少一个上游 depends_on；
 - 不要为了修复契约而增加不需要的专家或改成固定流程。
 """.strip()
