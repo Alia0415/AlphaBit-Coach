@@ -157,6 +157,7 @@ workflow_executor = WorkflowExecutor(registry=build_registry(store))
 glossary_extractor = GlossaryExtractor()
 query_refiner = ResearchQueryRefiner()
 _research_run_tasks: set[asyncio.Task[None]] = set()
+_a2a_tasks: set[asyncio.Task[None]] = set()
 
 
 def _rebuild_experts() -> None:
@@ -1645,8 +1646,29 @@ async def _a2a_send_message(params: dict[str, Any]) -> dict[str, Any]:
         or params.get("message", {}).get("taskId")
         or uuid.uuid4().hex
     )
-    response = await _execute_a2a_prompt(task_id, prompt)
-    return _a2a_task_from_execution(task_id, prompt, response)
+    if store.get_task(task_id) is not None:
+        return _a2a_task_response(task_id)
+    store.create_task(
+        task_id=task_id,
+        prompt=prompt,
+        status="running",
+        owner="a2a",
+    )
+    task = asyncio.create_task(_run_a2a_task(task_id, prompt))
+    _a2a_tasks.add(task)
+    task.add_done_callback(_a2a_tasks.discard)
+    return _a2a_task_response(task_id)
+
+
+async def _run_a2a_task(task_id: str, prompt: str) -> None:
+    try:
+        await _execute_a2a_prompt(task_id, prompt)
+    except Exception:
+        store.finish_task(
+            task_id,
+            status="failed",
+            final_answer="AlphaOS A2A task execution failed.",
+        )
 
 
 async def _execute_a2a_prompt(
@@ -2050,6 +2072,14 @@ def _a2a_task_response(task_id: str) -> dict[str, Any]:
                 "parts": [{"kind": "text", "text": final_answer}],
             },
         },
+        "history": [
+            {
+                "kind": "message",
+                "role": "user",
+                "messageId": f"{task['id']}-user",
+                "parts": [{"kind": "text", "text": task["prompt"]}],
+            }
+        ],
         "artifacts": [
             {
                 "artifactId": f"{task['id']}-answer",
