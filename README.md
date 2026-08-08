@@ -1,7 +1,7 @@
 # AlphaBit Coach v0.4 + Skill Runtime
 
 > 一支看得见的 AI 投研团队，一位真正帮助你成长的金融教练。
-
+中国最大黑客松AdventureX PandaAI交易未来赛道冠军
 AlphaBit Coach is an AI financial research and learning platform built on the
 AlphaOS multi-agent runtime. It has two first-class pillars:
 
