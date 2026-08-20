@@ -89,6 +89,10 @@ def test_demo_and_live_reports_share_the_research_presentation_adapter() -> None
     assert "const researchReport = buildDemoResearchReport(report);" in script
     assert "buildReportMainLive(researchReport)" in script
     assert "researchPresentation.buildResearchViewModel" in script
+    assert "if (vm.failed)" in script
+    assert "renderResearchFailure(vm)" in script
+    assert "formatReportTimestamp(report.created_at)" in script
+
 
 
 def test_office_wires_the_coach_layer_into_reports_and_war_room() -> None:

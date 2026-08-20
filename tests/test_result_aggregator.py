@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from backend.core.contracts import ExecutionPlan, ExpertResult
 from backend.core.result_aggregator import ResultAggregator
+from backend.core.evidence_validator import EvidenceValidator
+from backend.core.task_spec import TaskSpec
 
 
 def _plan(
@@ -359,8 +361,47 @@ def test_all_failed_is_user_readable_and_does_not_fabricate_results() -> None:
     assert aggregation.completion_status == "failed"
     assert aggregation.output_mode == "failure"
     assert "系统没有使用模拟数据" in aggregation.direct_answer.explanation
-    assert "failure_notice" in _types(aggregation)
+    assert _types(aggregation) == ["failure_notice"]
     assert "metric_cards" not in _types(aggregation)
+
+
+def test_governed_all_failed_returns_only_execution_failure_details() -> None:
+    spec = TaskSpec(
+        task_type="company_research",
+        subject_type="company",
+        subjects=["600519.SH"],
+        research_goal="分析公司财务质量",
+        expected_result_type="company_research",
+        evidence_requirements=["最近三年财务数据"],
+        execution_decision="execute",
+    )
+    plan = _plan(["research", "risk"], intent="company_research")
+    results = {
+        "research_1": _result(
+            "research_1",
+            "research",
+            status="failed",
+            summary="财务数据查询未完成。",
+            limitations=["财务报告期必须使用类似 2024q4 的实际值。"],
+        ),
+        "risk_2": _result(
+            "risk_2",
+            "risk",
+            status="blocked",
+            summary="前置分析未完成，本步骤无法继续。",
+        ),
+    }
+    validation = EvidenceValidator().validate(spec, plan, results)
+
+    aggregation = ResultAggregator().aggregate(spec, plan, validation)
+
+    assert aggregation.completion_status == "failed"
+    assert _types(aggregation) == ["failure_notice"]
+    assert aggregation.key_findings == []
+    assert aggregation.evidence_summary == []
+    assert aggregation.risks == []
+    assert aggregation.limitations == []
+    assert aggregation.next_research_steps == []
 
 
 def test_empty_blocks_are_never_returned() -> None:

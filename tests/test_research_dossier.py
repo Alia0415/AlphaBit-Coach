@@ -8,7 +8,10 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from backend.agents.research_agent import ResearchAgent
+from backend.agents.research_agent import (
+    ResearchAgent,
+    _financial_period_range,
+)
 from backend.agents.research_skill_planner import ResearchSkillPlanner
 from backend.core.contracts import AgentId, ExecutionPlan, ExpertTask, PlanStep
 from backend.core.workflow_executor import WorkflowExecutor
@@ -198,6 +201,24 @@ def _reports() -> list[dict[str, Any]]:
         },
     ]
 
+
+def test_financial_period_range_normalizes_supported_inputs() -> None:
+    assert _financial_period_range({"period": "2024"}) == (
+        "2024q4",
+        "2024q4",
+    )
+    start, end = _financial_period_range(
+        {
+            "start_period": None,
+            "end_period": None,
+            "period": "latest_1_fiscal_years",
+        }
+    )
+    assert start == end
+    assert end.endswith("q4")
+
+    with pytest.raises(ValueError, match="不能使用格式占位符"):
+        _financial_period_range({"start_period": "YYYYqN", "end_period": "YYYYqN"})
 
 def test_registry_registers_research_owned_dossier_and_enforces_ownership() -> None:
     registry = SkillRegistry(register_default_adapters=False)

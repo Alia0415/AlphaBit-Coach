@@ -1271,29 +1271,37 @@ def _industry_date_range(task: ExpertTask) -> tuple[str, str]:
 
 
 def _financial_period_range(inputs: Mapping[str, Any]) -> tuple[str, str]:
-    start = str(inputs.get("start_period", "")).strip().lower()
-    end = str(inputs.get("end_period", "")).strip().lower()
+    start = str(inputs.get("start_period") or "").strip().lower()
+    end = str(inputs.get("end_period") or "").strip().lower()
     if not start and not end:
-        period = str(
-            inputs.get("period", "latest_3_fiscal_years")
-        ).strip().lower()
+        period = str(inputs.get("period") or "latest_3_fiscal_years").strip().lower()
+        if period in {"latest", "latest_available"}:
+            period = "latest_3_fiscal_years"
+        if re.fullmatch(r"[0-9]{4}q[1-4]", period):
+            return period, period
+        if re.fullmatch(r"[0-9]{4}", period):
+            return f"{period}q4", f"{period}q4"
         match = re.fullmatch(r"latest_(\d+)_fiscal_years", period)
-        years = int(match.group(1)) if match else 3
+        if match is None:
+            raise ValueError("财报查询窗口仅支持最近一到五个完整财年。")
+        years = int(match.group(1))
         if years < 1 or years > 5:
-            raise ValueError("财务年度窗口必须在一到五年之间。")
+            raise ValueError("财报查询窗口仅支持最近一到五个完整财年。")
         end_year = datetime.now().year - 1
         return f"{end_year - years + 1}q4", f"{end_year}q4"
     if not start or not end:
-        raise ValueError("start_period 和 end_period 必须同时提供。")
+        raise ValueError("财报查询的起止报告期需要同时提供。")
     pattern = re.compile(r"^(\d{4})q([1-4])$")
     start_match = pattern.fullmatch(start)
     end_match = pattern.fullmatch(end)
     if start_match is None or end_match is None:
-        raise ValueError("start_period 和 end_period 必须是 YYYYqN 格式。")
+        raise ValueError(
+            "财务报告期必须使用类似 2024q4 的实际值，不能使用格式占位符。"
+        )
     start_index = int(start_match.group(1)) * 4 + int(start_match.group(2))
     end_index = int(end_match.group(1)) * 4 + int(end_match.group(2))
     if start_index > end_index:
-        raise ValueError("start_period 不能晚于 end_period。")
+        raise ValueError("财报查询的开始报告期不能晚于结束报告期。")
     if end_index - start_index > 20:
         raise ValueError("财务查询窗口不能超过五年。")
     return start, end

@@ -264,6 +264,10 @@ Research 和 Quant Agent 都会在各自授权 Skill 中另行动态规划；Man
   做风险审查或适用的量化交叉验证；应提取 symbol、period、scope、focus 和
   research_goal。只问财报时 scope=financials，全面尽调时 scope=full_dossier。
   Manager 仍然不能写入底层 Skill；
+  用户未明确给出财报期时，只填写 period=latest_3_fiscal_years，不得猜测
+  start_period 或 end_period；用户明确给出财报期时，两者必须填写类似 2023q4、
+  2025q4 的实际值，绝不能把 YYYYqN、开始季度、结束季度等格式说明或占位符写入
+  inputs；
 - 财务质量或盈利质量请求必须同时选择 Research 和 Risk：Research 覆盖
   company_fundamentals 并生成结构化财务事实，Risk 覆盖 risk_assessment 并独立审查
   现金利润质量、异常趋势和证据缺口。

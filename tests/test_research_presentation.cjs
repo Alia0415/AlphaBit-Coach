@@ -555,4 +555,56 @@ function reportBundle() {
   );
 }
 
+{
+  const bundle = reportBundle();
+  const aggregation = bundle.report.aggregation;
+  aggregation.completion_status = "failed";
+  aggregation.output_mode = "failure";
+  aggregation.direct_answer = {
+    headline: "本次研究没有成功完成",
+    explanation: "没有获得足以回答问题的可靠证据。",
+    confidence: "not_applicable",
+    stance: "insufficient_evidence",
+  };
+  aggregation.key_findings = [{ text: "不应展示的结论" }];
+  aggregation.evidence_summary = [{ text: "不应展示的证据" }];
+  aggregation.risks = [{ text: "不应展示的研究风险" }];
+  aggregation.limitations = [{ text: "不应扩写成研究局限" }];
+  aggregation.next_research_steps = [{ text: "不应生成下一步研究" }];
+  aggregation.content_blocks = [
+    ...aggregation.content_blocks,
+    {
+      id: "failures",
+      type: "failure_notice",
+      data: {
+        items: [
+          {
+            message: "财务数据查询未完成。",
+            reason: "财务报告期必须使用类似 2024q4 的实际值。",
+          },
+          {
+            message: "前置分析未完成，本步骤无法继续。",
+            reason: "前置分析未完成，本步骤无法继续。",
+          },
+        ],
+      },
+    },
+  ];
+  const vm = buildResearchViewModel(bundle);
+  assert.equal(vm.failed, true);
+  assert.deepEqual(vm.metrics, []);
+  assert.deepEqual(vm.agents, []);
+  assert.deepEqual(vm.chapters, []);
+  assert.deepEqual(vm.navigation, []);
+  assert.deepEqual(vm.positiveSignals, []);
+  assert.deepEqual(vm.riskSignals, []);
+  assert.deepEqual(vm.learningSummary.professionalQuestions, []);
+  assert.deepEqual(vm.failureReasons, [
+    "财务数据查询未完成。",
+    "财务报告期必须使用类似 2024q4 的实际值。",
+    "前置分析未完成，本步骤无法继续。",
+  ]);
+}
+
+
 console.log("research presentation tests passed");

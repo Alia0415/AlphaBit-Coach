@@ -262,6 +262,14 @@ class ResultAggregator:
             if item
         )
         actions = _research_actions(task_spec, profile, evidence)
+        if completion_status == "failed":
+            findings = []
+            evidence_items = []
+            assumptions = []
+            risks = []
+            limitations = []
+            actions = []
+
         direct_answer = _task_direct_answer(
             task_spec,
             profile,
@@ -317,6 +325,9 @@ class ResultAggregator:
                             evidence_type="limitation",
                         )
                     )
+
+        if completion_status == "failed":
+            limitations = []
 
         return AggregationResult(
             user_goal=task_spec.research_goal,
@@ -521,6 +532,9 @@ class ResultAggregator:
                 )
             ]
 
+        if completion_status == "failed":
+            return [self._failure_block(plan, profile)]
+
         blocks: list[ResultBlock] = []
         if profile.reports:
             step_id, report = profile.reports[-1]
@@ -668,6 +682,9 @@ class ResultAggregator:
         plan: ExecutionPlan,
     ) -> list[ResultBlock]:
         """Compose the task-type skeleton and omit unsupported empty modules."""
+
+        if completion_status == "failed":
+            return [self._failure_block(plan, profile)]
 
         blocks = [
             _block(
