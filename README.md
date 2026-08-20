@@ -20,6 +20,32 @@ AlphaBit Coach 是一个面向投资研究与学习的多智能体平台。它�
 
 > AlphaBit Coach 仅用于投资研究学习和技术演示，不构成投资建议、证券推荐、收益承诺或交易指令。
 
+## 产品预览
+
+### 研究作战室
+
+动态展示专家分工、任务依赖、执行进度与 Pixel Agent 协作状态，让多智能体研究过程不再是黑盒。
+
+![AlphaBit Coach 研究作战室](./docs/images/alphabit-war-room.png)
+
+### 股票库
+
+按市场板块浏览 A 股标的，支持搜索、关注和进入独立行情研究页面。
+
+![AlphaBit Coach 股票库](./docs/images/stock-library.png)
+
+### 专家中心
+
+集中查看 Research、Quant、Risk、Macro 与 Report Agent 的职责、能力和可用状态。
+
+![AlphaBit Coach 专家中心](./docs/images/expert-center.png)
+
+### 术语收藏
+
+将报告和追问中遇到的专业概念保存为个人术语卡片，帮助用户逐步建立投研知识体系。
+
+![AlphaBit Coach 已收藏术语](./docs/images/saved-terms.png)
+
 ## 为什么是 AlphaBit Coach
 
 | 常见 AI 投研体验 | AlphaBit Coach |
