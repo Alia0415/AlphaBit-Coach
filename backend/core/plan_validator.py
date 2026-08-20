@@ -121,6 +121,9 @@ def _validate_step_contract(
 _DOSSIER_SCOPES = {"financials", "financial_risk", "full_dossier"}
 _MARKET_FIELDS = {"trade_date", "symbol", "close", "volume"}
 _A_SHARE_SYMBOL = re.compile(r"^\d{6}\.(?:SH|SZ)$")
+_FISCAL_PERIOD = re.compile(r"^([0-9]{4})q([1-4])$", re.IGNORECASE)
+_FISCAL_YEAR = re.compile(r"^[0-9]{4}$")
+_RELATIVE_FISCAL_PERIOD = re.compile(r"^latest_([1-5])_fiscal_years$")
 _QUANT_ANALYSIS_MODES = {
     "historical_cross_check",
     "thesis_validation",
@@ -324,6 +327,50 @@ def _validate_period_pair(
         raise PlanValidationError(
             f"Dossier research step {step.id} must provide both "
             "start_period and end_period"
+        )
+    if start is None:
+        period = inputs.get("period")
+        if period is None:
+            return
+        normalized_period = (
+            period.strip().lower() if isinstance(period, str) else ""
+        )
+        if (
+            normalized_period not in {"latest", "latest_available"}
+            and _FISCAL_PERIOD.fullmatch(normalized_period) is None
+            and _FISCAL_YEAR.fullmatch(normalized_period) is None
+            and _RELATIVE_FISCAL_PERIOD.fullmatch(normalized_period) is None
+        ):
+            raise PlanValidationError(
+                f"Dossier research step {step.id} period must be "
+                "a fiscal year or quarter, latest, latest_available, or "
+                "latest_1_fiscal_years through latest_5_fiscal_years"
+            )
+        return
+
+    normalized: list[re.Match[str]] = []
+    for name, value in (("start_period", start), ("end_period", end)):
+        match = (
+            _FISCAL_PERIOD.fullmatch(value.strip())
+            if isinstance(value, str)
+            else None
+        )
+        if match is None:
+            raise PlanValidationError(
+                f"Dossier research step {step.id} must use concrete fiscal "
+                f"periods such as 2024q4; {name} cannot be a placeholder"
+            )
+        normalized.append(match)
+
+    start_index = int(normalized[0].group(1)) * 4 + int(normalized[0].group(2))
+    end_index = int(normalized[1].group(1)) * 4 + int(normalized[1].group(2))
+    if start_index > end_index:
+        raise PlanValidationError(
+            f"Dossier research step {step.id} start_period is after end_period"
+        )
+    if end_index - start_index > 20:
+        raise PlanValidationError(
+            f"Dossier research step {step.id} fiscal period range exceeds five years"
         )
 
 

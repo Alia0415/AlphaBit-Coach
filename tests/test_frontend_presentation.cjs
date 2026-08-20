@@ -122,4 +122,34 @@ function responseWithAggregation(overrides = {}) {
   assert.equal(safe.runtime_path, "[敏感或内部信息已隐藏]");
 }
 
+{
+  const response = responseWithAggregation({
+    completion_status: "failed",
+    output_mode: "failure",
+    content_blocks: [
+      {
+        id: "metrics",
+        type: "metric_cards",
+        data: { metrics: [{ metric: "coverage_ratio", value: 0 }] },
+      },
+      {
+        id: "limitations",
+        type: "limitations",
+        data: { items: [{ text: "内部失败被误当成研究局限。" }] },
+      },
+      {
+        id: "failures",
+        type: "failure_notice",
+        data: { items: [{ reason: "财务数据查询未完成。" }] },
+      },
+    ],
+  });
+  const plain = buildPlainLanguageResult(response);
+  assert.deepEqual(
+    plain.contentBlocks.map((block) => block.type),
+    ["failure_notice"],
+  );
+}
+
+
 console.log("frontend presentation tests passed");

@@ -2908,7 +2908,7 @@ function pageTasksLive() {
         const ratio = r.completeness ? Math.round((r.completeness.completion_ratio || 0) * 100) : null;
         item.appendChild(el("div", "", `
           <div style="font-weight:600">${esc(publicTitle)}</div>
-          <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(r.created_at)} · 真实研究结果</div>
+          <div style="color:var(--text-2);font-size:12px;margin-top:3px">${esc(formatReportTimestamp(r.created_at))} · 真实研究结果</div>
         `));
         if (ratio != null) item.appendChild(el("div", "ri-score", `<strong>${ratio}%</strong><span style="color:var(--text-2);font-size:11px">完成度</span>`));
         item.addEventListener("click", () => navigate("reports", r.id));
@@ -2933,7 +2933,7 @@ function pageTasksLive() {
       const prompt = researchPresentation
         ? researchPresentation.publicText(t.prompt)
         : t.prompt;
-      item.appendChild(el("div", "", `<div class="ti-title">${esc(prompt.slice(0, 60) || "未命名研究任务")}</div><div class="ti-sub">${esc(status)} · ${esc(t.created_at)}${esc(dur)}</div>`));
+      item.appendChild(el("div", "", `<div class="ti-title">${esc(prompt.slice(0, 60) || "未命名研究任务")}</div><div class="ti-sub">${esc(status)} · ${esc(formatReportTimestamp(t.created_at))}${esc(dur)}</div>`));
       list.appendChild(item);
     });
     wrap.appendChild(list);
@@ -3039,6 +3039,23 @@ function buildReportMainLive(report) {
     ));
     return col;
   }
+  if (vm.failed) {
+    col.reportNavigation = [];
+    const failureHero = renderResearchHero(report, vm);
+    failureHero.id = "report-overview";
+    failureHero.dataset.reportSection = "report-overview";
+    col.appendChild(failureHero);
+    col.appendChild(renderResearchFailure(vm));
+    const failureDisclaimer = vm.disclaimer
+      || "本报告内容由 AI 生成，仅用于投资研究学习与技术演示，不构成投资建议、证券推荐、收益承诺或交易指令。";
+    col.appendChild(el(
+      "div",
+      "op-note research-disclaimer",
+      `<strong class="risk-label">⚠ 风险提示</strong>${esc(failureDisclaimer)}`,
+    ));
+    return col;
+  }
+
   col.reportNavigation = compactReportNavigation(vm);
   col.appendChild(renderReportNavigation(col.reportNavigation));
   const hero = renderResearchHero(report, vm);
@@ -3544,12 +3561,30 @@ function researchList(items, cls = "") {
   return list;
 }
 
+function formatReportTimestamp(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const normalized = raw.replace(
+    /(\.\d{3})\d+(?=(?:Z|[+-]\d{2}:\d{2})$)/,
+    "$1",
+  );
+  const timestamp = new Date(normalized);
+  if (Number.isNaN(timestamp.getTime())) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(timestamp);
+}
 function renderResearchHero(report, vm) {
   const hero = el("section", "panel research-hero");
   const eyebrow = el("div", "research-hero-eyebrow");
   eyebrow.appendChild(el("span", "research-live-dot", ""));
-  eyebrow.appendChild(el("span", "", "最终直接回答"));
-  eyebrow.appendChild(el("span", "research-created", esc(report.created_at || "")));
+  eyebrow.appendChild(el("span", "", vm.failed ? "执行结果" : "最终直接回答"));
+  eyebrow.appendChild(el("span", "research-created", esc(formatReportTimestamp(report.created_at))));
   hero.appendChild(eyebrow);
   hero.appendChild(el("h1", "", esc(vm.finalSummary.conclusion.headline)));
   if (vm.finalSummary.conclusion.explanation) {
@@ -3572,6 +3607,20 @@ function renderResearchHero(report, vm) {
   ));
   hero.appendChild(badges);
   return hero;
+}
+
+function renderResearchFailure(vm) {
+  const panel = researchPanel(
+    "EXECUTION DIAGNOSIS",
+    "本次研究未完成",
+    "以下仅列出本次真实执行返回的失败信息，不代表任何研究结论。",
+    "research-failure-panel",
+  );
+  const reasons = vm.failureReasons?.length
+    ? vm.failureReasons
+    : ["研究服务未返回可进一步说明的失败原因，请稍后重试。"];
+  panel.appendChild(researchList(reasons));
+  return panel;
 }
 
 function renderFinalEvidence(evidence) {

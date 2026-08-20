@@ -267,6 +267,8 @@
       return fallback || "该部分仅保留用户可见的研究摘要。";
     }
     let text = raw
+      .replace(/start_period 和 end_period 必须是 YYYYqN 格式。/gi, "财务报告期必须使用类似 2024q4 的实际值。")
+      .replace(/A required dependency did not complete successfully\./gi, "前置分析未完成，本步骤无法继续。")
       .replace(FORBIDDEN_TEXT, "专业数据源")
       .replace(INTERNAL_STEP, "对应专家步骤")
       .replace(/\bcomputed_not_validated\b/gi, "已完成计算，尚未验证有效性")
@@ -1261,6 +1263,45 @@
       ).filter(Boolean).filter((item) => !investmentAdvice(item)).slice(0, 2),
     };
   }
+  function collectFailureReasons(aggregation) {
+    const fromBlocks = array(aggregation.content_blocks)
+      .filter((block) => object(block).type === "failure_notice")
+      .flatMap((block) => array(object(object(block).data).items))
+      .flatMap((item) => {
+        const value = object(item);
+        return [value.message, value.reason];
+      });
+    const fallback = array(object(aggregation.technical_evidence).missing_evidence);
+    const reasons = unique(fromBlocks.map((item) => publicText(item)).filter(Boolean));
+    return reasons.length
+      ? reasons
+      : unique(fallback.map((item) => publicText(item)).filter(Boolean));
+  }
+
+  function buildFailureSummary(aggregation, failureReasons) {
+    const direct = object(aggregation.direct_answer);
+    const explanation = publicText(direct.explanation);
+    return {
+      conclusion: {
+        headline: publicText(
+          direct.headline,
+          "本次研究没有成功完成",
+        ),
+        explanation: concise(
+          explanation || "没有获得足以回答问题的可靠证据。",
+          180,
+        ),
+        stance: STANCE[direct.stance] || "证据不足",
+        confidence: CONFIDENCE[direct.confidence] || "暂不适用",
+      },
+      evidence: [],
+      uncertainties: failureReasons.slice(0, 3),
+      learning: DEFAULT_LEARNING_FOCUS,
+      nextSteps: [],
+    };
+  }
+
+
 
   function buildResearchViewModel(bundle) {
     const source = object(bundle);
@@ -1268,27 +1309,30 @@
     const task = object(source.task || report.task);
     const aggregation = object(report.aggregation || task.aggregation || source.aggregation);
     const direct = object(aggregation.direct_answer);
+    const failed = String(aggregation.completion_status || "") === "failed";
+    const failureReasons = failed ? collectFailureReasons(aggregation) : [];
+
     const results = sourceResults(aggregation);
     const plan = buildPlan(task, aggregation);
-    const metrics = collectMetrics(aggregation);
-    const coverage = collectCoverage(aggregation, results);
-    const findings = unique([
+    const metrics = failed ? [] : collectMetrics(aggregation);
+    const coverage = failed ? [] : collectCoverage(aggregation, results);
+    const findings = failed ? [] : unique([
       ...resultItems(aggregation, "key_findings", "judgment"),
       ...blockItems(aggregation, ["finding_cards", "narrative"], "judgment"),
     ]);
-    const risks = unique([
+    const risks = failed ? [] : unique([
       ...resultItems(aggregation, "risks", "risk"),
       ...blockItems(aggregation, ["risk_list"], "risk"),
     ]);
-    const limitations = unique([
+    const limitations = failed ? [] : unique([
       ...resultItems(aggregation, "limitations", "limitation"),
       ...blockItems(aggregation, ["limitations"], "limitation"),
     ]);
-    const agents = buildAgents(plan, aggregation, results, metrics, coverage);
+    const agents = failed ? [] : buildAgents(plan, aggregation, results, metrics, coverage);
     const completed = agents.filter((agent) =>
       ["completed", "partial"].includes(agent.status)
     );
-    const conflicts = array(object(aggregation.technical_evidence).conflicts)
+    const conflicts = (failed ? [] : array(object(aggregation.technical_evidence).conflicts))
       .map((text) => publicText(text))
       .filter(Boolean);
     const publicMetrics = metrics.map(({ key, sourceSteps, ...metric }) => metric);
@@ -1298,8 +1342,10 @@
       terms: agent.terms.map(({ key, sourceSteps, ...metric }) => metric),
     }));
     const { rawSteps, ...publicPlan } = plan;
-    const finalSummary = buildFinalSummary(aggregation, results, metrics);
-    const evidenceBoundary = unique([
+    const finalSummary = failed
+      ? buildFailureSummary(aggregation, failureReasons)
+      : buildFinalSummary(aggregation, results, metrics);
+    const evidenceBoundary = failed ? [] : unique([
       ...limitations.map((item) => item.text),
       ...risks.map((item) => item.text),
       ...coverage
@@ -1308,15 +1354,15 @@
       ...array(object(aggregation.technical_evidence).missing_evidence)
         .map((item) => publicText(item)),
     ]).filter(Boolean);
-    const professionalQuestions = unique([
+    const professionalQuestions = failed ? [] : unique([
       ...resultItems(aggregation, "next_research_steps", "research_action")
         .map((item) => item.text),
       ...publicAgents.flatMap((agent) => agent.nextChecks),
     ]).filter(Boolean);
-    const framework = unique(publicAgents.map((agent) =>
+    const framework = failed ? [] : unique(publicAgents.map((agent) =>
       agent.methods[0] || agent.researchQuestion
     )).filter(Boolean);
-    const terms = unique(metrics.map((metric) => metric.label)).filter(Boolean);
+    const terms = failed ? [] : unique(metrics.map((metric) => metric.label)).filter(Boolean);
     const chapters = publicAgents.map((agent, index) => ({
       ...agent,
       sectionId: `report-section-${index + 1}`,
@@ -1326,9 +1372,9 @@
       terms,
       evidenceBoundary,
       professionalQuestions,
-      quiz: learningQuiz(metrics, limitations, findings),
+      quiz: failed ? null : learningQuiz(metrics, limitations, findings),
     };
-    const navigation = [
+    const navigation = failed ? [] : [
       {
         id: "report-overview",
         label: "结论速览",
@@ -1369,6 +1415,8 @@
       });
     }
     return {
+      failed,
+      failureReasons,
       finalSummary,
       summary: {
         text: oneLineConclusion(direct, metrics),
@@ -1382,13 +1430,13 @@
       chapters,
       navigation,
       metrics: publicMetrics,
-      evidenceChains: buildEvidenceChains(aggregation, metrics),
+      evidenceChains: failed ? [] : buildEvidenceChains(aggregation, metrics),
       expertDisagreements: conflicts,
       positiveSignals: findings.map((item) => item.text),
       riskSignals: risks.map((item) => item.text),
       coverage,
       limitations: limitations.map((item) => item.text),
-      reportText: collectReportText(aggregation),
+      reportText: failed ? "" : collectReportText(aggregation),
       learningSummary,
       participation: completed.map((agent) => ({
         name: agent.name,
