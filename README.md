@@ -1,445 +1,270 @@
-# AlphaBit Coach v0.4 + Skill Runtime
+<div align="center">
 
-> 一支看得见的 AI 投研团队，一位真正帮助你成长的金融教练。
-中国最大黑客松AdventureX PandaAI交易未来赛道冠军
-AlphaBit Coach is an AI financial research and learning platform built on the
-AlphaOS multi-agent runtime. It has two first-class pillars:
+# AlphaBit Coach
 
-1. **Visible multi-agent research** — a dynamic AI research organization
-   whose collaboration is rendered live in the frontend: pixel office, task
-   DAG, agent state animation, SSE execution log, and Skill-call
-   visualization. The frontend is a collaboration observation window, not
-   just a result renderer.
-2. **AI financial coach** — the product direction upgrades AlphaBit from
-   "trusted answers" to "learning how to research": personalized explanation
-   by knowledge level, guided follow-up questioning, research error
-   correction, and post-task research review. Today the codebase ships
-   report follow-up Q&A, glossary extraction, plain-language answers, user
-   profiles, and the expert/simple view toggle; the standalone coach layer
-   (guided questioning, correction, review) is planned and not yet
-   implemented.
+**一支看得见的 AI 投研团队，一位帮助你学会研究的金融教练。**
 
-The runtime is a dynamic AI research organization, not a fixed Agent or Skill
-pipeline. The outer task graph remains the sole source of truth for expert
-execution; each expert owns any internal capability selection.
+🏆 AdventureX 2026 · PandaAI「交易未来」赛道冠军
 
-## Architecture
+[在线体验](http://118.178.136.23:8000/office) · [API 文档](http://118.178.136.23:8000/docs) · [Agent Card](http://118.178.136.23:8000/.well-known/agent-card.json) · [PandaAI 提交说明](./README_PANDAAI.md)
 
-```text
-User
-  → Manager Agent
-  → Dynamic Expert Selection
-  → Dynamic Task Graph
-  → One or more selected Expert nodes
-      ├─ Research Agent
-      │   ├─ Market Research Capability, or
-      │   └─ Research Skill Planner → a_share_stock_dossier
-      ├─ Quant Agent
-      │   └─ Quant Skill Planner → Allowlisted QuantSkills Runtime
-      ├─ Macro Agent → macro_monitor + controlled PandaData macro APIs
-      ├─ Risk Agent → optional event_risk_alert + evidence review
-      └─ optional Report node
-  → Result Aggregator
-  → Dynamic User-facing Result
-```
+![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![AlphaBit Coach v0.4](https://img.shields.io/badge/AlphaBit%20Coach-v0.4-111827)
+![Status](https://img.shields.io/badge/status-research--only-F5A623)
 
-Manager chooses experts and expert dependencies only. It cannot select or
-invoke a bottom-level Skill. Each expert sees only its own enabled Skills and
-selects the minimal sufficient capability inside the selected expert.
+</div>
 
-`WorkflowExecutor` runs exactly the validated Manager DAG. The independent
-`ResultAggregator` inspects only actual `ExpertResult` contracts, determines
-completion status, answers the original goal, and emits evidence-driven content
-blocks. The frontend renders only returned blocks, so an uncalled expert never
-creates an empty or implied section. Complete expert results remain available
-under `aggregation.technical_evidence`.
+AlphaBit Coach 是一个面向投资研究与学习的多智能体平台。它不会把问题塞进固定 Agent 流程，而是由 **Manager Agent 根据当前目标动态组建专家团队、生成任务 DAG**；前端实时展示专家分工、依赖关系、执行日志和 Skill 调用；最终结果只根据真实返回的证据生成。
 
-The enabled expert pool is:
+它想解决的不只是“给出一个答案”，而是让用户看见：**答案由谁完成、依据是什么、哪里存在冲突、哪些结论仍未验证。**
 
-| Expert | Enabled | Current responsibility |
+> AlphaBit Coach 仅用于投资研究学习和技术演示，不构成投资建议、证券推荐、收益承诺或交易指令。
+
+## 为什么是 AlphaBit Coach
+
+| 常见 AI 投研体验 | AlphaBit Coach |
+| --- | --- |
+| 黑盒输出一段结论 | Pixel Office、任务 DAG、SSE 日志实时展示研究过程 |
+| 固定工作流调用所有 Agent | Manager 按问题动态选择最小充分专家集合 |
+| 模型自行补齐缺失信息 | 缺失数据、失败步骤和未验证假设被明确保留 |
+| 结果面向专业用户堆砌术语 | 通俗结论与专业证据视图共享同一份后端事实 |
+| 用户只能接受答案 | 支持报告追问、术语解释和知识水平适配 |
+
+## 在线体验
+
+| 入口 | 地址 | 用途 |
 | --- | --- | --- |
-| `research` | yes | PandaData market research plus single-company financial and fundamental analysis |
-| `quant` | yes | Factor hypotheses and pinned R020 computation |
-| `risk` | yes | Independent/dependency review plus PandaData event-risk scans |
-| `macro` | yes | Pinned macro methodology plus PandaData-backed macro analysis |
-| `report` | yes | Optional integration of declared upstream results |
+| AlphaBit Office | [打开产品](http://118.178.136.23:8000/office) | Pixel Office、动态任务图、实时执行和报告页 |
+| OpenAPI | [打开文档](http://118.178.136.23:8000/docs) | 查看和调试 HTTP API |
+| A2A Agent Card | [查看能力声明](http://118.178.136.23:8000/.well-known/agent-card.json) | 发现协议、能力和调用入口 |
 
-Quant is never automatically added to a request. Risk and Report are never
-automatically appended to Quant. Macro is never automatically appended either;
-it is selected only when a request genuinely needs macro-environment analysis.
-The executor runs exactly the Manager-created DAG; Research and Quant perform
-any authorized capability selection internally.
+在线服务用于项目演示；若服务暂时不可用，可按下方步骤在本地运行。无外部凭据时，可切换到明确标注的“产品演示”模式体验完整交互。
 
-## Macro Agent
+## 核心能力
 
-Macro Agent is dynamically selected and backed by PandaData historical data:
+- **动态专家组队**：从 `research`、`quant`、`macro`、`risk`、`report` 中选择与当前问题匹配的专家，并生成有依赖关系的任务 DAG。
+- **可观测协作**：Pixel Office 展示 Agent 状态，SSE 持续推送计划、步骤和 Skill 生命周期事件。
+- **证据约束结果**：`ResultAggregator` 只读取实际 `ExpertResult`，保留数据来源、验证状态、冲突、假设和局限。
+- **专家自主管理 Skill**：Manager 只决定专家与依赖；每个专家只能在自己的 allowlist 内选择 Skill。
+- **受控真实数据**：市场、公司、宏观和事件数据统一通过 PandaData 适配层访问；数据不可用时显式失败。
+- **分层学习体验**：提供通俗/专业双视图、报告证据追问、术语解释和用户知识水平适配。
+- **A2A 互操作**：提供 Agent Card、JSON-RPC `message/send` 与 `tasks/get`。
 
-- It dynamically selects reviewed PandaData macro categories (at most four) and
-  catalog-returned indicators (at most eight); the Manager never picks macro
-  indicators or APIs.
-- Forward-looking requests default to the most recent 24-month historical
-  evidence window ending at the execution date.
-- Execution runs three structured Ark stages (data plan, indicator selection,
-  and analysis) sharing a single repair attempt.
-- There is no model-only fallback: when PandaData evidence is unavailable the
-  task fails instead of fabricating macro claims.
-- It never screens stocks, predicts prices, or produces trade advice.
+## 工作原理
 
-Test commands:
+```mermaid
+flowchart LR
+    U["用户 / A2A Client"] --> P["Policy Gate"]
+    P --> I["Task Interpreter"]
+    I --> M["Manager Agent"]
+    M --> D["校验后的动态任务 DAG"]
 
-- `python -m pytest -q tests/test_macro_agent.py` runs the mocked unit and
-  orchestration tests (no network or quota).
-- `python tests/manual_test_macro_agent.py` is the opt-in, quota-consuming real
-  Ark and PandaData smoke test.
+    D --> R["Research"]
+    D --> Q["Quant"]
+    D --> MA["Macro"]
+    D --> RI["Risk"]
+    D --> RE["Report（可选）"]
 
-## Current Skill Runtime
+    R --> A["Result Aggregator"]
+    Q --> A
+    MA --> A
+    RI --> A
+    RE --> A
 
-`backend/skills/skill_registry.py` is the sole runtime Skill allowlist:
-
-| Skill ID | Mode | Owner | Source | License | Status meaning |
-| --- | --- | --- | --- | --- | --- |
-| `factor_idea_generation` | instruction | `quant` | `quantskills/skill-factor-idea-generation` | GPL-3.0-only | hypotheses remain `unverified` |
-| `r020_volume_expansion` | executable | `quant` | `quantskills/skill-quant-factor-volume-stat-alpha` R020 | GPL-3.0-only | `computed_not_validated` |
-| `a_share_stock_dossier` | instruction | `research` | `quantskills/skill-a-share-stock-dossier` | GPL-3.0-only | disclosed financial data calculated; future performance not validated |
-| `macro_monitor` | instruction | `macro` | `quantskills/skill-macro-monitor` | GPL-3.0 | methodology verified; facts must come from PandaData |
-| `event_risk_alert` | instruction | `risk` | `quantskills/skill-event-risk-alert` | GPL-3.0-only | observed disclosure records are leads, not causal conclusions |
-
-An installed Codex Skill is not automatically installed for the AlphaBit Coach
-service. AlphaBit Coach reads runtime Skills only from `QUANTSKILLS_HOME`, verifies
-them against `skills.lock.json`, and loads only the expected entrypoint.
-Local folders and user-supplied repositories are not auto-discovered.
-
-Instruction Skill Markdown is treated as untrusted methodology text. The
-loader enforces path containment, an explicit references allowlist, a bounded
-text size, and never executes commands found in documentation. Ark output is
-validated with Pydantic and receives at most one JSON repair attempt.
-
-Research Agent owns two distinct capability branches:
-
-```text
-Research Agent
-├─ Market Research Capability
-└─ a_share_stock_dossier
-
-Quant Agent
-├─ factor_idea_generation
-└─ r020_volume_expansion
-
-Macro Agent
-└─ macro_monitor
-
-Risk Agent
-└─ event_risk_alert
+    A --> W["Pixel Office / HTTP API / A2A"]
+    A --> C["报告追问 / 术语解释"]
 ```
 
-`a_share_stock_dossier` answers questions about one company's financial
-statements, fundamentals, earnings quality, and disclosed risks. Quant's
-fundamental or market factor Skills answer a different question: whether a
-defined metric could become a testable stock-selection hypothesis. Financial
-performance is never presented as validated predictive return evidence.
+系统遵守四条关键边界：
 
-The dossier's upstream `skill-pandadata-api` dependency is mapped to AlphaBit Coach's
-existing controlled `backend.services.pandadata_client.PandaDataClient`; no
-second credential client is installed. The lock verifies `SKILL.md`,
-`references/dossier-guide.md`, and the GPL license file at the pinned commit.
+1. **Manager 只规划专家协作**，不能直接选择或调用底层 Skill。
+2. **模型生成的计划不直接执行**，必须先通过 Pydantic 契约、依赖图和策略校验。
+3. **WorkflowExecutor 严格执行已校验 DAG**，不会在运行时偷偷追加 Agent。
+4. **ResultAggregator 只聚合真实结果**，不会用模型内容补齐失败步骤或缺失证据。
 
-R020 loads the pinned and hashed
-`factors/R020-5d-z-scored-volume-expansion/scripts/factor.py`, calls only
-`compute_factor(df)`, and operates on PandaData OHLCV supplied by Quant Agent.
-It does not call the upstream `generate_signals`, use bundled validation data,
-or modify external Skill source.
+### 专家团队
 
-Macro Monitor and Event Risk Alert load only pinned instruction files and
-route real data calls through AlphaBit Coach's controlled PandaData client.
+| Expert | 主要职责 |
+| --- | --- |
+| `research` | 市场表现、公司财报、基本面和行业研究 |
+| `quant` | 历史量化交叉验证、因子假设和 R020 计算 |
+| `macro` | 宏观、政策、周期、利率和流动性研究 |
+| `risk` | 独立风险审查与事件风险扫描 |
+| `report` | 按声明的上游依赖整合正式报告；不是默认必经节点 |
 
-Reviewed snapshots of Macro Monitor and Event Risk Alert are committed under
-`vendor/quantskills`. Application startup verifies their pinned hashes and
-copies only a missing runtime directory into `QUANTSKILLS_HOME`. Startup never
-downloads Skill code and never overwrites an existing runtime directory.
+### 受控 Skill Runtime
 
-## Install
+`backend/skills/skill_registry.py` 是运行时唯一 Skill allowlist：
+
+| Skill | Owner | 用途 | 结果边界 |
+| --- | --- | --- | --- |
+| `factor_idea_generation` | `quant` | 生成结构化因子假设 | `unverified` |
+| `r020_volume_expansion` | `quant` | 计算固定 R020 成交量放大因子 | `computed_not_validated` |
+| `a_share_stock_dossier` | `research` | A 股单公司财报和基本面尽调 | 不验证未来收益 |
+| `macro_monitor` | `macro` | 宏观监控方法与指标选择 | 事实必须来自 PandaData |
+| `event_risk_alert` | `risk` | 事件与公告风险扫描 | 事件线索不等于因果结论 |
+
+所有运行时 Skill 都由 [`skills.lock.json`](./skills.lock.json) 固定来源、commit、入口和 SHA-256。Instruction Skill 被视为不可信方法文本：系统只允许有界读取，不会执行 `SKILL.md` 中的命令；Executable Skill 只能加载锁文件声明的入口。
+
+## 快速开始
+
+### 1. 本地启动
+
+推荐使用 Python 3.11。
 
 ```powershell
+git clone https://github.com/Alia0415/AlphaBit-Coach.git
+cd AlphaBit-Coach
+
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-# Optional setup/refresh path for all six fixed, pinned repositories.
-python scripts\install_selected_skills.py
-
-$env:DEEPSEEK_API_KEY = "your-deepseek-key"
-$env:DEEPSEEK_BASE_URL = "https://api.deepseek.com" # optional
-$env:DEEPSEEK_MODEL = "deepseek-v4-flash" # optional
-$env:PANDADATA_USERNAME = "8617777777777"
-$env:PANDADATA_PASSWORD = "your-pandaai-password"
+python -m pip install -r requirements.txt
 
 uvicorn backend.main:app --reload
 ```
 
-Then open the local demo console:
+macOS / Linux 激活虚拟环境时使用：
 
-```text
-http://127.0.0.1:8000/
+```bash
+source .venv/bin/activate
 ```
 
-The frontend has no Node.js build step. Its default **Demo mode** uses clearly
-labelled local example responses so the orchestration UI can be presented
-without external credentials. **Live API mode** calls the existing
-`POST /api/tasks` endpoint and therefore requires DeepSeek configuration; tasks
-that fetch market data also require PandaData credentials. The interactive API
-documentation remains available at `http://127.0.0.1:8000/docs`.
+启动后访问：
 
-The default result view first shows `aggregation.direct_answer`, then renders
-only `aggregation.content_blocks`. Possible block types include metrics,
-comparisons, factor ideas, risks, limitations, reports, clarification, and
-failures, but none is mandatory. The separate professional-evidence view
-retains the dynamic task graph, complete expert contracts, raw validation
-states, provenance, and technical execution events. Both views are
-deterministic presentations of the same response; no research evidence is
-generated in the browser.
+- 产品界面：<http://127.0.0.1:8000/office>
+- API 文档：<http://127.0.0.1:8000/docs>
+- 健康检查：<http://127.0.0.1:8000/api/health>
 
-The default runtime directory is `AlphaBit-Coach/.runtime_skills`, which is ignored
-by Git. Macro Monitor and Event Risk Alert are bootstrapped there automatically
-from the bundled, hash-verified snapshots. Override the runtime directory with
-an absolute path or a path relative to `AlphaBit-Coach`:
+不配置任何外部凭据也可以使用“产品演示”模式；该模式只使用明确标注的本地示例数据，不会调用模型或真实数据源。
+
+### 2. 启用实时研究
+
+在仓库根目录创建 `.env`：
+
+```dotenv
+# 实时规划、分析与报告追问
+DEEPSEEK_API_KEY=your-deepseek-key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
+
+# 需要真实市场、财务或宏观数据时配置
+PANDADATA_USERNAME=86xxxxxxxxxxx
+PANDADATA_PASSWORD=your-pandadata-password
+```
+
+如需完整的外部 Skill 能力，安装 [`skills.lock.json`](./skills.lock.json) 中固定并校验的版本：
 
 ```powershell
-$env:QUANTSKILLS_HOME = "D:\runtime\quantskills"
-python scripts\install_selected_skills.py --runtime-home $env:QUANTSKILLS_HOME
+python scripts\install_selected_skills.py
 ```
 
-`skills.lock.json` is committed and records repository, commit SHA, Skill path,
-license, installation timestamp, owner, mode, expected entrypoint, dependency
-mapping, and SHA-256 hashes for critical files.
-The external repositories are GPL-3.0-only; keep their copyright and license
-notices, preserve provenance in every result, and review GPL distribution
-obligations before packaging or redistributing a combined service.
+Macro Monitor 与 Event Risk Alert 的审查快照已随仓库提供；启动时只会从这些固定快照补齐缺失目录，不会下载或覆盖已有运行时目录。可通过 `QUANTSKILLS_HOME` 指定其他绝对路径。
 
-## API examples
+### 3. Docker
 
-`POST /api/plan` returns a validated expert DAG without running it:
+```bash
+docker build -t alphabit-coach .
+docker run --rm -p 8000:8000 --env-file .env alphabit-coach
+```
+
+仅体验演示模式时可省略 `--env-file .env`。
+
+## 试一个研究任务
+
+在 AlphaBit Office 中输入：
+
+```text
+请对贵州茅台（600519.SH）做一份综合研究：
+分析近期市场表现、公司财务质量、宏观消费环境和重大事件风险，
+整合支持与反对证据，并明确研究局限。不要提供买卖建议。
+```
+
+系统会在必要时先澄清研究口径，再动态组建至少两个不同专家、生成跨专家依赖并执行研究。任务结构取决于当前问题，不是固定 Agent 顺序。
+
+也可以直接调用 API：
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/plan" \
   -H "Content-Type: application/json" \
-  -d "{\"prompt\":\"请根据 OHLCV 数据提出几个可验证的量价因子想法。\"}"
+  -d '{"prompt":"分析 600519.SH 的市场表现、财务质量和主要风险，不要提供买卖建议。"}'
 ```
 
-### Research only: three fiscal years
+### 常用接口
 
-```bash
-curl -X POST "http://127.0.0.1:8000/api/tasks" \
-  -H "Content-Type: application/json" \
-  -d "{\"prompt\":\"分析贵州茅台最近三年的财报，重点关注盈利质量和现金流。\"}"
-```
+| Method | Path | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/plan` | 生成并校验专家 DAG，不执行任务 |
+| `POST` | `/api/tasks/sessions` | 创建支持澄清与流式执行的研究会话 |
+| `GET` | `/api/tasks/{task_id}/stream` | 订阅任务与 Skill 生命周期事件 |
+| `POST` | `/api/tasks` | 同步执行完整研究任务 |
+| `GET` | `/api/reports/{report_id}` | 获取已完成报告与证据 |
+| `POST` | `/api/reports/{report_id}/coach` | 基于报告证据进行追问 |
+| `GET` | `/.well-known/agent-card.json` | 获取 A2A Agent Card |
+| `POST` | `/a2a` | A2A JSON-RPC 入口 |
 
-Expected outer graph: `research`. Inside Research, the Skill Planner selects
-`a_share_stock_dossier` with `financials` scope. This scope calls only
-`get_fina_reports`, `get_fina_performance`, `get_fina_forecast`, and
-`get_audit_opinion`; it does not fetch 龙虎榜、北向资金、解禁或股权质押。
+如果设置了 `ALPHAOS_A2A_TOKEN`，A2A 请求必须携带对应的 `Authorization: Bearer ...`；未设置时，本地 A2A 入口不要求 token。
 
-`financial_risk` uses the same disclosed financial sources but emphasizes
-profit/cash-flow divergence, receivables, inventory, leverage, audit opinions,
-and forecast deterioration. `full_dossier` additionally queries the reviewed
-company, dividend, holder, pledge, unlock, and market-data methods. Missing
-fields and empty results are retained as explicit evidence, never filled in.
+## 当前完成度
 
-### Research only: market performance
+### 已实现
 
-```bash
-curl -X POST "http://127.0.0.1:8000/api/tasks" \
-  -H "Content-Type: application/json" \
-  -d "{\"prompt\":\"分析贵州茅台过去一年的股价和波动率。\"}"
-```
+- Research、Quant、Macro、Risk、Report 的动态选择与 DAG 执行
+- Pixel Office、Agent 状态动画、SSE 日志和 Skill 调用可视化
+- PandaData 支持的市场、公司、财务、宏观和事件风险研究
+- 因子假设生成与固定 R020 因子计算
+- 证据约束聚合、通俗/专业结果视图和完整 provenance
+- 用户画像、报告证据追问、术语解释和知识水平适配
+- A2A Agent Card、任务提交与任务查询
 
-Expected outer graph: `research`. Research retains its existing market-data
-path and does not invoke `a_share_stock_dossier`.
+### 尚未实现 / 明确不支持
 
-### Quant only: factor ideas
+- 独立的任务前置金融教练，以及完整的引导提问、错误纠正和研究复盘闭环
+- 完整因子回测、多维 IC 诊断和投资组合构建
+- 自动交易、账户访问、订单执行、买卖建议、目标价或收益承诺
+- 动态执行未知 GitHub 仓库、用户提供的代码或 Skill 文档中的命令
+- Coach 加入专家 DAG、触发新研究或绕过报告证据回答
 
-```bash
-curl -X POST "http://127.0.0.1:8000/api/tasks" \
-  -H "Content-Type: application/json" \
-  -d "{\"prompt\":\"请根据 OHLCV 数据生成 5 个可验证因子想法并 shortlist 2 个。\"}"
-```
+## 测试
 
-Expected outer graph: `quant`. Quant may select only
-`factor_idea_generation`. Results explicitly state that ideas are unverified,
-IC has not been calculated, no backtest has run, and no trading signal exists.
-
-### Quant only: actual R020 calculation
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/tasks" \
-  -H "Content-Type: application/json" \
-  -d "{\"prompt\":\"计算 000001.SZ、000002.SZ 和 600519.SH 在 2024 年的 R020 成交量放大因子。\"}"
-```
-
-Expected outer graph: `quant`. Manager must extract `symbols`, `start_date`,
-and `end_date`; Quant then fetches PandaData OHLCV and invokes the pinned R020
-`compute_factor`. Missing required inputs cause a clarification request rather
-than guessed values.
-
-### Quant → Risk
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/tasks" \
-  -H "Content-Type: application/json" \
-  -d "{\"prompt\":\"计算 000001.SZ、000002.SZ 和 600519.SH 在 2024 年的 R020，并审查主要失效风险。\"}"
-```
-
-Expected outer graph: `quant → risk`. Risk receives the Quant factor
-definition, coverage, assumptions, limitations, validation status, and
-provenance. It does not reinterpret an unvalidated computation as performance.
-
-When a user explicitly requests both risk review and a report, Manager may
-create `quant → risk → report`; when only a research summary is requested it
-may create `quant → report`. These are acceptance scenarios, not hardcoded
-routes.
-
-### Coach: ask about a completed report
-
-```bash
-curl -X POST "http://127.0.0.1:8000/api/reports/<report_id>/coach" \
-  -H "Content-Type: application/json" \
-  -d "{\"question\":\"净利润率为什么重要？\",\"quoted_text\":\"净利润率保持在 50% 以上\"}"
-```
-
-The coach answers only from the stored report evidence, returns concept notes
-plus cited report excerpts, and every reply is labeled `generated_by: model`.
-Citations that do not appear in the report are rejected with 422; when the
-model service is unavailable the API returns 502 instead of a fabricated
-fallback answer.
-
-### Coach: research review and guided questions
-
-```bash
-curl "http://127.0.0.1:8000/api/reports/<report_id>/coach/guide"
-```
-
-The first call generates the review and guided questions with the model and
-caches them on the report; pass `?refresh=true` to regenerate. Milestone
-narrations for a running task stream as named SSE `coach` events and can be
-replayed with `GET /api/tasks/<task_id>/coach-narrations`.
-
-## Events and result contracts
-
-`POST /api/tasks` returns the original `plan`, `events`, and `results` plus an
-`aggregation` object with:
-
-- `user_goal`, `completion_status`, and `output_mode`
-- a plain-language `direct_answer`
-- zero or more evidence-driven `content_blocks`
-- an optional `execution_summary`
-- complete, collapsible `technical_evidence`
-
-The compatibility `final_answer` field remains available and is derived from
-`aggregation.direct_answer`; Manager no longer produces it.
-
-The outer lifecycle includes `plan_created`, expert step events, optional
-legacy-named `synthesis_started` (now emitted by `ResultAggregator`), and
-`task_completed`. Research and Quant Skill execution can additionally emit:
-
-- `skill_plan_created`
-- `skill_started`
-- `skill_completed`
-- `skill_failed`
-
-Each Skill event includes the parent expert `step_id`, agent, Skill ID, and
-bounded metadata. Events never include complete `SKILL.md`, raw market data,
-or credentials.
-
-Every Skill-backed `ExpertResult` records actual Skills, complete `SkillResult`
-objects, data sources, assumptions, limitations, `validation_status`, and
-source provenance. Failed and unavailable Skill results include an error.
-
-## Testing
-
-Automated tests mock Ark and PandaData and never consume API quota:
+自动化测试会 mock DeepSeek 与 PandaData，不消耗真实 API 配额：
 
 ```powershell
 python -m pytest -q tests
 ```
 
-The suite covers the allowlist and ownership boundary, disabled and missing
-Skills, loader traversal protection, structured unverified factor ideas,
-single repair, actual `compute_factor` dispatch, OHLCV validation, provenance,
-Quant-only and Quant-to-Risk paths, safe events, and credential redaction.
-
-For the opt-in real Research dossier smoke test:
+需要真实凭据和配额的手动集成测试不会由自动化测试触发：
 
 ```powershell
 python tests\manual_test_research_dossier.py
-```
-
-It queries `600519.SH` for the latest three completed fiscal years with
-`scope=financials` and prints only method row counts, period labels, metric
-names, risk count, validation status, and provenance. Missing credentials print
-`{"status":"skipped"}`; fixtures are never substituted.
-
-For the opt-in real PandaData + R020 smoke test:
-
-```powershell
 python tests\manual_test_quant_runtime.py
-```
-
-It requests three symbols for 2024 and prints only bounded factor metadata,
-never raw OHLCV or credentials. If credentials are absent, it reports
-`skipped` rather than substituting fixture or upstream validation data.
-
-The existing dynamic expert smoke test remains:
-
-```powershell
+python tests\manual_test_macro_agent.py
 python tests\manual_test_dynamic_execution.py
 ```
 
-## Explicit capability boundary
+凭据缺失时，这些脚本会报告 `skipped`，不会用 fixture 冒充真实结果。
 
-Currently supported:
+## 项目结构
 
-- Research
-- Research financial statements, financial-risk screening, and bounded A-share dossier
-- Risk
-- Report
-- Quant factor idea generation
-- Quant R020 factor computation
-- Macro environment, policy, cycle, rate, and liquidity analysis
-- Report follow-up Q&A, glossary extraction, plain-language answers, and the
-  expert/simple result views
-- AI financial coach on completed reports: evidence-anchored Q&A with optional
-  quoted report text, coach-guided follow-up questions, and generated research
-  reviews (model-labeled, cached per report)
-- Process coaching in the war room: model-generated milestone narrations
-  streamed as SSE `coach` events and replayable through the read-only API
-- Knowledge-level–tiered coach explanations driven by the user profile
+```text
+AlphaBit-Coach/
+├── backend/              # FastAPI、Agent、工作流、数据服务与 Skill Runtime
+├── frontend/             # 零构建步骤的静态 Web UI 与 Pixel Office
+├── public/pixel/         # Agent sprite 与场景资源
+├── tests/                # 单元、契约、前端与端到端测试
+├── scripts/              # Skill 安装、资源处理和手动验证脚本
+├── vendor/quantskills/   # 已审查的固定 Skill 快照
+├── agent-card.json       # A2A 能力声明模板
+└── skills.lock.json      # Runtime Skill 来源、版本与哈希锁定
+```
 
-Not currently supported:
+## 安全与研究边界
 
-- Complete factor backtesting
-- Multidimensional IC diagnostics
-- Automatic trading, order placement, or buy/sell recommendations
-- Dynamic execution of unknown GitHub code
-- A coach that plans tasks, joins the expert DAG, or answers without report
-  evidence (the coach reads completed reports, events, and the profile only)
+- 凭据只从环境变量或被 Git 忽略的 `.env` 读取，不进入结果与执行事件。
+- 外部数据调用统一经过受控适配层；模型不能自由选择任意方法。
+- 因子想法始终标记为 `unverified`；R020 计算始终标记为 `computed_not_validated`。
+- 缺失证据、失败步骤和冲突观点会被保留，不会自动包装成确定结论。
+- 第三方 QuantSkills 的来源、固定版本和许可证记录在 [`skills.lock.json`](./skills.lock.json) 与 `vendor/` 对应目录中；分发时请保留其许可证与来源声明。
 
-All output is research-only and does not constitute investment advice,
-security recommendations, or a return promise.
-## 用户画像（P0-3）
+---
 
-Office 的“用户画像”页面通过以下 API 读写画像：
-
-- `GET /api/user-profile`
-- `PUT /api/user-profile`
-- `PATCH /api/user-profile`
-- `DELETE /api/user-profile`
-- `GET /api/user-profile/status`
-
-画像以 SQLite `user_profiles` 表为正式事实源；浏览器 localStorage 只保存首次建档的
-当前步骤，不保存或提交完整画像快照。当前黑客松 MVP 没有登录体系，因此使用
-`local-default-user` 作为明确命名的本地单用户标识。它不支持跨设备同步，不是身份
-标识，也不会保存姓名、身份证、银行卡、手机号或精确地址；接入登录体系后可替换为
-真实登录用户 ID。
-
-普通行情、公司、财报、行业、宏观、量化和独立风险研究不依赖画像。只有
-`personal_investment_decision` 会在创建 DAG 前检查首次建档和当前任务必要字段；
-画像摘要仅按需注入 Risk step，不会广播给 Research、Macro 或 Quant。
+如果这个项目对你有帮助，欢迎 Star、提交 Issue，或分享你希望 AI 金融教练帮你拆解的真实研究问题。
