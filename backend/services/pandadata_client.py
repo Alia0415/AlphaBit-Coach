@@ -836,7 +836,7 @@ def _validate_symbol(symbol: str) -> str:
 def _validate_period(period: str) -> str:
     normalized = str(period).strip().lower()
     if not QUARTER_PATTERN.fullmatch(normalized):
-        raise ValueError("财务报告期必须是 YYYYqN 格式。")
+        raise ValueError("财务报告期必须使用类似 2024q4 的实际值。")
     return normalized
 
 

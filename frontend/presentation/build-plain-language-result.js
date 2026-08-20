@@ -18,12 +18,16 @@
     const direct = value.direct_answer && typeof value.direct_answer === "object"
       ? value.direct_answer
       : {};
-    const contentBlocks = Array.isArray(value.content_blocks)
+    const completionStatus = String(value.completion_status || "failed");
+    const candidateBlocks = Array.isArray(value.content_blocks)
       ? value.content_blocks.filter(hasBlockContent)
       : [];
+    const contentBlocks = completionStatus === "failed"
+      ? candidateBlocks.filter((block) => block.type === "failure_notice")
+      : candidateBlocks;
     return {
       userGoal: String(value.user_goal || ""),
-      completionStatus: String(value.completion_status || "failed"),
+      completionStatus,
       outputMode: String(value.output_mode || "failure"),
       directAnswer: {
         headline: String(direct.headline || "任务没有返回直接答案"),
@@ -79,7 +83,7 @@
         source_steps: [],
         data: { question: source.plan?.clarification_question || source.final_answer },
       });
-    } else {
+    } else if (completionStatus !== "failed") {
       if (summaries.length) {
         contentBlocks.push({
           id: "findings",
@@ -110,6 +114,22 @@
           data: { items: limitations },
         });
       }
+    }
+    if (completionStatus === "failed") {
+      contentBlocks.push({
+        id: "failures",
+        type: "failure_notice",
+        title: "未完成的部分",
+        importance: "primary",
+        source_steps: failed.map(([sourceStep]) => sourceStep),
+        data: {
+          items: failed.map(([sourceStep, result]) => ({
+            step_id: sourceStep,
+            message: result?.summary || "该步骤未能完成。",
+            reason: result?.error || result?.summary || "未提供失败原因。",
+          })),
+        },
+      });
     }
     const explanation =
       source.final_answer ||

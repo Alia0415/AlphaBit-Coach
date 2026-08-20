@@ -250,6 +250,34 @@ def test_quant_thesis_validation_requires_upstream_dependency() -> None:
         validate_execution_plan(plan, AgentRegistry())
 
 
+def test_dossier_plan_rejects_fiscal_period_placeholders() -> None:
+    payload = _plan_payload(["research", "risk"])
+    payload["steps"][0]["inputs"] = {
+        "symbol": "600519.SH",
+        "scope": "financials",
+        "start_period": "YYYYqN",
+        "end_period": "YYYYqN",
+    }
+    plan = ExecutionPlan.model_validate(payload)
+
+    with pytest.raises(PlanValidationError, match="concrete fiscal periods"):
+        validate_execution_plan(plan, AgentRegistry())
+
+
+def test_dossier_plan_accepts_concrete_fiscal_period_range() -> None:
+    payload = _plan_payload(["research", "risk"])
+    payload["steps"][0]["inputs"] = {
+        "symbol": "600519.SH",
+        "scope": "financials",
+        "start_period": "2023q4",
+        "end_period": "2025q4",
+    }
+    plan = ExecutionPlan.model_validate(payload)
+
+    assert validate_execution_plan(plan, AgentRegistry()) is plan
+
+
+
 def test_manager_accepts_dependent_quant_thesis_validation() -> None:
     payload = _plan_payload(["research", "quant"])
     payload["steps"][1]["inputs"] = {

@@ -99,6 +99,8 @@ def plain_text(value: Any) -> str:
         "dependency blocked": "因前置分析未完成，本步骤无法继续",
         "Required dependency failed": "因前置分析未完成，本步骤无法继续",
         "low confidence": "当前证据较少，结论可信度较低",
+        "start_period 和 end_period 必须是 YYYYqN 格式。": "财务报告期必须使用类似 2024q4 的实际值。",
+        "A required dependency did not complete successfully.": "因前置分析未完成，本步骤无法继续",
         "maximum_drawdown": "最大回撤（区间内从阶段高点到低点的最大跌幅）",
         "annualized_volatility": "年化波动率（用于衡量价格波动有多大）",
     }

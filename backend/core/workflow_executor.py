@@ -96,7 +96,7 @@ class WorkflowExecutor:
                             status="blocked",
                             summary="步骤因必需依赖失败而被阻断。",
                             error=(
-                                "A required dependency did not complete successfully."
+                                "前置分析未完成，本步骤无法继续。"
                             ),
                         )
                         emit(
