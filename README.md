@@ -10,14 +10,20 @@
 
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white) ![AlphaBit Coach v0.4](https://img.shields.io/badge/AlphaBit%20Coach-v0.4-111827) ![Status](https://img.shields.io/badge/status-research--only-F5A623)
 
-[产品截图](#产品截图) · [在线体验](#在线体验) · [本地运行](#快速开始) · [工作原理](#工作原理)
+[▶ 演示视频](#演示视频) · [产品截图](#产品截图) · [在线体验](#在线体验) · [本地运行](#快速开始) · [工作原理](#工作原理)
 
 </div>
 
+## 演示视频
+
+**[▶ 打开完整演示视频（2 分 45 秒）](./docs/videos/alphabit-coach-demo.mp4)** · [下载 MP4](https://github.com/Alia0415/AlphaBit-Coach/raw/refs/heads/main/docs/videos/alphabit-coach-demo.mp4)
+
 <p align="center">
-  <img src="docs/images/research-warroom.png" width="100%" alt="AlphaBit Coach 研究作战室产品演示：任务执行流、像素办公室、专家解读与执行日志" />
+  <a href="docs/videos/alphabit-coach-demo.mp4">
+    <img src="docs/images/demo-video-poster.jpg" width="100%" alt="点击打开 AlphaBit Coach 完整演示视频：可视化投研大厅与多 Agent 协作，时长 2 分 45 秒" />
+  </a>
 </p>
-<p align="center"><sub>研究作战室 · 产品演示使用本地示例数据，展示专家协作与任务流转，不代表实时研究结果。</sub></p>
+<p align="center"><sub>点击封面或上方链接打开完整视频，了解 AlphaBit Coach 的研究协作与金融陪练体验。</sub></p>
 
 AlphaBit Coach 是一个面向投资研究与学习的多智能体平台。在投研大厅，**Manager Agent 根据当前目标动态组建专家团队、生成任务 DAG**；股票行情入口另提供预设股票研究流程。前端展示专家分工、依赖关系、执行日志和 Skill 调用；实时研究的最终结果只根据实际返回的证据生成。
 
@@ -36,6 +42,12 @@ AlphaBit Coach 是一个面向投资研究与学习的多智能体平台。在�
 ## 产品截图
 
 以下画面均来自**产品演示模式**，使用本地预置案例；数据、任务过程和陪练问答均为示例，不调用模型或外部数据源。
+
+### 看见专家协作
+
+<img src="docs/images/research-warroom.png" width="100%" alt="AlphaBit Coach 研究作战室产品演示：任务执行流、像素办公室、专家解读与执行日志" />
+
+*研究作战室 · 产品演示使用本地示例数据，展示专家协作与任务流转，不代表实时研究结果。*
 
 ### 从一个研究问题开始
 
