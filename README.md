@@ -8,13 +8,18 @@
 
 [在线体验（产品演示）](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/office) · [API 文档](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/docs) · [Agent Card](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/.well-known/agent-card.json) · [PandaAI 提交说明](./README_PANDAAI.md)
 
-![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
-![AlphaBit Coach v0.4](https://img.shields.io/badge/AlphaBit%20Coach-v0.4-111827)
-![Status](https://img.shields.io/badge/status-research--only-F5A623)
+![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white) ![AlphaBit Coach v0.4](https://img.shields.io/badge/AlphaBit%20Coach-v0.4-111827) ![Status](https://img.shields.io/badge/status-research--only-F5A623)
+
+[产品截图](#产品截图) · [在线体验](#在线体验) · [本地运行](#快速开始) · [工作原理](#工作原理)
 
 </div>
 
-AlphaBit Coach 是一个面向投资研究与学习的多智能体平台。它不会把问题塞进固定 Agent 流程，而是由 **Manager Agent 根据当前目标动态组建专家团队、生成任务 DAG**；前端实时展示专家分工、依赖关系、执行日志和 Skill 调用；最终结果只根据真实返回的证据生成。
+<p align="center">
+  <img src="docs/images/research-warroom.png" width="100%" alt="AlphaBit Coach 研究作战室产品演示：任务执行流、像素办公室、专家解读与执行日志" />
+</p>
+<p align="center"><sub>研究作战室 · 产品演示使用本地示例数据，展示专家协作与任务流转，不代表实时研究结果。</sub></p>
+
+AlphaBit Coach 是一个面向投资研究与学习的多智能体平台。在投研大厅，**Manager Agent 根据当前目标动态组建专家团队、生成任务 DAG**；股票行情入口另提供预设股票研究流程。前端展示专家分工、依赖关系、执行日志和 Skill 调用；实时研究的最终结果只根据实际返回的证据生成。
 
 它想解决的不只是“给出一个答案”，而是让用户看见：**答案由谁完成、依据是什么、哪里存在冲突、哪些结论仍未验证。**
 
@@ -22,13 +27,42 @@ AlphaBit Coach 是一个面向投资研究与学习的多智能体平台。它�
 
 ## 为什么是 AlphaBit Coach
 
-| 常见 AI 投研体验 | AlphaBit Coach |
+| 你可以做什么 | AlphaBit Coach 如何帮助你 |
 | --- | --- |
-| 黑盒输出一段结论 | Pixel Office、任务 DAG、SSE 日志实时展示研究过程 |
-| 固定工作流调用所有 Agent | Manager 按问题动态选择最小充分专家集合 |
-| 模型自行补齐缺失信息 | 缺失数据、失败步骤和未验证假设被明确保留 |
-| 结果面向专业用户堆砌术语 | 通俗结论与专业证据视图共享同一份后端事实 |
-| 用户只能接受答案 | 支持报告追问、术语解释和知识水平适配 |
+| **看见研究过程** | 在像素办公室中观察专家协作，结合任务图和执行日志了解每一步进展 |
+| **查清结论依据** | 先读结论，再核查关键证据、指标口径、反对观点与尚待验证的信息 |
+| **带着证据学习** | 选中报告原文追问，查看术语解释、引导思考题与研究复盘 |
+
+## 产品截图
+
+以下画面均来自**产品演示模式**，使用本地预置案例；数据、任务过程和陪练问答均为示例，不调用模型或外部数据源。
+
+### 从一个研究问题开始
+
+在投研大厅选择预置案例，体验需求澄清、任务拆解与团队协作。
+
+<img src="docs/images/research-hall.png" width="100%" alt="投研大厅产品演示：研究问题输入、预置案例与像素投研办公室，使用本地示例数据" />
+
+*投研大厅 · 产品演示 / 本地示例数据。*
+
+### 读结论，也能继续追问
+
+示例报告把结论、关键指标、风险和研究边界放在一起；右侧陪练支持围绕报告内容提问。
+
+<img src="docs/images/research-report.png" width="100%" alt="研究报告与金融陪练产品演示：结论、关键证据与报告追问，使用本地示例数据" />
+
+*报告与陪练 · 产品演示 / 本地示例数据和示例问答。*
+
+<details>
+<summary><strong>展开查看：研究过程与证据追溯</strong></summary>
+
+回看专家分工、支持与反对证据、数据覆盖和证据缺口，理解结论在什么范围内成立。
+
+<img src="docs/images/evidence-trace.png" width="100%" alt="证据追溯产品演示：事实、计算解释、支持与反对证据及验证缺口，使用本地示例数据" />
+
+*证据追溯 · 产品演示 / 本地示例数据。*
+
+</details>
 
 ## 在线体验
 
@@ -53,15 +87,17 @@ AlphaBit Coach 是一个面向投资研究与学习的多智能体平台。它�
 
 ## 核心能力
 
-- **动态专家组队**：从 `research`、`quant`、`macro`、`risk`、`report` 中选择与当前问题匹配的专家，并生成有依赖关系的任务 DAG。
+- **动态专家组队**：投研大厅从 `research`、`quant`、`macro`、`risk`、`report` 中选择与当前问题匹配的专家，并生成有依赖关系的任务 DAG；股票行情入口提供固定股票研究预设。
 - **可观测协作**：Pixel Office 展示 Agent 状态，SSE 持续推送计划、步骤和 Skill 生命周期事件。
 - **证据约束结果**：`ResultAggregator` 只读取实际 `ExpertResult`，保留数据来源、验证状态、冲突、假设和局限。
 - **专家自主管理 Skill**：Manager 只决定专家与依赖；每个专家只能在自己的 allowlist 内选择 Skill。
 - **受控真实数据**：市场、公司、宏观和事件数据统一通过 PandaData 适配层访问；数据不可用时显式失败。
-- **分层学习体验**：提供通俗/专业双视图、报告证据追问、术语解释和用户知识水平适配。
+- **分层学习体验**：提供结论导读、证据追溯、报告原文追问、术语解释、引导思考与报告后复盘，并适配用户知识水平。
 - **A2A 互操作**：提供 Agent Card、JSON-RPC `message/send` 与 `tasks/get`。
 
 ## 工作原理
+
+以下展示投研大厅的动态研究路径；股票行情入口使用已校验的固定股票研究预设，共享专家执行与证据聚合能力。
 
 ```mermaid
 flowchart LR
@@ -190,7 +226,7 @@ docker run --rm -p 8000:8000 --env-file .env alphabit-coach
 整合支持与反对证据，并明确研究局限。不要提供买卖建议。
 ```
 
-系统会在必要时先澄清研究口径，再动态组建至少两个不同专家、生成跨专家依赖并执行研究。任务结构取决于当前问题，不是固定 Agent 顺序。
+通过投研大厅提交后，系统会在必要时先澄清研究口径，再动态组建至少两个不同专家、生成跨专家依赖并执行研究。该入口的任务结构取决于当前问题。
 
 也可以直接调用 API：
 
@@ -219,17 +255,17 @@ curl -X POST "http://127.0.0.1:8000/api/plan" \
 
 ### 已实现
 
-- Research、Quant、Macro、Risk、Report 的动态选择与 DAG 执行
+- Research、Quant、Macro、Risk、Report 的动态选择与 DAG 执行，以及股票行情入口的固定研究预设
 - Pixel Office、Agent 状态动画、SSE 日志和 Skill 调用可视化
 - PandaData 支持的市场、公司、财务、宏观和事件风险研究
 - 因子假设生成与固定 R020 因子计算
-- 证据约束聚合、通俗/专业结果视图和完整 provenance
-- 用户画像、报告证据追问、术语解释和知识水平适配
+- 证据约束聚合、结论导读、证据追溯和完整 provenance
+- 用户画像、报告证据追问、术语解释、报告后引导思考与复盘，以及知识水平适配
 - A2A Agent Card、任务提交与任务查询
 
 ### 尚未实现 / 明确不支持
 
-- 独立的任务前置金融教练，以及完整的引导提问、错误纠正和研究复盘闭环
+- 独立的任务前置金融教练，以及贯穿研究前后的完整引导、错误纠正和复盘闭环
 - 完整因子回测、多维 IC 诊断和投资组合构建
 - 自动交易、账户访问、订单执行、买卖建议、目标价或收益承诺
 - 动态执行未知 GitHub 仓库、用户提供的代码或 Skill 文档中的命令
