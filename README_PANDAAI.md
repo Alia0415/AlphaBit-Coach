@@ -17,10 +17,14 @@ AlphaBit Coach 基于 AlphaOS 动态多 Agent 运行时构建。它不是把多�
 
 | Entry | URL | Purpose |
 | --- | --- | --- |
-| Live product | [http://118.178.136.23:8000/office](http://118.178.136.23:8000/office) | Pixel office、任务 DAG、执行过程和研究结果 |
-| Agent Card | [http://118.178.136.23:8000/.well-known/agent-card.json](http://118.178.136.23:8000/.well-known/agent-card.json) | A2A 能力、协议、Skill 和鉴权声明 |
-| A2A endpoint | `http://118.178.136.23:8000/a2a` | JSON-RPC 2.0 `message/send` 与 `tasks/get` |
-| OpenAPI | [http://118.178.136.23:8000/docs](http://118.178.136.23:8000/docs) | HTTP API 调试文档 |
+| Online product demo | [https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/office](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/office) | 预置案例、Pixel office、任务 DAG 与示例报告 |
+| Agent Card | [https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/.well-known/agent-card.json](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/.well-known/agent-card.json) | A2A 能力、协议、Skill 和鉴权声明 |
+| A2A endpoint | `https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/a2a` | JSON-RPC 2.0 `message/send` 与 `tasks/get` |
+| OpenAPI | [https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/docs](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/docs) | HTTP API 调试文档 |
+
+当前公开站点提供明确标注的**产品演示**。PandaAI / PandaData 数据接口目前不可用，实时研究与 A2A 研究调用所需的外部服务尚未恢复；下方协议示例保留为接口用法说明。
+
+体验路径：打开产品链接 → 左侧 **投研大厅** → 顶部 **查看产品演示** → 选择预置案例并启动研究。演示数据、执行过程与问答均为本地示例，不调用模型或外部数据源。默认域名首次访问可能显示腾讯云访问提示，详见[在线体验说明](./README.md#在线体验)。
 
 评测用 Bearer token 仅通过赛道提交表单提供，不写入仓库。
 
@@ -277,7 +281,7 @@ risk ──────────────────┘
 ### Send a message
 
 ```bash
-curl -X POST "http://118.178.136.23:8000/a2a" \
+curl -X POST "https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/a2a" \
   -H "Authorization: Bearer ${ALPHAOS_A2A_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -301,7 +305,7 @@ curl -X POST "http://118.178.136.23:8000/a2a" \
 ### Get an existing task
 
 ```bash
-curl -X POST "http://118.178.136.23:8000/a2a" \
+curl -X POST "https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/a2a" \
   -H "Authorization: Bearer ${ALPHAOS_A2A_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{

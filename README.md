@@ -6,7 +6,7 @@
 
 🏆 AdventureX 2026 · PandaAI「交易未来」赛道冠军
 
-[在线体验](http://118.178.136.23:8000/office) · [API 文档](http://118.178.136.23:8000/docs) · [Agent Card](http://118.178.136.23:8000/.well-known/agent-card.json) · [PandaAI 提交说明](./README_PANDAAI.md)
+[在线体验（产品演示）](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/office) · [API 文档](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/docs) · [Agent Card](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/.well-known/agent-card.json) · [PandaAI 提交说明](./README_PANDAAI.md)
 
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![AlphaBit Coach v0.4](https://img.shields.io/badge/AlphaBit%20Coach-v0.4-111827)
@@ -34,11 +34,22 @@ AlphaBit Coach 是一个面向投资研究与学习的多智能体平台。它�
 
 | 入口 | 地址 | 用途 |
 | --- | --- | --- |
-| AlphaBit Office | [打开产品](http://118.178.136.23:8000/office) | Pixel Office、动态任务图、实时执行和报告页 |
-| OpenAPI | [打开文档](http://118.178.136.23:8000/docs) | 查看和调试 HTTP API |
-| A2A Agent Card | [查看能力声明](http://118.178.136.23:8000/.well-known/agent-card.json) | 发现协议、能力和调用入口 |
+| AlphaBit Office | [打开产品演示](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/office) | 预置案例、Pixel Office、任务图与示例报告 |
+| OpenAPI | [打开文档](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/docs) | 查看和调试 HTTP API |
+| A2A Agent Card | [查看能力声明](https://alphabit-coach-270489-8-1443398117.sh.run.tcloudbase.com/.well-known/agent-card.json) | 发现协议、能力和调用入口 |
 
-在线服务用于项目演示；若服务暂时不可用，可按下方步骤在本地运行。无外部凭据时，可切换到明确标注的“产品演示”模式体验完整交互。
+当前公开站点用于**产品演示**。PandaAI / PandaData 数据接口目前不可用；实时市场、财务和宏观研究暂不可用。产品演示使用明确标注的本地预置案例，不调用模型或外部数据源。
+
+体验步骤：
+
+1. 打开上方产品链接。腾讯云默认域名首次访问可能显示“风险提醒 / 访问提示”，请阅读提示后自行决定是否继续访问。
+2. 在左侧导航点击 **投研大厅**，再点击顶部 **查看产品演示**。
+3. 选择预置案例，点击 **开始研究**，完成澄清后点击 **确认并启动研究**。
+4. 查看专家协作、任务图和演示进度，再打开示例报告体验结果解读与教练交互。
+
+“产品演示”中的数据、任务过程和问答均为示例，不代表实时研究结果。股票行情页的“开始研究”和“切换到实时研究”仍需要有效外部服务，当前公开体验请使用上述演示流程。OpenAPI 与 Agent Card 用于查看接口及能力声明，不表示实时数据接口已恢复。
+
+站点部署于腾讯云 CloudBase 云托管。默认域名的访问提示和下载响应属于[腾讯云默认域名访问限制](https://docs.cloudbase.net/service/alias)；面向长期公开体验可在云托管控制台绑定自定义域名。若在线服务暂时不可用，可按下方步骤在本地运行并切换到“产品演示”。
 
 ## 核心能力
 
