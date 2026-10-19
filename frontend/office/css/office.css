@@ -1014,6 +1014,153 @@ button.skill-row:hover { background: rgba(0,0,0,.06); }
   flex: 0 0 auto;
 }
 
+/* The demo grows with its content; only the live feeds scroll inside cards. */
+.page-outlet:has(.war-room-page-demo) { min-height: 0; overflow-y: auto; }
+.war-room-page-demo { height: auto; overflow: visible; }
+.war-room-page-demo .war-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 24px;
+  margin-bottom: 16px;
+}
+.war-room-page-demo .war-head .sub { grid-column: 1; }
+.war-room-page-demo .war-task { grid-column: 2; grid-row: 1 / 3; }
+.war-room-page-demo .war-grid {
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(260px, 300px);
+  grid-template-areas: "flow stage feed";
+  align-items: start;
+  gap: 16px;
+  flex: none;
+}
+.war-room-page-demo .war-left-col { grid-area: flow; }
+.war-room-page-demo .war-center-col { grid-area: stage; }
+.war-room-page-demo .war-right-col { grid-area: feed; }
+.war-room-page-demo .war-left-col,
+.war-room-page-demo .war-center-col,
+.war-room-page-demo .war-right-col {
+  min-width: 0;
+  overflow: visible;
+  gap: 16px;
+}
+.war-room-page-demo .war-left-col > .panel,
+.war-room-page-demo .war-center-col > .panel,
+.war-room-page-demo .war-right-col > .panel {
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: auto;
+  overflow: visible;
+  padding: 16px;
+  margin-top: 0 !important;
+}
+.war-room-page-demo .war-grid .panel > .panel-title { font-size: 14px; margin-bottom: 14px; }
+.war-room-page-demo .classroom-head strong { font-size: 14px; }
+.war-room-page-demo .dag-layer.multi { grid-template-columns: repeat(var(--dag-cols), minmax(0, 1fr)); }
+.war-room-page-demo .office-stage { width: 100%; max-height: none; flex-shrink: 0; }
+.war-room-page-demo .say-bubble { max-width: min(190px, calc(100% - 16px)); overflow-wrap: anywhere; }
+.war-room-page-demo .panel-title,
+.war-room-page-demo .war-task { flex-wrap: wrap; }
+.war-room-page-demo .war-task { min-width: 0; max-width: 100%; }
+.war-room-page-demo .wt-name { min-width: 0; overflow-wrap: anywhere; }
+.war-room-page-demo .tl-scroll { overflow-x: auto; padding-block: 3px 7px; }
+.war-room-page-demo .tl-scale { min-width: 560px; }
+.war-room-page-demo .tl-track { margin: 10px calc(100% / 14) 10px; }
+.war-room-page-demo .tl-labels { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding: 0; }
+.war-room-page-demo .tl-label { width: auto; }
+.war-room-page-demo .tl-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 92px);
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+.war-room-page-demo .tl-controls-label { color: var(--text-2); font-size: 12px; }
+.war-room-page-demo .tl-controls :is(select, button) {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
+.war-room-page-demo .tl-controls select { text-align-last: center; cursor: pointer; }
+.war-room-page-demo .progress-row {
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+.war-room-page-demo .kv-list { gap: 0; font-size: 12px; }
+.war-room-page-demo .kv {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  padding: 6px 0;
+}
+.war-room-page-demo .skill-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 28px;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 12px;
+}
+.war-room-page-demo .skill-row .sk-count { margin-left: 0; text-align: right; }
+.war-room-page-demo .kv + .kv,
+.war-room-page-demo .skill-row + .skill-row { border-top: 1px solid var(--line-soft); }
+.war-room-page-demo .log-line {
+  display: grid;
+  grid-template-columns: 38px 66px minmax(0, 1fr);
+  align-items: start;
+}
+.war-room-page-demo .kv > :last-child,
+.war-room-page-demo .log-line > :last-child { min-width: 0; overflow-wrap: anywhere; }
+.war-room-page-demo .companion-feed { max-height: 440px; }
+.war-room-page-demo .classroom-feed { flex: 0 1 auto; max-height: 320px; }
+.war-room-page-demo .classroom-feed > * { flex-shrink: 0; }
+.war-room-page-demo .log-list { flex: 0 1 auto; min-height: 160px; max-height: 320px; }
+.war-room-page-demo .companion-feed:empty::before {
+  content: "专家完成分析后，将在这里展示解读。";
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+@media (max-width: 1400px) {
+  .war-room-page-demo .war-grid {
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+    grid-template-areas: "flow stage" "feed feed";
+  }
+  .war-room-page-demo .war-right-col {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+@media (max-width: 1180px) {
+  .war-room-page-demo .war-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "stage" "flow" "feed";
+  }
+  .war-room-page-demo .war-right-col { display: flex; }
+  .war-room-page-demo .progress-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .war-room-page-demo .progress-row > :first-child { grid-column: 1 / -1; }
+  .war-room-page-demo .war-task { margin-left: 0; }
+  .war-room-page-demo .war-head { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .war-room-page-demo .war-task { grid-column: 1; grid-row: auto; margin-top: 6px; }
+  .war-room-page-demo .panel-title .title-extra { width: 100%; margin-left: 0; }
+}
+
+@media (max-width: 760px) {
+  .war-room-page-demo .tl-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .war-room-page-demo .tl-controls-label { grid-column: 1 / -1; }
+  .war-room-page-demo .tl-controls :is(select, button) { padding-inline: 6px; }
+}
+
 /* ---------- experts ---------- */
 .experts-layout { display: grid; grid-template-columns: 1fr 400px; gap: 18px; align-items: start; }
 .experts-toolbar { display: flex; gap: 10px; margin-bottom: 14px; }

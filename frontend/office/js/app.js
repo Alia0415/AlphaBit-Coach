@@ -2039,7 +2039,7 @@ const DAG_NODE_IDS = DAG_LAYERS.flat();
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 function pageWarRoom() {
-  const wrap = el("div", "war-room-page");
+  const wrap = el("div", "war-room-page war-room-page-demo");
 
   // ---- head ----
   const head = el("div", "war-head");
@@ -2055,8 +2055,9 @@ function pageWarRoom() {
   const grid = el("div", "war-grid");
 
   // ================= LEFT: task-graph DAG =================
-  const leftCol = el("div", "panel war-left-col");
-  leftCol.appendChild(el("div", "panel-title", "任务执行流"));
+  const leftCol = el("div", "war-left-col");
+  const flowPanel = el("div", "panel");
+  flowPanel.appendChild(el("div", "panel-title", "任务执行流"));
   const dag = el("div", "dag-wrap dag-stack");
   const edgeEls = {};
   const dagNodes = {};
@@ -2079,7 +2080,8 @@ function pageWarRoom() {
     });
     dag.appendChild(layer);
   });
-  leftCol.appendChild(dag);
+  flowPanel.appendChild(dag);
+  leftCol.appendChild(flowPanel);
   grid.appendChild(leftCol);
 
   // ================= CENTER: live stage + progress + timeline =================
@@ -2133,32 +2135,44 @@ function pageWarRoom() {
   tlPanel.style.marginTop = "14px";
   tlPanel.appendChild(el("div", "panel-title", "演示时间轴"));
   const tl = el("div", "timeline");
+  const tlScroll = el("div", "tl-scroll");
+  tlScroll.tabIndex = 0;
+  tlScroll.setAttribute("role", "group");
+  tlScroll.setAttribute("aria-label", "演示时间轴，可横向滚动查看全部节点");
+  const tlScale = el("div", "tl-scale");
   const tlEvents = WAR_SCRIPT.filter((e) => e.type === "timeline");
   const tlTrack = el("div", "tl-track");
   const tlFill = el("div", "tl-fill");
   tlFill.style.width = "0%";
   tlTrack.appendChild(tlFill);
   const tlNodeEls = [];
-  tlEvents.forEach((e) => {
+  tlEvents.forEach((e, i) => {
     const dot = el("button", "tl-node");
-    dot.style.left = `${(e.t / 60) * 100}%`;
+    dot.style.left = `${(i / (tlEvents.length - 1)) * 100}%`;
+    dot.setAttribute("aria-label", `${e.label} · ${e.clock}`);
+    dot.title = `${e.label} · ${e.clock}`;
     tlTrack.appendChild(dot);
     tlNodeEls.push(dot);
   });
-  tl.appendChild(tlTrack);
+  tlScale.appendChild(tlTrack);
   const tlLabels = el("div", "tl-labels");
   tlEvents.forEach((e) => {
     tlLabels.appendChild(el("span", "tl-label", `${esc(e.label)}<span class="t">${esc(e.clock)}</span>`));
   });
-  tl.appendChild(tlLabels);
+  tlScale.appendChild(tlLabels);
+  tlScroll.appendChild(tlScale);
+  tl.appendChild(tlScroll);
   const controls = el("div", "tl-controls");
   const playBtn = el("button", "btn", "⏸ 暂停");
   const speedSel = el("select");
+  speedSel.id = "demo-playback-speed";
   [["1", "1x"], ["2", "2x"], ["4", "4x"]].forEach(([v, t]) => {
     const o = el("option", "", t); o.value = v; speedSel.appendChild(o);
   });
   const replayBtn = el("button", "btn", "↻ 重播");
-  controls.append(el("span", "", '<span style="color:var(--text-2);font-size:12px">播放速度</span>'), speedSel, playBtn, replayBtn);
+  const speedLabel = el("label", "tl-controls-label", "播放速度");
+  speedLabel.htmlFor = speedSel.id;
+  controls.append(speedLabel, speedSel, playBtn, replayBtn);
   tl.appendChild(controls);
   tlPanel.appendChild(tl);
   centerCol.appendChild(tlPanel);
@@ -2419,8 +2433,11 @@ function pageWarRoom() {
           bubbleLayer.appendChild(ag.bubbleEl);
         }
         ag.bubbleEl.innerHTML = `<span class="sb-name">${esc(ag.name)}</span>${esc(ag.say.text)}`;
-        ag.bubbleEl.style.left = `${(ag.x / WAR_W) * 100}%`;
-        ag.bubbleEl.style.top = `${((ag.y - 62) / WAR_H) * 100}%`;
+        // Keep the whole caption inside the scene when the office is scaled down.
+        const w = bubbleLayer.clientWidth, h = bubbleLayer.clientHeight;
+        const half = ag.bubbleEl.offsetWidth / 2, height = ag.bubbleEl.offsetHeight;
+        ag.bubbleEl.style.left = `${clamp((ag.x / WAR_W) * w, half + 8, w - half - 8)}px`;
+        ag.bubbleEl.style.top = `${clamp(((ag.y - 62) / WAR_H) * h, height + 8, h - 8)}px`;
       } else if (ag.bubbleEl) {
         ag.bubbleEl.remove();
         ag.bubbleEl = null;
@@ -2439,7 +2456,13 @@ function pageWarRoom() {
       pstats.logs.querySelector("strong").textContent = state.logs;
       pstats.elapsed.querySelector("strong").textContent = `${Math.round(state.clock)}s`;
     }
-    tlFill.style.width = `${(state.clock / 60) * 100}%`;
+    // Equally spaced milestones keep each dot above its label; interpolate
+    // between their scripted times so the fill still follows playback.
+    const next = tlEvents.findIndex((e) => e.t > state.clock);
+    const prev = Math.max(0, next - 1);
+    const position = next < 0 ? tlEvents.length - 1 : next === 0 ? 0
+      : prev + (state.clock - tlEvents[prev].t) / (tlEvents[next].t - tlEvents[prev].t);
+    tlFill.style.width = `${(position / (tlEvents.length - 1)) * 100}%`;
     tlEvents.forEach((e, i) => {
       const node = tlNodeEls[i];
       const done = state.clock >= e.t;
