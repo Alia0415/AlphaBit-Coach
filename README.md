@@ -16,7 +16,7 @@
 
 ## 演示视频
 
-完整演示 · **2 分 45 秒** · [单独打开视频](https://github.com/user-attachments/assets/42860c12-5ef4-4a4f-b5da-a2b3dc060cb4) · [下载 MP4](https://github.com/Alia0415/AlphaBit-Coach/raw/refs/heads/main/docs/videos/alphabit-coach-demo.mp4)
+完整演示 · **2 分 45 秒** · [下载 MP4](https://github.com/Alia0415/AlphaBit-Coach/raw/refs/heads/main/docs/videos/alphabit-coach-demo.mp4)
 
 https://github.com/user-attachments/assets/42860c12-5ef4-4a4f-b5da-a2b3dc060cb4
 
