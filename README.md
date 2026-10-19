@@ -16,14 +16,11 @@
 
 ## 演示视频
 
-**[▶ 打开完整演示视频（2 分 45 秒）](./docs/videos/alphabit-coach-demo.mp4)** · [下载 MP4](https://github.com/Alia0415/AlphaBit-Coach/raw/refs/heads/main/docs/videos/alphabit-coach-demo.mp4)
+完整演示 · **2 分 45 秒** · [单独打开视频](https://github.com/user-attachments/assets/42860c12-5ef4-4a4f-b5da-a2b3dc060cb4) · [下载 MP4](https://github.com/Alia0415/AlphaBit-Coach/raw/refs/heads/main/docs/videos/alphabit-coach-demo.mp4)
 
-<p align="center">
-  <a href="docs/videos/alphabit-coach-demo.mp4">
-    <img src="docs/images/demo-video-poster.jpg" width="100%" alt="点击打开 AlphaBit Coach 完整演示视频：可视化投研大厅与多 Agent 协作，时长 2 分 45 秒" />
-  </a>
-</p>
-<p align="center"><sub>点击封面或上方链接打开完整视频，了解 AlphaBit Coach 的研究协作与金融陪练体验。</sub></p>
+https://github.com/user-attachments/assets/42860c12-5ef4-4a4f-b5da-a2b3dc060cb4
+
+<p align="center"><sub>直接播放视频，了解 AlphaBit Coach 的研究协作与金融陪练体验。</sub></p>
 
 AlphaBit Coach 是一个面向投资研究与学习的多智能体平台。在投研大厅，**Manager Agent 根据当前目标动态组建专家团队、生成任务 DAG**；股票行情入口另提供预设股票研究流程。前端展示专家分工、依赖关系、执行日志和 Skill 调用；实时研究的最终结果只根据实际返回的证据生成。
 
